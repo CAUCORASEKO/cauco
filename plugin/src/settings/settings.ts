@@ -3,6 +3,7 @@ import type { CaucoSettings } from "../types";
 
 export const DEFAULT_SETTINGS: CaucoSettings = {
   coreUrl: DEFAULT_CORE_URL,
+  selectedModel: "",
 };
 
 export function normalizeCoreUrl(value: string): string {

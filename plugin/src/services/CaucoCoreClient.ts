@@ -1,5 +1,8 @@
 import { requestUrl } from "obsidian";
 import type {
+  AIChatResponse,
+  AIModel,
+  AIStatus,
   CaucoStatus,
   ConnectionResult,
   HealthResponse,
@@ -56,6 +59,79 @@ function parseStatus(value: unknown): CaucoStatus {
   };
 }
 
+function parseAIStatus(value: unknown): AIStatus {
+  if (
+    !isRecord(value) ||
+    value.provider !== "ollama" ||
+    typeof value.available !== "boolean" ||
+    typeof value.base_url !== "string" ||
+    typeof value.default_model !== "string" ||
+    typeof value.default_model_installed !== "boolean" ||
+    typeof value.models_count !== "number"
+  ) {
+    throw new Error("The core returned an invalid AI status response.");
+  }
+  return {
+    provider: "ollama",
+    available: value.available,
+    baseUrl: value.base_url,
+    defaultModel: value.default_model,
+    defaultModelInstalled: value.default_model_installed,
+    modelsCount: value.models_count,
+  };
+}
+
+function parseModel(value: unknown): AIModel {
+  if (
+    !isRecord(value) ||
+    typeof value.name !== "string" ||
+    typeof value.size !== "number" ||
+    !(typeof value.parameter_size === "string" || value.parameter_size === null) ||
+    !(typeof value.quantization_level === "string" || value.quantization_level === null)
+  ) {
+    throw new Error("The core returned invalid model metadata.");
+  }
+  return {
+    name: value.name,
+    size: value.size,
+    parameterSize: value.parameter_size,
+    quantizationLevel: value.quantization_level,
+  };
+}
+
+function parseModels(value: unknown): AIModel[] {
+  if (!isRecord(value) || value.provider !== "ollama" || !Array.isArray(value.models)) {
+    throw new Error("The core returned an invalid model list.");
+  }
+  return value.models.map(parseModel);
+}
+
+function parseChat(value: unknown): AIChatResponse {
+  if (
+    !isRecord(value) ||
+    value.provider !== "ollama" ||
+    typeof value.model !== "string" ||
+    typeof value.response !== "string" ||
+    value.used_memory !== false ||
+    !Array.isArray(value.used_tools) ||
+    value.used_tools.length !== 0 ||
+    !value.used_tools.every((item) => typeof item === "string") ||
+    !Array.isArray(value.used_agents) ||
+    value.used_agents.length !== 0 ||
+    !value.used_agents.every((item) => typeof item === "string")
+  ) {
+    throw new Error("The core returned an invalid chat response.");
+  }
+  return {
+    provider: "ollama",
+    model: value.model,
+    response: value.response,
+    usedMemory: false,
+    usedTools: value.used_tools,
+    usedAgents: value.used_agents,
+  };
+}
+
 export class CaucoCoreClient {
   constructor(private readonly coreUrl: string) {}
 
@@ -64,14 +140,52 @@ export class CaucoCoreClient {
       const healthResponse = await requestUrl({ url: `${this.coreUrl}/health` });
       const health = parseHealth(healthResponse.json as unknown);
       const statusResponse = await requestUrl({ url: `${this.coreUrl}/api/status` });
-      return {
+      const result: ConnectionResult = {
         connected: true,
         health,
         status: parseStatus(statusResponse.json as unknown),
       };
+      try {
+        result.aiStatus = await this.getAIStatus();
+        if (result.aiStatus.available) {
+          result.models = await this.getModels();
+        } else {
+          result.models = [];
+        }
+      } catch (error) {
+        result.aiError = this.errorMessage(error);
+        result.models = [];
+      }
+      return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown connection error.";
       return { connected: false, status: OFFLINE_STATUS, error: message };
     }
+  }
+
+  async getAIStatus(): Promise<AIStatus> {
+    const response = await requestUrl({ url: `${this.coreUrl}/api/ai/status` });
+    return parseAIStatus(response.json as unknown);
+  }
+
+  async getModels(): Promise<AIModel[]> {
+    const response = await requestUrl({ url: `${this.coreUrl}/api/ai/models` });
+    return parseModels(response.json as unknown);
+  }
+
+  async chat(message: string, model?: string): Promise<AIChatResponse> {
+    const body: { message: string; model?: string } = { message };
+    if (model) body.model = model;
+    const response = await requestUrl({
+      url: `${this.coreUrl}/api/ai/chat`,
+      method: "POST",
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+    return parseChat(response.json as unknown);
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : "Unknown local AI error.";
   }
 }

@@ -36,6 +36,8 @@ export default class CaucoPlugin extends Plugin {
       ...DEFAULT_SETTINGS,
       ...stored,
       coreUrl: normalizeCoreUrl(stored?.coreUrl ?? DEFAULT_SETTINGS.coreUrl),
+      selectedModel:
+        typeof stored?.selectedModel === "string" ? stored.selectedModel : DEFAULT_SETTINGS.selectedModel,
     };
   }
 

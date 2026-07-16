@@ -1,7 +1,7 @@
 # Cauco Core
 
-Cauco Core is a small local HTTP service that exposes deterministic runtime and
-Markdown-memory status to the Obsidian plugin. It does not use an AI model.
+Cauco Core is a local HTTP service that exposes deterministic runtime and
+Markdown-memory status plus provider-independent local chat through Ollama.
 
 ## Development
 
@@ -14,4 +14,7 @@ python3.11 -m venv .venv
 ```
 
 The service binds to `127.0.0.1:8765`. Set `CAUCO_BRAIN_DIR` to use another
-Markdown brain directory.
+Markdown brain directory. Ollama defaults to `http://127.0.0.1:11434` with model
+`llama3.1:latest`; see `docs/development.md` for supported environment overrides.
+
+Chat does not retrieve memory or execute tools or agents.
