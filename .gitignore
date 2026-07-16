@@ -1,0 +1,31 @@
+.DS_Store
+
+# JavaScript build and dependencies
+node_modules/
+plugin/main.js
+
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Local configuration
+.env
+
+# Python test and analysis caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+**/__pycache__/
+*.py[cod]
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.swp

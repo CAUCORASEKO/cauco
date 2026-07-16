@@ -1,0 +1,12 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cauco-scheduler"
+version = "0.1.0"
+description = "Deterministic scheduler domain models for Cauco"
+requires-python = ">=3.11"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cauco_scheduler"]
