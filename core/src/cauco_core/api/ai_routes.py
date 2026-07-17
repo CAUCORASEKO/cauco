@@ -46,6 +46,7 @@ class AIChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: MessageText
     model: str | None = None
+    use_memory: bool = True
 
     @field_validator("model")
     @classmethod
@@ -60,7 +61,8 @@ class AIChatResponse(BaseModel):
     provider: str
     model: str
     response: str
-    used_memory: bool = False
+    used_memory: bool
+    memory_sources: list[str]
     used_tools: list[str] = Field(default_factory=list)
     used_agents: list[str] = Field(default_factory=list)
 
@@ -124,7 +126,9 @@ def get_ai_models(request: Request) -> AIModelsResponse:
 @router.post("/chat", response_model=AIChatResponse)
 def post_ai_chat(payload: AIChatRequest, request: Request) -> AIChatResponse:
     try:
-        result = ai_service(request).chat(payload.message, payload.model)
+        result = ai_service(request).chat(
+            payload.message, payload.model, use_memory=payload.use_memory
+        )
     except (
         MalformedProviderResponseError,
         ModelNotFoundError,
@@ -136,4 +140,6 @@ def post_ai_chat(payload: AIChatRequest, request: Request) -> AIChatResponse:
         provider=result.provider,
         model=result.model,
         response=result.response,
+        used_memory=bool(result.memory_sources),
+        memory_sources=list(result.memory_sources),
     )

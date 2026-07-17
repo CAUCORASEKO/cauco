@@ -18,31 +18,41 @@
 - Obsidian model selection, provider status, and minimal chat UI
 - Truthful response metadata confirming no memory, tool, or agent use
 
-## Phase 3 — Controlled local orchestration
+## Phase 3 — Persistent Markdown memory retrieval (implemented)
+
+- Recursive, visible, read-only Markdown discovery under one configured root
+- Safe bounded UTF-8 file reads with path and symlink containment
+- Deterministic weighted lexical search with stable excerpts
+- Relevant-only, source-labelled, size-bounded prompt context
+- Default-on memory-aware chat with a per-request opt-out and truthful sources
+- Read-only Obsidian memory count, refresh, search, list, and preview UI
+
+## Phase 4 — Controlled local orchestration
 
 - Explicit runtime composition of the existing registries
 - User-approved read and narrowly scoped write tools
 - Observable execution records and permission prompts
 - Memory indexing and retrieval without changing Markdown as source of truth
 
-## Phase 4 — Extended model integration
+## Phase 5 — Extended model integration
 
 - Persistent conversation history and streaming
-- Automatic memory retrieval with visible citations
+- Optional semantic retrieval only after explicit design and evaluation
+- Automatic summarization and long-term memory extraction policies
 - Tool and agent orchestration through explicit permission policies
 - Evaluation fixtures, budgets, and model-independent fallbacks
 
-## Phase 5 — Interaction and services
+## Phase 6 — Interaction and services
 
 - Opt-in background service
 - Speech-to-text and text-to-speech
 - Opt-in “Hola Cauco” wake-word detection with visible microphone state
 - External connectors with per-connector permissions
 
-## Phase 6 — Advanced workflows
+## Phase 7 — Advanced workflows
 
 - User-authorized autonomous workflows
 - Durable scheduling execution and recovery
 - Animated brain/status visualization grounded in real observable data
 
-Items in phases 3–6 are plans, not current capabilities.
+Items in phases 4–7 are plans, not current capabilities. Memory writing, embeddings, a vector database, semantic search, and agent-driven memory updates are also not implemented.

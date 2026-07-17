@@ -6,6 +6,9 @@ import type {
   CaucoStatus,
   ConnectionResult,
   HealthResponse,
+  MemoryFileContent,
+  MemoryFileMetadata,
+  MemorySearchResult,
   StatusSection,
 } from "../types";
 
@@ -112,7 +115,10 @@ function parseChat(value: unknown): AIChatResponse {
     value.provider !== "ollama" ||
     typeof value.model !== "string" ||
     typeof value.response !== "string" ||
-    value.used_memory !== false ||
+    typeof value.used_memory !== "boolean" ||
+    !Array.isArray(value.memory_sources) ||
+    !value.memory_sources.every((item) => typeof item === "string") ||
+    value.used_memory !== (value.memory_sources.length > 0) ||
     !Array.isArray(value.used_tools) ||
     value.used_tools.length !== 0 ||
     !value.used_tools.every((item) => typeof item === "string") ||
@@ -126,10 +132,76 @@ function parseChat(value: unknown): AIChatResponse {
     provider: "ollama",
     model: value.model,
     response: value.response,
-    usedMemory: false,
+    usedMemory: value.used_memory,
+    memorySources: value.memory_sources,
     usedTools: value.used_tools,
     usedAgents: value.used_agents,
   };
+}
+
+function parseMemoryMetadata(value: unknown): MemoryFileMetadata {
+  if (
+    !isRecord(value) ||
+    typeof value.relative_path !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.size !== "number" ||
+    !(typeof value.modified_at === "string" || value.modified_at === null) ||
+    typeof value.title !== "string"
+  ) {
+    throw new Error("The core returned invalid memory file metadata.");
+  }
+  return {
+    relativePath: value.relative_path,
+    name: value.name,
+    size: value.size,
+    modifiedAt: value.modified_at,
+    title: value.title,
+  };
+}
+
+function parseMemoryFiles(value: unknown): MemoryFileMetadata[] {
+  if (!isRecord(value) || !Array.isArray(value.files) || typeof value.count !== "number") {
+    throw new Error("The core returned an invalid memory file list.");
+  }
+  const files = value.files.map(parseMemoryMetadata);
+  if (files.length !== value.count) throw new Error("The memory file count is inconsistent.");
+  return files;
+}
+
+function parseMemoryFile(value: unknown): MemoryFileContent {
+  const metadata = parseMemoryMetadata(value);
+  if (!isRecord(value) || typeof value.content !== "string") {
+    throw new Error("The core returned invalid memory file content.");
+  }
+  return { ...metadata, content: value.content };
+}
+
+function parseMemorySearch(value: unknown): MemorySearchResult[] {
+  if (!isRecord(value) || !Array.isArray(value.results) || typeof value.count !== "number") {
+    throw new Error("The core returned an invalid memory search response.");
+  }
+  const results = value.results.map((item): MemorySearchResult => {
+    if (
+      !isRecord(item) ||
+      typeof item.relative_path !== "string" ||
+      typeof item.title !== "string" ||
+      typeof item.score !== "number" ||
+      !Array.isArray(item.matched_terms) ||
+      !item.matched_terms.every((term) => typeof term === "string") ||
+      typeof item.excerpt !== "string"
+    ) {
+      throw new Error("The core returned an invalid memory search result.");
+    }
+    return {
+      relativePath: item.relative_path,
+      title: item.title,
+      score: item.score,
+      matchedTerms: item.matched_terms,
+      excerpt: item.excerpt,
+    };
+  });
+  if (results.length !== value.count) throw new Error("The memory result count is inconsistent.");
+  return results;
 }
 
 export class CaucoCoreClient {
@@ -156,6 +228,12 @@ export class CaucoCoreClient {
         result.aiError = this.errorMessage(error);
         result.models = [];
       }
+      try {
+        result.memoryFiles = await this.getMemoryFiles();
+      } catch (error) {
+        result.memoryError = this.errorMessage(error);
+        result.memoryFiles = [];
+      }
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown connection error.";
@@ -173,8 +251,11 @@ export class CaucoCoreClient {
     return parseModels(response.json as unknown);
   }
 
-  async chat(message: string, model?: string): Promise<AIChatResponse> {
-    const body: { message: string; model?: string } = { message };
+  async chat(message: string, model?: string, useMemory = true): Promise<AIChatResponse> {
+    const body: { message: string; model?: string; use_memory: boolean } = {
+      message,
+      use_memory: useMemory,
+    };
     if (model) body.model = model;
     const response = await requestUrl({
       url: `${this.coreUrl}/api/ai/chat`,
@@ -183,6 +264,25 @@ export class CaucoCoreClient {
       body: JSON.stringify(body),
     });
     return parseChat(response.json as unknown);
+  }
+
+  async getMemoryFiles(): Promise<MemoryFileMetadata[]> {
+    const response = await requestUrl({ url: `${this.coreUrl}/api/memory/files` });
+    return parseMemoryFiles(response.json as unknown);
+  }
+
+  async getMemoryFile(relativePath: string): Promise<MemoryFileContent> {
+    const path = encodeURIComponent(relativePath);
+    const response = await requestUrl({ url: `${this.coreUrl}/api/memory/file?path=${path}` });
+    return parseMemoryFile(response.json as unknown);
+  }
+
+  async searchMemory(query: string, limit = 10): Promise<MemorySearchResult[]> {
+    const q = encodeURIComponent(query);
+    const response = await requestUrl({
+      url: `${this.coreUrl}/api/memory/search?q=${q}&limit=${limit}`,
+    });
+    return parseMemorySearch(response.json as unknown);
   }
 
   private errorMessage(error: unknown): string {

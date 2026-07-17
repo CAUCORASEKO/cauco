@@ -14,9 +14,16 @@ def test_memory_lists_only_markdown(client: TestClient, brain_dir: Path) -> None
 
     response = client.get("/api/memory/files")
     assert response.status_code == 200
-    assert response.json() == {
-        "files": [{"path": "projects/alpha.md", "name": "alpha.md", "size": 8}],
-        "count": 1,
+    payload = response.json()
+    assert payload["count"] == 1
+    memory_file = payload["files"][0]
+    modified_at = memory_file.pop("modified_at")
+    assert isinstance(modified_at, str)
+    assert memory_file == {
+        "relative_path": "projects/alpha.md",
+        "name": "alpha.md",
+        "size": 8,
+        "title": "Alpha",
     }
 
 

@@ -43,14 +43,3 @@ class SystemStatusResponse(StrictResponse):
     agents: AgentStatus
     tools: ToolStatus
     scheduler: SchedulerStatus
-
-
-class MemoryFile(StrictResponse):
-    path: str
-    name: str
-    size: int = Field(ge=0)
-
-
-class MemoryFilesResponse(StrictResponse):
-    files: list[MemoryFile]
-    count: int = Field(ge=0)

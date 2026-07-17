@@ -30,6 +30,8 @@ export interface ConnectionResult {
   aiStatus?: AIStatus;
   models?: AIModel[];
   aiError?: string;
+  memoryFiles?: MemoryFileMetadata[];
+  memoryError?: string;
 }
 
 export interface AIStatus {
@@ -52,7 +54,28 @@ export interface AIChatResponse {
   provider: "ollama";
   model: string;
   response: string;
-  usedMemory: false;
+  usedMemory: boolean;
+  memorySources: string[];
   usedTools: string[];
   usedAgents: string[];
+}
+
+export interface MemoryFileMetadata {
+  relativePath: string;
+  name: string;
+  size: number;
+  modifiedAt: string | null;
+  title: string;
+}
+
+export interface MemoryFileContent extends MemoryFileMetadata {
+  content: string;
+}
+
+export interface MemorySearchResult {
+  relativePath: string;
+  title: string;
+  score: number;
+  matchedTerms: string[];
+  excerpt: string;
 }

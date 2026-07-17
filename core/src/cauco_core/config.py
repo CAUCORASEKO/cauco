@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8765, ge=1, le=65535)
     brain_dir: Path = Field(default_factory=default_brain_directory)
+    memory_max_file_size: int = Field(default=524_288, ge=1024, le=10_485_760)
+    memory_context_max_files: int = Field(default=3, ge=1, le=10)
+    memory_context_max_characters: int = Field(default=6000, ge=500, le=50_000)
+    memory_write_proposal_ttl_seconds: int = Field(default=1800, ge=60, le=86_400)
     ai_provider: str = "ollama"
     ollama_base_url: str = "http://127.0.0.1:11434"
     default_model: str = "llama3.1:latest"

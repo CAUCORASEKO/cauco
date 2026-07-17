@@ -3,6 +3,7 @@ import { CAUCO_VIEW_TYPE } from "../constants";
 import type CaucoPlugin from "../main";
 import { CaucoCoreClient } from "../services/CaucoCoreClient";
 import type { AIModel, CaucoStatus, ConnectionResult, StatusSection } from "../types";
+import { CaucoMemoryPanel } from "./CaucoMemoryPanel";
 
 const SECTION_LABELS: Array<[keyof CaucoStatus, string]> = [
   ["runtime", "Runtime"],
@@ -71,6 +72,11 @@ export class CaucoDashboardView extends ItemView {
       this.renderCard(grid, label, result.status[key]);
     }
     this.renderChat(container, result);
+    new CaucoMemoryPanel(
+      new CaucoCoreClient(this.plugin.settings.coreUrl),
+      result.memoryFiles ?? [],
+      result.memoryError,
+    ).render(container);
   }
 
   private renderConnection(container: HTMLElement, result: ConnectionResult): void {
@@ -136,13 +142,17 @@ export class CaucoDashboardView extends ItemView {
     input.maxLength = 8000;
 
     const actions = section.createDiv({ cls: "cauco-chat-actions" });
+    const memoryLabel = actions.createEl("label", { cls: "cauco-memory-toggle" });
+    const useMemory = memoryLabel.createEl("input", { type: "checkbox" });
+    useMemory.checked = true;
+    memoryLabel.appendText("Use memory");
     const send = actions.createEl("button", { text: "Send", cls: "mod-cta" });
     send.disabled = !available;
     const responseArea = section.createDiv({ cls: "cauco-chat-response" });
     responseArea.setAttribute("aria-live", "polite");
     responseArea.createEl("p", {
       text: available
-        ? "Responses use only the submitted message and the version-controlled system prompt."
+        ? "Memory retrieval is read-only and can be disabled for each request."
         : "Start Ollama and install or select a model to enable chat.",
       cls: "cauco-empty",
     });
@@ -157,13 +167,14 @@ export class CaucoDashboardView extends ItemView {
     });
 
     send.addEventListener("click", () => {
-      void this.sendMessage(input, selector, send, responseArea);
+      void this.sendMessage(input, selector, useMemory, send, responseArea);
     });
   }
 
   private async sendMessage(
     input: HTMLTextAreaElement,
     selector: HTMLSelectElement,
+    useMemory: HTMLInputElement,
     button: HTMLButtonElement,
     responseArea: HTMLElement,
   ): Promise<void> {
@@ -175,6 +186,7 @@ export class CaucoDashboardView extends ItemView {
     }
     input.disabled = true;
     selector.disabled = true;
+    useMemory.disabled = true;
     button.disabled = true;
     button.setText("Sending…");
     responseArea.empty();
@@ -183,13 +195,25 @@ export class CaucoDashboardView extends ItemView {
       const response = await new CaucoCoreClient(this.plugin.settings.coreUrl).chat(
         message,
         selector.value || undefined,
+        useMemory.checked,
       );
       responseArea.empty();
       responseArea.createEl("p", { text: response.response });
       responseArea.createEl("small", {
-        text: `${response.provider} · ${response.model} · no memory, tools, or agents used`,
+        text: `${response.provider} · ${response.model} · no tools or agents used`,
         cls: "cauco-response-meta",
       });
+      if (response.usedMemory) {
+        const sources = responseArea.createDiv({ cls: "cauco-memory-sources" });
+        sources.createEl("strong", { text: "Memory sources" });
+        const list = sources.createEl("ul");
+        for (const source of response.memorySources) list.createEl("li", { text: source });
+      } else {
+        responseArea.createEl("small", {
+          text: "No memory was used for this response.",
+          cls: "cauco-response-meta",
+        });
+      }
     } catch (error) {
       responseArea.empty();
       this.renderError(
@@ -199,6 +223,7 @@ export class CaucoDashboardView extends ItemView {
     } finally {
       input.disabled = false;
       selector.disabled = false;
+      useMemory.disabled = false;
       button.disabled = false;
       button.setText("Send");
     }

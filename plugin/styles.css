@@ -104,8 +104,25 @@
 }
 
 .cauco-chat-actions {
-  justify-content: flex-end;
+  justify-content: space-between;
   margin-top: var(--size-4-3);
+}
+
+.cauco-memory-toggle {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--size-4-2);
+}
+
+.cauco-memory-sources {
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+  margin-top: var(--size-4-3);
+  padding: var(--size-4-3);
+}
+
+.cauco-memory-sources ul {
+  margin-bottom: 0;
 }
 
 .cauco-chat-response {
@@ -121,6 +138,88 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);
   padding: var(--size-4-4);
+}
+
+.cauco-memory {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  margin-top: var(--size-4-5);
+  padding: var(--size-4-5);
+}
+
+.cauco-panel-header,
+.cauco-memory-controls {
+  align-items: center;
+  display: flex;
+  gap: var(--size-4-3);
+}
+
+.cauco-panel-header {
+  justify-content: space-between;
+}
+
+.cauco-panel-header h2 {
+  margin: 0 auto 0 0;
+}
+
+.cauco-panel-header span {
+  color: var(--text-muted);
+}
+
+.cauco-memory-controls {
+  margin: var(--size-4-4) 0;
+}
+
+.cauco-memory-controls input {
+  flex: 1;
+}
+
+.cauco-memory-content {
+  display: grid;
+  gap: var(--size-4-4);
+  grid-template-columns: minmax(180px, 0.8fr) minmax(240px, 1.5fr);
+}
+
+.cauco-memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  max-height: 24rem;
+  overflow: auto;
+}
+
+.cauco-memory-item {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  text-align: left;
+  white-space: normal;
+}
+
+.cauco-memory-item span,
+.cauco-memory-item small {
+  color: var(--text-muted);
+}
+
+.cauco-memory-preview {
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+  min-height: 10rem;
+  overflow: auto;
+  padding: var(--size-4-4);
+}
+
+.cauco-memory-preview h3 {
+  margin-top: 0;
+}
+
+.cauco-memory-preview pre {
+  font-family: var(--font-monospace);
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
 }
 
 .cauco-card h2 {
@@ -167,5 +266,14 @@
   .cauco-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .cauco-memory-content {
+    grid-template-columns: 1fr;
+  }
+
+  .cauco-panel-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 }
