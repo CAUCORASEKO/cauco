@@ -1,15 +1,15 @@
 import re
 from abc import abstractmethod
 
-from cauco_agents.base import BaseAgent
-from cauco_agents.models import AgentMatch, AgentRequest, AgentResult
+from cauco_agents.base import PlanningAgent
+from cauco_agents.models import AgentContext, AgentMatch, AgentRequest, AgentResult
 
 
 def normalized_signal_text(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
 
 
-class DeterministicSignalAgent(BaseAgent):
+class DeterministicSignalAgent(PlanningAgent):
     signals: tuple[str, ...]
 
     def can_handle(self, request: AgentRequest) -> AgentMatch:
@@ -75,3 +75,20 @@ class DeterministicSignalAgent(BaseAgent):
 
     @abstractmethod
     def requires_confirmation(self) -> bool: ...
+
+    @staticmethod
+    def source_ids(context: AgentContext, *kinds: str) -> tuple[str, ...]:
+        return tuple(
+            reference.memory_id
+            for reference in context.memory_references
+            if not kinds or reference.kind in kinds
+        )
+
+    @staticmethod
+    def source_names(context: AgentContext, *kinds: str) -> str:
+        names = tuple(
+            reference.name
+            for reference in context.memory_references
+            if not kinds or reference.kind in kinds
+        )
+        return ", ".join(names) if names else "no registered memory source"

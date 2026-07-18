@@ -6,6 +6,8 @@ from cauco_agents import AgentRouter, create_default_registry
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from cauco_core.agents.context import AgentContextResolver
+from cauco_core.agents.planning import AgentPlanningService
 from cauco_core.ai.base import AIProvider
 from cauco_core.ai.ollama import OllamaProvider
 from cauco_core.ai.service import AIService
@@ -52,6 +54,12 @@ def create_app(
     # still exposes the domain error after startup.
     with suppress(MemoryDirectoryError):
         app.state.memory_engine.refresh()
+    app.state.agent_context_resolver = AgentContextResolver(app.state.memory_engine)
+    app.state.agent_planning_service = AgentPlanningService(
+        app.state.agent_router,
+        app.state.agent_registry,
+        app.state.agent_context_resolver,
+    )
     app.state.context_builder = ContextBuilder(app.state.memory_engine)
     app.state.memory_write_proposal_store = MemoryWriteProposalStore(
         ttl=timedelta(seconds=app.state.settings.memory_write_proposal_ttl_seconds)

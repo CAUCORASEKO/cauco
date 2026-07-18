@@ -17,6 +17,8 @@ Cauco is a local-first AI work orchestration project built around Obsidian and p
 - A portable Markdown brain template suitable for an Obsidian vault
 - A deterministic agent framework with inspectable Project, Git, and Research routing
 - Proposal-only agents that never execute tools, Git commands, or external research
+- Bounded, registry-backed agent context with visible memory provenance
+- Deterministic Project, Git, and Research planning templates grounded in safe memory excerpts
 - A permission-aware tool registry with three read-only tools
 - Scheduler models for inactive one-time and recurring job definitions; no scheduler process runs yet
 - Automated Python tests and Ruff configuration, plus plugin type-check and production-build scripts

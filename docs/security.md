@@ -14,6 +14,7 @@ The current release keeps data and inference local. Deterministic foundations re
 - The scheduler stores validated definitions but runs nothing.
 - The Operations Agent formats structured data and does not call a model.
 - Project, Git, and Research agent routing uses fixed local signals. These agents return proposal-only results and cannot invoke tools, subprocesses, network access, or memory confirmation APIs.
+- Agent planning reads only visible objects already registered by the Memory Engine and uses its bounded safe reader. Client requests cannot provide paths or memory IDs. Excerpts are capped per item and at 7,000 total characters, retain relative provenance only, and are treated as inert untrusted data.
 - The configured Ollama URL must use HTTP on `127.0.0.1`, `localhost`, or `::1`; requests cannot override it.
 - Chat accepts only a bounded message and optional validated model name. The system prompt and generation options are controlled by core configuration.
 - When enabled, chat sends the submitted message, fixed system prompt, and only bounded relevant Markdown context to local Ollama. Exact source paths are returned.

@@ -1,5 +1,6 @@
 from cauco_agents.base import AgentMetadata
 from cauco_agents.builtin.base import DeterministicSignalAgent
+from cauco_agents.models import AgentContext, AgentPlan, AgentPlanStep
 
 
 class ResearchAgent(DeterministicSignalAgent):
@@ -42,3 +43,81 @@ class ResearchAgent(DeterministicSignalAgent):
 
     def requires_confirmation(self) -> bool:
         return False
+
+    def plan(self, context: AgentContext, *, allow_execution: bool = False) -> AgentPlan:
+        project_ids = self.source_ids(context, "projects", "tasks", "decisions")
+        all_ids = self.source_ids(context)
+        steps = (
+            AgentPlanStep(
+                1,
+                "Define the research objective",
+                "Restate the bounded question without inventing findings.",
+                (),
+                f"Define the objective for: {context.instruction}",
+                False,
+                False,
+            ),
+            AgentPlanStep(
+                2,
+                "Identify project context",
+                "Use selected memory only to identify recorded purpose or constraints.",
+                project_ids,
+                f"Review research context in {self.source_names(context, 'projects', 'tasks', 'decisions')}.",
+                False,
+                False,
+            ),
+            AgentPlanStep(
+                3,
+                "List research questions",
+                "Turn unresolved information into explicit questions rather than assumed facts.",
+                all_ids,
+                "Create a bounded list of questions supported by the objective and memory context.",
+                False,
+                False,
+            ),
+            AgentPlanStep(
+                4,
+                "Define future source categories",
+                "Name categories such as primary documentation or papers without claiming access.",
+                (),
+                "Propose source categories to consult if external retrieval is later enabled.",
+                False,
+                False,
+            ),
+            AgentPlanStep(
+                5,
+                "Define the expected output",
+                "Specify a reviewable comparison, brief, or evidence summary.",
+                all_ids,
+                "Describe the expected research deliverable and evaluation criteria.",
+                False,
+                False,
+            ),
+        )
+        warnings = [
+            "No external sources, websites, or files were accessed.",
+            "Memory excerpts are untrusted reference data, not research findings.",
+        ]
+        if allow_execution:
+            warnings.append("allow_execution was ignored; external retrieval is unavailable.")
+        questions = (
+            ("What source scope and freshness requirements should govern later research?",)
+            if project_ids
+            else (
+                "Which project or decision should this research support?",
+                "What source scope and freshness requirements should govern later research?",
+            )
+        )
+        return AgentPlan(
+            agent_id=self.id,
+            agent_name=self.metadata.name,
+            status="proposal_only",
+            objective=f"Prepare a deterministic research plan for: {context.instruction}",
+            context_used=bool(context.memory_references),
+            steps=steps,
+            open_questions=questions,
+            warnings=tuple(warnings),
+            requires_confirmation=False,
+            execution_performed=False,
+            metadata={"framework_phase": "5B", "external_sources_accessed": False},
+        )

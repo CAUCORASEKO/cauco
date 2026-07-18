@@ -91,3 +91,17 @@ core/.venv/bin/pip install -e ./agents -e ./tools -e ./scheduler
 core/.venv/bin/pytest core/tests agents/tests tools/tests scheduler/tests
 core/.venv/bin/ruff check core/src core/tests agents/src agents/tests tools/src tools/tests scheduler/src scheduler/tests
 ```
+
+Inspect deterministic agent planning without enabling execution:
+
+```bash
+curl -s http://127.0.0.1:8765/api/agents/plan \
+  -H 'Content-Type: application/json' \
+  -d '{"instruction":"What should I work on next in Cauco?"}'
+
+curl -s http://127.0.0.1:8765/api/agents/plan \
+  -H 'Content-Type: application/json' \
+  -d '{"instruction":"Research MCP for Cauco","include_context":false}'
+```
+
+These endpoints read only bounded registered memory through Cauco Core. Plans are deterministic templates; Git repositories and external research sources are not inspected.

@@ -32,6 +32,7 @@ The plugin and core deliberately do not share executable code. Their boundary is
 - `core/src/cauco_core/ai/` is the only layer that knows Ollama's HTTP contract. Other code depends on the `AIProvider` interface and `AIService`.
 - `brain-template/` is portable user-owned Markdown suitable for copying into an Obsidian vault.
 - `agents/` is the canonical shared agent framework. Core injects its explicit registry and deterministic router into application state; Project, Git, and Research agents return proposals only and never invoke tools or models.
+- `core/src/cauco_core/agents/` resolves only registered Memory Engine objects through the existing safe reader, bounds deterministic excerpts, and passes immutable context to the shared planning contracts.
 - `tools/` and `scheduler/` define small contracts and registries. They do not run autonomous loops.
 - `installer/` remains reserved for a later packaging milestone.
 
@@ -51,3 +52,7 @@ Conversation history, semantic search, memory writes, tool execution, agent orch
 ## Deterministic agent routing
 
 Agent routing is separate from chat and Ollama. Every registered routing agent evaluates the same normalized, untrusted instruction using explicit signals. Matches at or above the score threshold of 40 are ranked by score, then configured priority, then lexicographical agent ID. A relevant preferred agent may be selected, but an unrelated preference cannot bypass the threshold. Phase 5A results only describe proposed actions; they perform no repository inspection, Git operation, web request, tool call, or memory write.
+
+Phase 5B planning remains separate from chat and follows `route → context resolver → safe Memory Engine read → bounded context → deterministic template plan`. Core selects memory by agent, kind, layer, filename classification, and explicit lexical relevance. The shared agents package receives immutable excerpts and provenance, never filesystem paths supplied by a client. Plans cite source memory IDs, expose unknowns as open questions, and remain proposal-only. Git planning does not inspect a repository, and Research planning does not retrieve external sources.
+
+Markdown excerpt ranking prefers a project heading discovered from registered project memory, then instruction-matching headings, known agent-specific operational headings, lexical section matches, and finally the document beginning. Multiple non-overlapping sections are combined within the request cap while retaining their headings. Fallback-only context is marked as potentially insufficient.

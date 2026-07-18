@@ -3,7 +3,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
-from cauco_agents.models import AgentMatch, AgentRequest, AgentResult
+from cauco_agents.models import (
+    AgentContext,
+    AgentMatch,
+    AgentPlan,
+    AgentRequest,
+    AgentResult,
+)
 
 InputT = TypeVar("InputT")
 OutputT = TypeVar("OutputT")
@@ -56,3 +62,11 @@ class BaseAgent(Agent[AgentRequest, AgentResult], ABC):
 
     def run(self, input_data: AgentRequest) -> AgentResult:
         return self.execute(input_data)
+
+
+class PlanningAgent(BaseAgent, ABC):
+    """Routing agent that can construct a deterministic plan from resolved context."""
+
+    @abstractmethod
+    def plan(self, context: AgentContext, *, allow_execution: bool = False) -> AgentPlan:
+        """Build a proposal-only plan from bounded, untrusted memory context."""

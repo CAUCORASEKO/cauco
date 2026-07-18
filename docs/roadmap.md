@@ -52,6 +52,14 @@ Implemented in Phase 5A:
 - Dedicated agent listing, detail, and routing inspection APIs
 - No model-based routing, tools, or real execution
 
+Implemented in Phase 5B:
+
+- Registry-backed, agent-specific memory selection through the existing safe reader
+- Bounded deterministic Markdown excerpts with visible provenance and limitations
+- Immutable agent context, plan, and plan-step contracts
+- Template-based Project, Git, and Research plans with explicit unknowns
+- Dedicated planning APIs with context opt-out and no execution
+
 Remaining:
 
 - Persistent conversation history and streaming
