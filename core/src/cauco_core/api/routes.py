@@ -15,7 +15,10 @@ def health() -> HealthResponse:
 @router.get("/api/status", response_model=SystemStatusResponse)
 def system_status(request: Request) -> SystemStatusResponse:
     try:
-        return StatusService(request.app.state.memory_service).get_status()
+        return StatusService(
+            request.app.state.memory_service,
+            registered_agents=len(request.app.state.agent_registry),
+        ).get_status()
     except MemoryDirectoryError as error:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(error)

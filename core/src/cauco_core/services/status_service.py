@@ -10,15 +10,16 @@ from cauco_core.services.memory_service import MemoryService
 
 
 class StatusService:
-    def __init__(self, memory_service: MemoryService) -> None:
+    def __init__(self, memory_service: MemoryService, registered_agents: int = 1) -> None:
         self.memory_service = memory_service
+        self.registered_agents = registered_agents
 
     def get_status(self) -> SystemStatusResponse:
         file_count = len(self.memory_service.list_markdown_files())
         return SystemStatusResponse(
             runtime=RuntimeStatus(),
             memory=MemoryStatus(files=file_count),
-            agents=AgentStatus(),
+            agents=AgentStatus(registered=self.registered_agents),
             tools=ToolStatus(),
             scheduler=SchedulerStatus(),
         )

@@ -10,7 +10,7 @@ def test_status_is_deterministic(client: TestClient, brain_dir: Path) -> None:
     assert response.json() == {
         "runtime": {"status": "online", "version": "0.1.0"},
         "memory": {"status": "ready", "files": 1},
-        "agents": {"status": "idle", "registered": 1, "active": 0},
+        "agents": {"status": "idle", "registered": 3, "active": 0},
         "tools": {"status": "ready", "registered": 3},
         "scheduler": {"status": "idle", "jobs": 0},
     }

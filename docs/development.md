@@ -25,7 +25,7 @@ For development, run `npm run dev` and copy or link `manifest.json`, `main.js`, 
 ```bash
 cd core
 python3.11 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
+.venv/bin/pip install -e ../agents -e '.[dev]'
 source .venv/bin/activate
 uvicorn cauco_core.main:app --host 127.0.0.1 --port 8765 --reload
 ```

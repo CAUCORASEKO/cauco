@@ -13,6 +13,7 @@ The current release keeps data and inference local. Deterministic foundations re
 - The Git tool is a placeholder and does not invoke Git or a shell.
 - The scheduler stores validated definitions but runs nothing.
 - The Operations Agent formats structured data and does not call a model.
+- Project, Git, and Research agent routing uses fixed local signals. These agents return proposal-only results and cannot invoke tools, subprocesses, network access, or memory confirmation APIs.
 - The configured Ollama URL must use HTTP on `127.0.0.1`, `localhost`, or `::1`; requests cannot override it.
 - Chat accepts only a bounded message and optional validated model name. The system prompt and generation options are controlled by core configuration.
 - When enabled, chat sends the submitted message, fixed system prompt, and only bounded relevant Markdown context to local Ollama. Exact source paths are returned.

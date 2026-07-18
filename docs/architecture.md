@@ -16,7 +16,7 @@ Cauco Core (FastAPI) ------> configured Markdown brain
 OllamaProvider ------------> local Ollama API
 
 Python domain foundations (no runtime loop)
-  |-- agent contract + Operations Agent registry
+  |-- deterministic agent contract, registry, router, and proposal-only built-ins
   |-- permission-aware tool registry
   `-- scheduler job-definition registry
 ```
@@ -31,7 +31,8 @@ The plugin and core deliberately do not share executable code. Their boundary is
 - `core/src/cauco_core/memory_writing/` creates process-local proposals and applies only explicitly confirmed, allowlisted insertions beneath existing headings using a rotating backup and atomic replacement.
 - `core/src/cauco_core/ai/` is the only layer that knows Ollama's HTTP contract. Other code depends on the `AIProvider` interface and `AIService`.
 - `brain-template/` is portable user-owned Markdown suitable for copying into an Obsidian vault.
-- `agents/`, `tools/`, and `scheduler/` define small contracts and registries. They do not run autonomous loops.
+- `agents/` is the canonical shared agent framework. Core injects its explicit registry and deterministic router into application state; Project, Git, and Research agents return proposals only and never invoke tools or models.
+- `tools/` and `scheduler/` define small contracts and registries. They do not run autonomous loops.
 - `installer/` remains reserved for a later packaging milestone.
 
 The source uses no architecture-specific binaries, so Apple Silicon and Intel are supported at source level.
@@ -46,3 +47,7 @@ The source uses no architecture-specific binaries, so Apple Silicon and Intel ar
 6. The API reports the exact memory source paths used and confirms that no tools or agents ran.
 
 Conversation history, semantic search, memory writes, tool execution, agent orchestration, and streaming are not part of the chat flow. Memory writing is a separate proposal-and-confirmation API and is never initiated by the model.
+
+## Deterministic agent routing
+
+Agent routing is separate from chat and Ollama. Every registered routing agent evaluates the same normalized, untrusted instruction using explicit signals. Matches at or above the score threshold of 40 are ranked by score, then configured priority, then lexicographical agent ID. A relevant preferred agent may be selected, but an unrelated preference cannot bypass the threshold. Phase 5A results only describe proposed actions; they perform no repository inspection, Git operation, web request, tool call, or memory write.

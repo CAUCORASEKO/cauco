@@ -1,4 +1,5 @@
-from cauco_agents.base import Agent
+from cauco_agents.base import Agent, AgentMetadata
+from cauco_agents.builtin import GitAgent, ProjectAgent, ResearchAgent
 
 
 class AgentRegistry:
@@ -17,8 +18,19 @@ class AgentRegistry:
         except KeyError as error:
             raise KeyError(f"Unknown agent '{agent_id}'.") from error
 
-    def list_metadata(self) -> tuple:
-        return tuple(agent.metadata for agent in self._agents.values())
+    def list_agents(self) -> tuple[Agent[object, object], ...]:
+        return tuple(self._agents[agent_id] for agent_id in sorted(self._agents))
+
+    def list_metadata(self) -> tuple[AgentMetadata, ...]:
+        return tuple(agent.metadata for agent in self.list_agents())
 
     def __len__(self) -> int:
         return len(self._agents)
+
+
+def create_default_registry() -> AgentRegistry:
+    registry = AgentRegistry()
+    registry.register(ProjectAgent())
+    registry.register(GitAgent())
+    registry.register(ResearchAgent())
+    return registry

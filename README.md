@@ -15,7 +15,8 @@ Cauco is a local-first AI work orchestration project built around Obsidian and p
 - An Obsidian memory browser with read-only search/previews and reviewable memory write proposals
 - Explicit **Apply Change** confirmation for memory additions; **Cancel** never changes memory
 - A portable Markdown brain template suitable for an Obsidian vault
-- A deterministic Operations Agent and duplicate-safe agent registry
+- A deterministic agent framework with inspectable Project, Git, and Research routing
+- Proposal-only agents that never execute tools, Git commands, or external research
 - A permission-aware tool registry with three read-only tools
 - Scheduler models for inactive one-time and recurring job definitions; no scheduler process runs yet
 - Automated Python tests and Ruff configuration, plus plugin type-check and production-build scripts
@@ -67,7 +68,7 @@ Run the local core:
 ```bash
 cd core
 python3.11 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
+.venv/bin/pip install -e ../agents -e '.[dev]'
 .venv/bin/cauco-core
 ```
 

@@ -24,7 +24,7 @@ Returns deterministic observable state. Counts reflect the current local configu
 {
   "runtime": { "status": "online", "version": "0.1.0" },
   "memory": { "status": "ready", "files": 9 },
-  "agents": { "status": "idle", "registered": 1, "active": 0 },
+  "agents": { "status": "idle", "registered": 3, "active": 0 },
   "tools": { "status": "ready", "registered": 3 },
   "scheduler": { "status": "idle", "jobs": 0 }
 }
@@ -97,6 +97,14 @@ the client. Duplicate content, missing sections, expired proposals, and repeated
 confirmation fail without another write.
 
 `GET /api/memory/write-operations` lists the four supported operations and targets.
+
+## Deterministic agents
+
+`GET /api/agents` lists immutable metadata for the registered Project, Git, and Research agents. `GET /api/agents/{agent_id}` returns one agent or `404` for an unknown ID.
+
+`POST /api/agents/route` accepts a bounded instruction plus optional intent, scalar context, preferred agent ID, and `allow_execution`. Routing uses fixed local signals and a threshold of 40. Matches are ranked by highest score, highest configured priority, then lexicographical agent ID. A preferred agent is used only when its own match reaches the threshold.
+
+The response includes the normalized request, all match reasoning, selected agent, and a proposal-only result. `allow_execution: true` is retained for inspection but ignored with a warning. `execution_performed` is always `false`. Phase 5A never invokes Git, a shell, tools, memory writes, Ollama, or external research. Empty normalized instructions return `400`, unknown preferred agents return `404`, and structurally invalid bodies return `422`.
 
 ## `GET /api/ai/status`
 

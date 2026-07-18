@@ -42,7 +42,17 @@ Remaining:
 - Observable execution records and permission prompts
 - Memory indexing and retrieval without changing Markdown as source of truth
 
-## Phase 5 — Extended model integration
+## Phase 5 — Extended agent and model integration (in progress)
+
+Implemented in Phase 5A:
+
+- Shared typed agent contract and duplicate-safe deterministic registry
+- Score/priority/agent-ID routing with a minimum threshold of 40
+- Proposal-only Project, Git, and Research agents
+- Dedicated agent listing, detail, and routing inspection APIs
+- No model-based routing, tools, or real execution
+
+Remaining:
 
 - Persistent conversation history and streaming
 - Optional semantic retrieval only after explicit design and evaluation
