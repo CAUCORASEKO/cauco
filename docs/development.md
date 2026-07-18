@@ -48,7 +48,7 @@ uvicorn cauco_core.main:app \
   --reload
 ```
 
-For an Obsidian development vault, either point at the vault root or a dedicated directory such as `Cauco Brain/`. Hidden directories are ignored, so `.obsidian/` is never scanned. Cauco reads only visible Markdown files under the configured root and does not write them.
+For an Obsidian development vault, either point at the vault root or a dedicated directory such as `Cauco Brain/`. Hidden directories are ignored, so `.obsidian/` is never scanned. Cauco reads only visible Markdown files under the configured root. The Memory panel can add tasks, decisions, relationship notes, and project notes only through a server-generated proposal followed by **Apply Change**. **Cancel** does not modify memory, and pending proposals are lost when Cauco Core restarts.
 
 ## Local Ollama
 

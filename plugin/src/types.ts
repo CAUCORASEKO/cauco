@@ -79,3 +79,47 @@ export interface MemorySearchResult {
   matchedTerms: string[];
   excerpt: string;
 }
+
+export type MemoryWriteOperation =
+  | "add_task"
+  | "add_decision"
+  | "add_relationship_note"
+  | "add_project_note";
+
+export type MemoryWriteProposalState = "pending" | "applied" | "expired";
+
+export interface MemoryWriteProposal {
+  proposalId: string;
+  operation: MemoryWriteOperation;
+  targetFile: string;
+  targetKind: string;
+  targetLayer: string;
+  targetSection: string;
+  normalizedContent: string;
+  markdownPreview: string;
+  originalInstruction: string;
+  reasoning: string[];
+  warnings: string[];
+  requiresConfirmation: boolean;
+  createdAt: string;
+}
+
+export interface MemoryWriteProposalRecord {
+  proposal: MemoryWriteProposal;
+  state: MemoryWriteProposalState;
+  createdAt: string;
+  expiresAt: string;
+  appliedAt: string | null;
+}
+
+export interface MemoryWriteConfirmationResult {
+  proposalId: string;
+  state: MemoryWriteProposalState;
+  operation: MemoryWriteOperation;
+  targetFile: string;
+  targetSection: string;
+  appliedMarkdown: string;
+  memoryRefreshed: boolean;
+  appliedAt: string;
+  warnings: string[];
+}

@@ -2,7 +2,7 @@
 
 > A coding agent edits files. Cauco coordinates work.
 
-Cauco is a local-first AI work orchestration project built around Obsidian and portable Markdown memory. The current release adds controlled, read-only Markdown retrieval to provider-independent local chat through Ollama.
+Cauco is a local-first AI work orchestration project built around Obsidian and portable Markdown memory. The current release includes controlled Markdown retrieval and explicitly confirmed, allowlisted memory additions.
 
 ## Implemented now
 
@@ -12,7 +12,8 @@ Cauco is a local-first AI work orchestration project built around Obsidian and p
 - Obsidian model selection and a minimal local chat interface
 - Recursive safe Markdown discovery, controlled UTF-8 reads, and deterministic text search
 - Bounded memory-aware chat with visible source file names and a per-request opt-out
-- A read-only Obsidian memory browser with search and safe text previews
+- An Obsidian memory browser with read-only search/previews and reviewable memory write proposals
+- Explicit **Apply Change** confirmation for memory additions; **Cancel** never changes memory
 - A portable Markdown brain template suitable for an Obsidian vault
 - A deterministic Operations Agent and duplicate-safe agent registry
 - A permission-aware tool registry with three read-only tools
@@ -22,8 +23,8 @@ Cauco is a local-first AI work orchestration project built around Obsidian and p
 ## Planned, not implemented
 
 - Persistent conversation history and streaming responses
-- Memory writing, automatic summarization, embeddings, vector storage, or semantic search
-- Long-term memory extraction or agent-driven memory updates
+- Automatic summarization, embeddings, vector storage, or semantic search
+- Automatic long-term memory extraction or agent-driven memory updates
 - Tool or agent orchestration through the model
 - Speech-to-text, text-to-speech, continuous audio, or “Hola Cauco” wake-word detection
 - A background service or actual scheduled job execution
@@ -37,7 +38,7 @@ Obsidian plugin (TypeScript)
         |
         | local HTTP contract
         v
-Cauco Core (Python/FastAPI) ---> Markdown brain directory (read-only)
+Cauco Core (Python/FastAPI) ---> Markdown brain directory (bounded access)
         |
         | provider abstraction
         v
@@ -46,7 +47,7 @@ Local Ollama API
 Independent Python contracts: agents | tools | scheduler
 ```
 
-The plugin and core remain separate and communicate through the documented HTTP contract. The core is the only authority for memory access. Relevant Markdown context is selected with deterministic text matching, size-bounded, labelled by source, and passed as untrusted reference data. Chat never writes memory or executes tools or agents.
+The plugin and core remain separate and communicate through the documented HTTP contract. The core is the only authority for memory access. Relevant Markdown context is selected with deterministic text matching, size-bounded, labelled by source, and passed as untrusted reference data. Chat never writes memory or executes tools or agents. Separately, the Memory panel can propose additions to tasks, decisions, relationship notes, and project notes. Nothing is written until **Apply Change** is pressed; **Cancel** only clears the local review. Proposals are process-local and are lost when Cauco Core restarts.
 
 See [architecture](docs/architecture.md), [API contract](docs/api-contract.md), [security boundaries](docs/security.md), [development setup](docs/development.md), and the [roadmap](docs/roadmap.md).
 

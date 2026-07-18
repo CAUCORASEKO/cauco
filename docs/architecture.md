@@ -25,7 +25,7 @@ The plugin and core deliberately do not share executable code. Their boundary is
 
 ## Component responsibilities
 
-- `plugin/` renders observable state, stores the core URL and selected model, provides non-streaming chat, and browses memory only through the core API.
+- `plugin/` renders observable state, stores the core URL and selected model, provides non-streaming chat, browses memory through the core API, and exposes the explicit proposal review/confirmation flow for allowlisted memory additions.
 - `core/` owns HTTP transport, configuration, safe memory access, status responses, and AI request validation.
 - `core/src/cauco_core/memory/` discovers visible Markdown, enforces root and size boundaries, performs deterministic lexical search, and builds bounded source-labelled context independently from the provider.
 - `core/src/cauco_core/memory_writing/` creates process-local proposals and applies only explicitly confirmed, allowlisted insertions beneath existing headings using a rotating backup and atomic replacement.

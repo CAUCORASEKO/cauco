@@ -27,7 +27,15 @@
 - Default-on memory-aware chat with a per-request opt-out and truthful sources
 - Read-only Obsidian memory count, refresh, search, list, and preview UI
 
-## Phase 4 — Controlled local orchestration
+## Phase 4 — Controlled local orchestration (in progress)
+
+Implemented:
+
+- Deterministic, process-local proposals for allowlisted memory additions
+- Explicit confirmation API with atomic application, backup, and memory refresh
+- Obsidian proposal review, Apply Change, Cancel, result, and recovery UI
+
+Remaining:
 
 - Explicit runtime composition of the existing registries
 - User-approved read and narrowly scoped write tools
@@ -55,4 +63,4 @@
 - Durable scheduling execution and recovery
 - Animated brain/status visualization grounded in real observable data
 
-Items in phases 4–7 are plans, not current capabilities. Memory writing, embeddings, a vector database, semantic search, and agent-driven memory updates are also not implemented.
+Unmarked items in phases 4–7 are plans, not current capabilities. Embeddings, a vector database, semantic search, and agent-driven memory updates are not implemented.

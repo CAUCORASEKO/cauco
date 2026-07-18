@@ -9,6 +9,10 @@ import type {
   MemoryFileContent,
   MemoryFileMetadata,
   MemorySearchResult,
+  MemoryWriteConfirmationResult,
+  MemoryWriteOperation,
+  MemoryWriteProposal,
+  MemoryWriteProposalRecord,
   StatusSection,
 } from "../types";
 
@@ -204,6 +208,130 @@ function parseMemorySearch(value: unknown): MemorySearchResult[] {
   return results;
 }
 
+const MEMORY_WRITE_OPERATIONS: MemoryWriteOperation[] = [
+  "add_task",
+  "add_decision",
+  "add_relationship_note",
+  "add_project_note",
+];
+
+function isMemoryWriteOperation(value: unknown): value is MemoryWriteOperation {
+  return MEMORY_WRITE_OPERATIONS.some((operation) => operation === value);
+}
+
+function parseStringList(value: unknown, name: string): string[] {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new Error(`The core returned invalid ${name}.`);
+  }
+  return value;
+}
+
+function parseTimestamp(value: unknown, name: string): string {
+  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
+    throw new Error(`The core returned an invalid ${name}.`);
+  }
+  return value;
+}
+
+function parseTargetFile(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !value ||
+    value.startsWith("/") ||
+    value.startsWith("\\") ||
+    /^[A-Za-z]:/.test(value) ||
+    value.split(/[\\/]/).includes("..")
+  ) {
+    throw new Error("The core returned an unsafe memory target.");
+  }
+  return value;
+}
+
+function parseMemoryWriteProposal(value: unknown): MemoryWriteProposal {
+  if (
+    !isRecord(value) ||
+    typeof value.proposal_id !== "string" ||
+    !isMemoryWriteOperation(value.operation) ||
+    typeof value.target_kind !== "string" ||
+    typeof value.target_layer !== "string" ||
+    typeof value.target_section !== "string" ||
+    typeof value.normalized_content !== "string" ||
+    typeof value.markdown_preview !== "string" ||
+    typeof value.original_instruction !== "string" ||
+    value.requires_confirmation !== true
+  ) {
+    throw new Error("The core returned an invalid memory write proposal.");
+  }
+  return {
+    proposalId: value.proposal_id,
+    operation: value.operation,
+    targetFile: parseTargetFile(value.target_file),
+    targetKind: value.target_kind,
+    targetLayer: value.target_layer,
+    targetSection: value.target_section,
+    normalizedContent: value.normalized_content,
+    markdownPreview: value.markdown_preview,
+    originalInstruction: value.original_instruction,
+    reasoning: parseStringList(value.reasoning, "proposal reasoning"),
+    warnings: parseStringList(value.warnings, "proposal warnings"),
+    requiresConfirmation: true,
+    createdAt: parseTimestamp(value.created_at, "proposal timestamp"),
+  };
+}
+
+function parseProposalState(value: unknown): "pending" | "applied" | "expired" {
+  if (value !== "pending" && value !== "applied" && value !== "expired") {
+    throw new Error("The core returned an invalid proposal state.");
+  }
+  return value;
+}
+
+function parseMemoryWriteProposalRecord(value: unknown): MemoryWriteProposalRecord {
+  if (!isRecord(value)) throw new Error("The core returned an invalid proposal record.");
+  return {
+    proposal: parseMemoryWriteProposal(value.proposal),
+    state: parseProposalState(value.state),
+    createdAt: parseTimestamp(value.created_at, "record creation timestamp"),
+    expiresAt: parseTimestamp(value.expires_at, "proposal expiration timestamp"),
+    appliedAt:
+      value.applied_at === null ? null : parseTimestamp(value.applied_at, "application timestamp"),
+  };
+}
+
+function parseMemoryWriteConfirmation(value: unknown): MemoryWriteConfirmationResult {
+  if (
+    !isRecord(value) ||
+    typeof value.proposal_id !== "string" ||
+    !isMemoryWriteOperation(value.operation) ||
+    typeof value.target_section !== "string" ||
+    typeof value.applied_markdown !== "string" ||
+    typeof value.memory_refreshed !== "boolean"
+  ) {
+    throw new Error("The core returned an invalid memory write result.");
+  }
+  return {
+    proposalId: value.proposal_id,
+    state: parseProposalState(value.state),
+    operation: value.operation,
+    targetFile: parseTargetFile(value.target_file),
+    targetSection: value.target_section,
+    appliedMarkdown: value.applied_markdown,
+    memoryRefreshed: value.memory_refreshed,
+    appliedAt: parseTimestamp(value.applied_at, "application timestamp"),
+    warnings: parseStringList(value.warnings, "application warnings"),
+  };
+}
+
+export class CaucoCoreApiError extends Error {
+  constructor(
+    readonly status: number | undefined,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CaucoCoreApiError";
+  }
+}
+
 export class CaucoCoreClient {
   constructor(private readonly coreUrl: string) {}
 
@@ -283,6 +411,57 @@ export class CaucoCoreClient {
       url: `${this.coreUrl}/api/memory/search?q=${q}&limit=${limit}`,
     });
     return parseMemorySearch(response.json as unknown);
+  }
+
+  async createMemoryWriteProposal(request: {
+    instruction: string;
+  }): Promise<MemoryWriteProposal> {
+    const value = await this.memoryWriteRequest("/api/memory/write-proposals", "POST", request);
+    return parseMemoryWriteProposal(value);
+  }
+
+  async getMemoryWriteProposal(proposalId: string): Promise<MemoryWriteProposalRecord> {
+    const id = encodeURIComponent(proposalId);
+    const value = await this.memoryWriteRequest(`/api/memory/write-proposals/${id}`, "GET");
+    return parseMemoryWriteProposalRecord(value);
+  }
+
+  async confirmMemoryWriteProposal(
+    proposalId: string,
+    request: { confirm: true },
+  ): Promise<MemoryWriteConfirmationResult> {
+    const id = encodeURIComponent(proposalId);
+    const value = await this.memoryWriteRequest(
+      `/api/memory/write-proposals/${id}/confirm`,
+      "POST",
+      request,
+    );
+    return parseMemoryWriteConfirmation(value);
+  }
+
+  private async memoryWriteRequest(
+    path: string,
+    method: "GET" | "POST",
+    body?: { instruction: string } | { confirm: true },
+  ): Promise<unknown> {
+    try {
+      const response = await requestUrl({
+        url: `${this.coreUrl}${path}`,
+        method,
+        contentType: "application/json",
+        body: body ? JSON.stringify(body) : undefined,
+        throw: false,
+      });
+      if (response.status >= 400) {
+        const payload = response.json as unknown;
+        const detail = isRecord(payload) && typeof payload.detail === "string" ? payload.detail : "";
+        throw new CaucoCoreApiError(response.status, detail || "The memory request failed.");
+      }
+      return response.json as unknown;
+    } catch (error) {
+      if (error instanceof CaucoCoreApiError) throw error;
+      throw new CaucoCoreApiError(undefined, "Could not reach the local Cauco Core.");
+    }
   }
 
   private errorMessage(error: unknown): string {
