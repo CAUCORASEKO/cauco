@@ -14,9 +14,13 @@ SENSITIVE_NAMES = {
     "id_ecdsa",
     "id_ed25519",
     "known_hosts",
+    "authorized_keys",
+    "secrets",
+    "tokens",
+    "private_key",
 }
-SENSITIVE_PARTS = {".git", ".ssh", ".aws", ".gnupg", "secrets"}
-SENSITIVE_SUFFIXES = {".key", ".pem", ".p12", ".pfx", ".crt"}
+SENSITIVE_PARTS = {".git", ".ssh", ".aws", ".gnupg", "secrets", "tokens"}
+SENSITIVE_SUFFIXES = {".key", ".pem", ".p12", ".pfx", ".crt", ".cer", ".keystore"}
 
 
 class WorkspacePolicy:
@@ -55,6 +59,37 @@ class WorkspacePolicy:
         if expect == "directory" and not resolved.is_dir():
             raise ExecutionValidationError("The requested path is not a directory.")
         return normalized or "."
+
+    def validate_write_target(self, relative_path: str) -> str:
+        """Validate containment for a target that may not exist yet."""
+        if not isinstance(relative_path, str) or not relative_path.strip():
+            raise ExecutionValidationError("A workspace-relative path is required.")
+        raw = relative_path.strip()
+        path = Path(raw)
+        if path.is_absolute() or ".." in path.parts or re.match(r"^[A-Za-z]:", raw):
+            raise ExecutionForbiddenError("The requested path is outside the workspace.")
+        if self.is_sensitive(path):
+            raise ExecutionForbiddenError("Access to the requested path is forbidden.")
+        current = self.root
+        for part in path.parent.parts:
+            current = current / part
+            if current.is_symlink():
+                raise ExecutionForbiddenError("Symbolic-link parent paths are forbidden.")
+        try:
+            parent = (self.root / path.parent).resolve(strict=True)
+            parent.relative_to(self.root)
+        except (OSError, ValueError) as error:
+            raise ExecutionForbiddenError(
+                "The requested path is unavailable or outside the workspace."
+            ) from error
+        if not parent.is_dir():
+            raise ExecutionValidationError("The target parent must be an existing directory.")
+        target = parent / path.name
+        if target.is_symlink():
+            raise ExecutionForbiddenError("Symbolic-link targets are forbidden.")
+        if target.exists() and not target.is_file():
+            raise ExecutionValidationError("Existing targets must be regular files.")
+        return target.relative_to(self.root).as_posix()
 
     @staticmethod
     def is_sensitive(path: Path) -> bool:

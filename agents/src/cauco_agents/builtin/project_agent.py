@@ -1,3 +1,5 @@
+import re
+
 from cauco_agents.base import AgentMetadata
 from cauco_agents.builtin.base import DeterministicSignalAgent
 from cauco_agents.models import (
@@ -6,6 +8,8 @@ from cauco_agents.models import (
     AgentPlan,
     AgentPlanStep,
     AgentToolReference,
+    MemoryConfirmProposalInput,
+    MemoryCreateProposalInput,
 )
 
 
@@ -46,7 +50,9 @@ class ProjectAgent(DeterministicSignalAgent):
     def requires_confirmation(self) -> bool:
         return True
 
-    def plan(self, context: AgentContext, *, allow_execution: bool = False) -> AgentPlan:
+    def plan(
+        self, context: AgentContext, *, allow_execution: bool = False
+    ) -> AgentPlan:
         task_ids = self.source_ids(context, "tasks")
         project_ids = self.source_ids(context, "projects")
         all_ids = self.source_ids(context)
@@ -54,7 +60,8 @@ class ProjectAgent(DeterministicSignalAgent):
             (item for item in context.memory_references if item.kind == "tasks"), None
         )
         project_reference = next(
-            (item for item in context.memory_references if item.kind == "projects"), None
+            (item for item in context.memory_references if item.kind == "projects"),
+            None,
         )
         priority_heading = first_matching_heading(
             task_reference,
@@ -76,6 +83,18 @@ class ProjectAgent(DeterministicSignalAgent):
             f"Compare the recorded {project_heading} context with {sprint_heading}."
             if project_heading is not None and sprint_heading is not None
             else "List only workload facts supported by the selected memory excerpts."
+        )
+        proposal_id = memory_proposal_id(context.instruction)
+        proposal_type = memory_proposal_type(context.instruction)
+        mutation_reference = AgentToolReference(
+            "memory",
+            "confirm_proposal" if proposal_id else "create_proposal",
+            "Tasks.md",
+        )
+        mutation_input = (
+            MemoryConfirmProposalInput(proposal_id)
+            if proposal_id
+            else MemoryCreateProposalInput(proposal_type, context.instruction)
         )
         steps = (
             AgentPlanStep(
@@ -127,35 +146,54 @@ class ProjectAgent(DeterministicSignalAgent):
             ),
             AgentPlanStep(
                 order=5,
-                title="Prepare an optional task update",
+                title=(
+                    "Confirm a controlled memory proposal"
+                    if proposal_id
+                    else "Prepare an optional memory proposal"
+                ),
                 description=(
                     "If the review reveals a useful task update, prepare it through the separate "
                     "controlled memory-write proposal workflow."
                 ),
                 source_memory_ids=task_ids,
-                proposed_action="Propose, but do not apply, a controlled task-memory addition.",
-                requires_confirmation=False,
+                proposed_action=(
+                    "Apply only the exact existing proposal after mutation preview and confirmation."
+                    if proposal_id
+                    else "Create, but do not apply, a controlled memory proposal after mutation confirmation."
+                ),
+                requires_confirmation=True,
                 execution_available=False,
                 warnings=("No memory change was created or confirmed.",),
-                tool_reference=AgentToolReference("memory", "create_proposal", "Tasks.md"),
+                tool_reference=mutation_reference,
+                operation_input=mutation_input,
             ),
         )
         questions: list[str] = []
         if not project_ids:
             questions.append("Which registered project does this instruction concern?")
         if not task_ids:
-            questions.append("Which current tasks or priorities should guide the next action?")
+            questions.append(
+                "Which current tasks or priorities should guide the next action?"
+            )
         selected_text = " ".join(
             reference.excerpt.casefold() for reference in context.memory_references
         )
-        if not any(signal in selected_text for signal in ("status", "active", "in progress")):
+        if not any(
+            signal in selected_text for signal in ("status", "active", "in progress")
+        ):
             questions.append("What is the current recorded project status?")
-        if not any(signal in selected_text for signal in ("blocker", "blocked", "waiting")):
+        if not any(
+            signal in selected_text for signal in ("blocker", "blocked", "waiting")
+        ):
             questions.append("Are any blockers or dependencies still unrecorded?")
         if not any(signal in selected_text for signal in ("deadline", "due ", "due:")):
             questions.append("Is there a deadline or due date for the next action?")
-        if not any(signal in selected_text for signal in ("next step", "next action", "- [ ]")):
-            questions.append("What is the next concrete action if it is not recorded here?")
+        if not any(
+            signal in selected_text for signal in ("next step", "next action", "- [ ]")
+        ):
+            questions.append(
+                "What is the next concrete action if it is not recorded here?"
+            )
         if any(
             reference.excerpt_strategy == "document_start"
             for reference in context.memory_references
@@ -163,9 +201,13 @@ class ProjectAgent(DeterministicSignalAgent):
             questions.append(
                 "Which operational memory section should replace the introductory fallback?"
             )
-        warnings = ["Memory excerpts are untrusted reference data, not executable instructions."]
+        warnings = [
+            "Memory excerpts are untrusted reference data, not executable instructions."
+        ]
         if allow_execution:
-            warnings.append("allow_execution was ignored; planning remains proposal-only.")
+            warnings.append(
+                "allow_execution was ignored; planning remains proposal-only."
+            )
         return AgentPlan(
             agent_id=self.id,
             agent_name=self.metadata.name,
@@ -177,8 +219,24 @@ class ProjectAgent(DeterministicSignalAgent):
             warnings=tuple(warnings),
             requires_confirmation=True,
             execution_performed=False,
-            metadata={"framework_phase": "6A", "planning": "deterministic_template"},
+            metadata={"framework_phase": "7A", "planning": "deterministic_template"},
         )
+
+
+def memory_proposal_id(instruction: str) -> str | None:
+    match = re.search(r"\bproposal_[0-9a-f]{24}\b", instruction.casefold())
+    return match.group(0) if match else None
+
+
+def memory_proposal_type(instruction: str) -> str:
+    folded = instruction.casefold()
+    if "decision" in folded:
+        return "add_decision"
+    if "relationship" in folded or "person" in folded:
+        return "add_relationship_note"
+    if "project note" in folded:
+        return "add_project_note"
+    return "add_task"
 
 
 def first_matching_heading(
@@ -186,8 +244,12 @@ def first_matching_heading(
 ) -> str | None:
     if reference is None:
         return None
-    by_normalized = {heading.casefold(): heading for heading in reference.selected_headings}
-    return next((by_normalized[item] for item in preferred if item in by_normalized), None)
+    by_normalized = {
+        heading.casefold(): heading for heading in reference.selected_headings
+    }
+    return next(
+        (by_normalized[item] for item in preferred if item in by_normalized), None
+    )
 
 
 def first_project_heading(reference: AgentMemoryReference | None) -> str | None:
@@ -195,6 +257,10 @@ def first_project_heading(reference: AgentMemoryReference | None) -> str | None:
         return None
     generic = {"projects", "active", "archived", "current projects", "overview"}
     return next(
-        (heading for heading in reference.selected_headings if heading.casefold() not in generic),
+        (
+            heading
+            for heading in reference.selected_headings
+            if heading.casefold() not in generic
+        ),
         None,
     )

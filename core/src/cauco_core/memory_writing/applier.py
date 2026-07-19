@@ -137,7 +137,7 @@ class MemoryWriteProposalApplier:
         matches = [
             memory
             for memory in self.memory_engine.list_objects()
-            if memory.relative_path == proposal.target_file
+            if memory.relative_path.casefold() == proposal.target_file.casefold()
         ]
         if len(matches) != 1:
             raise MissingApprovedTargetError(
@@ -243,6 +243,12 @@ def atomic_replace_with_backup(
         os.replace(target_temp, target)
         target_temp = None
         _fsync_directory(target.parent)
+        if target.read_bytes() != updated_content.encode("utf-8"):
+            os.replace(backup_path, target)
+            _fsync_directory(target.parent)
+            raise MemoryWriteApplicationError(
+                "The approved memory file failed post-write verification."
+            )
     except OSError as error:
         raise MemoryWriteApplicationError(
             "The approved memory file could not be replaced."

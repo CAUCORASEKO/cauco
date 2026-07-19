@@ -25,6 +25,8 @@ class OperationResponse(ToolApiModel):
     enabled: bool
     execution_enabled: bool
     runtime_execution_allowed: bool
+    mutation: bool
+    preview_required: bool
 
 
 class ToolResponse(ToolApiModel):
@@ -72,6 +74,8 @@ class ValidationResponse(ToolApiModel):
     confirmation_required: bool | None
     execution_enabled: bool
     runtime_execution_allowed: bool
+    mutation: bool
+    preview_required: bool
     reason: str | None
 
 
@@ -123,6 +127,8 @@ def operation_response(operation: ToolOperation) -> OperationResponse:
             "enabled": operation.enabled,
             "execution_enabled": operation.execution_enabled,
             "runtime_execution_allowed": operation.runtime_execution_allowed,
+            "mutation": operation.mutation,
+            "preview_required": operation.preview_required,
         }
     )
 

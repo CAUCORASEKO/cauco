@@ -52,36 +52,34 @@ class ToolRegistry:
             tool = self._tools.get(tool_id)
             if tool is None:
                 return ToolValidationResult(
-                    tool_id,
-                    operation_id,
-                    False,
-                    False,
-                    False,
-                    False,
-                    False,
-                    None,
-                    None,
-                    False,
-                    False,
-                    "Tool is not registered.",
+                    tool_id=tool_id,
+                    operation_id=operation_id,
+                    valid=False,
+                    tool_exists=False,
+                    operation_exists=False,
+                    tool_enabled=False,
+                    operation_enabled=False,
+                    safe=None,
+                    confirmation_required=None,
+                    execution_enabled=False,
+                    reason="Tool is not registered.",
                 )
             operation = next(
                 (item for item in tool.operations if item.id == operation_id), None
             )
             if operation is None:
                 return ToolValidationResult(
-                    tool_id,
-                    operation_id,
-                    False,
-                    True,
-                    False,
-                    tool.enabled,
-                    False,
-                    None,
-                    None,
-                    False,
-                    False,
-                    "Operation is not registered for this tool.",
+                    tool_id=tool_id,
+                    operation_id=operation_id,
+                    valid=False,
+                    tool_exists=True,
+                    operation_exists=False,
+                    tool_enabled=tool.enabled,
+                    operation_enabled=False,
+                    safe=None,
+                    confirmation_required=None,
+                    execution_enabled=False,
+                    reason="Operation is not registered for this tool.",
                 )
             valid = tool.enabled and operation.enabled
             reason = None if valid else "Tool or operation is disabled."
@@ -97,6 +95,8 @@ class ToolRegistry:
                 confirmation_required=operation.confirmation_required,
                 execution_enabled=False,
                 runtime_execution_allowed=operation.runtime_execution_allowed,
+                mutation=operation.mutation,
+                preview_required=operation.preview_required,
                 reason=reason,
             )
 

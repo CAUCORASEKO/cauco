@@ -84,6 +84,15 @@ Implemented in Phase 6B:
 - Deny-by-default workspace containment, sensitive-file blocking, timeouts, and output limits
 - No simulation layer, execute-all endpoint, arbitrary command surface, or mutating operation
 
+Implemented and automated/live-contract validated in Phase 6C; final interactive Obsidian
+light/dark-theme validation remains before the milestone is marked complete:
+
+- Obsidian planning, grounded-context, plan-step, readiness, and review controls
+- Explicitly separate approval, inert execution-record creation, and per-step two-click execution
+- Safe real-result and chronological audit rendering with manual refresh and no polling
+- Strict client response validation, stale-GET protection, bounded errors, and no vault persistence of results
+- Existing Phase 4C memory proposal workflow retained alongside the execution control surface
+
 Remaining:
 
 - Persistent conversation history and streaming
@@ -91,7 +100,6 @@ Remaining:
 - Automatic summarization and long-term memory extraction policies
 - Tool and agent orchestration through explicit permission policies
 - Evaluation fixtures, budgets, and model-independent fallbacks
-- Phase 6 execution must accept only approved, non-expired, integrity-valid snapshots and must add separate confirmation for each step/tool; it is not implemented
 - Carefully selected mutating operations may be considered individually only with stronger per-operation confirmation, recovery, and audit contracts
 
 ## Phase 6 — Interaction and services
@@ -101,9 +109,16 @@ Remaining:
 - Opt-in “Hola Cauco” wake-word detection with visible microphone state
 - External connectors with per-connector permissions
 
-## Phase 7 — Advanced workflows
+## Phase 7A — Controlled local mutations (implemented; interactive validation pending)
 
-- User-authorized autonomous workflows
+- Preview-first execution for memory proposal creation, memory proposal confirmation, and bounded workspace text writes
+- Operation-specific confirmation, immutable digest binding, stale-state detection, backup/recovery, verification, concurrency protection, and redacted audit
+- Automated temporary-workspace/Brain API validation and plugin contract/build validation
+- Git mutations remain disabled; Phase 7B is controlled `git.add`
+- Final interactive Obsidian light/dark-theme validation remains before marking complete
+
+## Later advanced workflows
+
 - Durable scheduling execution and recovery
 - Animated brain/status visualization grounded in real observable data
 

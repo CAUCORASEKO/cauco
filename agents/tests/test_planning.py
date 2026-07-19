@@ -14,6 +14,9 @@ from cauco_agents import (
     GitAgent,
     ProjectAgent,
     ResearchAgent,
+    FilesystemWriteTextInput,
+    MemoryConfirmProposalInput,
+    MemoryCreateProposalInput,
 )
 
 
@@ -119,3 +122,30 @@ def test_memory_instruction_text_remains_inert() -> None:
     plan = ProjectAgent().plan(context("project", injected), allow_execution=True)
     assert plan.execution_performed is False
     assert all(step.execution_available is False for step in plan.steps)
+
+
+def test_mutation_plan_inputs_are_typed_immutable_and_exact() -> None:
+    create_context = replace(
+        context("project"), instruction="Add task validate mutation contracts"
+    )
+    create_step = ProjectAgent().plan(create_context).steps[-1]
+    assert isinstance(create_step.operation_input, MemoryCreateProposalInput)
+    assert create_step.operation_input.proposal_type == "add_task"
+    with pytest.raises(FrozenInstanceError):
+        create_step.operation_input.content = "replacement"  # type: ignore[misc]
+
+    proposal_id = "proposal_" + "a" * 24
+    confirm_context = replace(
+        context("project"), instruction=f"Confirm task proposal {proposal_id}"
+    )
+    confirm_step = ProjectAgent().plan(confirm_context).steps[-1]
+    assert confirm_step.operation_input == MemoryConfirmProposalInput(proposal_id)
+
+    write_context = replace(
+        context("git"),
+        instruction="In git repository create workspace file notes.txt containing approved text",
+    )
+    write_step = GitAgent().plan(write_context).steps[2]
+    assert write_step.operation_input == FilesystemWriteTextInput(
+        "notes.txt", "approved text", "create_only"
+    )

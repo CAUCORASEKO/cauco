@@ -15,10 +15,13 @@ All source code is architecture-neutral and supports Apple Silicon and Intel sys
 cd plugin
 npm install
 npm run typecheck
+node tests/run.mjs
 npm run build
 ```
 
 For development, run `npm run dev` and copy or link `manifest.json`, `main.js`, and `styles.css` into `<vault>/.obsidian/plugins/cauco/`. Enable the plugin in Obsidian, then use the ribbon icon or the **Open Cauco Dashboard** command.
+
+The dashboard's **Plan and execution control** panel uses only Cauco Core APIs. Read-only steps use **Review execution** and **Execute approved step**. Mutation steps instead show **Create Mutation Preview**, inert target/diff details, the exact Core phrase, **Confirm and Apply Mutation**, and cancellation. Refreshes are manual; neither approval, record creation, nor preview creation invokes an adapter.
 
 ## Local core
 
@@ -161,3 +164,16 @@ curl -s http://127.0.0.1:8765/api/executions/exec_.../steps/2/execute \
 ```
 
 The first call performs nothing. The second runs only the exact approved read-only step. Tests always use temporary workspaces and repositories.
+
+For manual Phase 6C validation, first use a disposable Obsidian vault and a temporary workspace. Copy the built `manifest.json`, `main.js`, and `styles.css` into that vault's `.obsidian/plugins/cauco/` directory. Confirm the full plan/review/execution/result/audit workflow and the existing Memory proposal panel in both light and dark themes before pointing Core at the Cauco repository. Execution output remains in memory in the dashboard; it is not written to the vault.
+
+For Phase 7A, always configure a copied temporary Brain and a temporary Git workspace. Exercise proposal creation, proposal confirmation, text create, text replace, stale-state rejection, wrong phrase/digest, cancellation, and preview reuse there first. Never test mutation APIs against a live vault or the Cauco repository. A preview call is:
+
+```bash
+curl -s -X POST http://127.0.0.1:8765/api/executions/exec_.../steps/3/mutation-preview
+curl -s -X POST http://127.0.0.1:8765/api/executions/exec_.../steps/3/confirm-mutation \
+  -H 'Content-Type: application/json' \
+  -d '{"preview_id":"mutprev_...","preview_digest":"...","confirmation_phrase":"WRITE WORKSPACE FILE"}'
+```
+
+The second body must not contain a path, content, proposal ID replacement, tool, operation, command, or working directory.

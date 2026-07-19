@@ -63,6 +63,205 @@
   padding: var(--size-4-5);
 }
 
+.cauco-execution-control {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  margin-top: var(--size-4-5);
+  padding: var(--size-4-5);
+}
+
+.cauco-execution-control > .cauco-panel-header h2 {
+  margin: 0;
+}
+
+.cauco-lifecycle-status {
+  background: var(--background-secondary);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: var(--radius-s);
+  min-height: 1.5em;
+  padding: var(--size-4-2) var(--size-4-3);
+}
+
+.cauco-control-section {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: var(--size-4-5);
+  padding-top: var(--size-4-4);
+}
+
+.cauco-control-section h3,
+.cauco-control-section h4 {
+  margin-top: 0;
+}
+
+.cauco-plan-instruction,
+.cauco-review-reason {
+  display: block;
+  width: 100%;
+}
+
+.cauco-plan-instruction {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.cauco-review-reason {
+  margin-bottom: var(--size-4-2);
+}
+
+.cauco-control-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-3);
+}
+
+.cauco-control-details {
+  display: grid;
+  gap: var(--size-4-1) var(--size-4-3);
+  grid-template-columns: minmax(9rem, auto) minmax(0, 1fr);
+}
+
+.cauco-control-details dt {
+  color: var(--text-muted);
+}
+
+.cauco-control-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.cauco-step-list {
+  display: grid;
+  gap: var(--size-4-3);
+  margin-top: var(--size-4-3);
+}
+
+.cauco-step-card,
+.cauco-context-item,
+.cauco-audit-event {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  min-width: 0;
+  padding: var(--size-4-3);
+}
+
+.cauco-execution-step {
+  margin-top: var(--size-4-3);
+}
+
+.cauco-step-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--size-4-2);
+  justify-content: space-between;
+}
+
+.cauco-step-heading h4 {
+  margin-bottom: var(--size-4-2);
+}
+
+.cauco-status-badge {
+  background: var(--background-modifier-border);
+  border-radius: 999px;
+  flex: none;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  padding: 0.15rem 0.55rem;
+}
+
+.cauco-status-badge.is-ready,
+.cauco-status-badge.is-completed {
+  background: rgba(var(--color-green-rgb), 0.18);
+}
+
+.cauco-status-badge.is-blocked,
+.cauco-status-badge.is-failed,
+.cauco-status-badge.is-cancelled {
+  background: rgba(var(--color-red-rgb), 0.12);
+}
+
+.cauco-blocked-note,
+.cauco-warning-list {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.cauco-context-panel > summary,
+.cauco-result-panel > summary,
+.cauco-audit-panel > summary {
+  cursor: pointer;
+  font-weight: var(--font-semibold);
+}
+
+.cauco-context-item,
+.cauco-audit-event {
+  margin-top: var(--size-4-3);
+}
+
+.cauco-context-item pre,
+.cauco-result-output {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  font-family: var(--font-monospace);
+  max-height: 24rem;
+  max-width: 100%;
+  overflow: auto;
+  padding: var(--size-4-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cauco-inline-confirmation {
+  background: var(--background-modifier-warning);
+  border-radius: var(--radius-s);
+  margin-top: var(--size-4-3);
+  padding: var(--size-4-3);
+}
+
+.cauco-inline-confirmation label {
+  align-items: center;
+  display: flex;
+  gap: var(--size-4-2);
+  justify-content: space-between;
+}
+
+.cauco-inline-confirmation input {
+  max-width: 9rem;
+}
+
+.cauco-result-panel,
+.cauco-audit-panel {
+  margin-top: var(--size-4-3);
+}
+
+.cauco-result-list {
+  font-family: var(--font-monospace);
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.cauco-audit-event {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-1);
+}
+
+.cauco-audit-event p {
+  margin: 0;
+}
+
+.cauco-execution-control textarea:focus-visible,
+.cauco-execution-control input:focus-visible,
+.cauco-execution-control button:focus-visible,
+.cauco-execution-control summary:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
 .cauco-chat h2 {
   margin-top: 0;
 }
@@ -397,6 +596,20 @@
 
   .cauco-proposal-details {
     grid-template-columns: 1fr;
+  }
+
+  .cauco-control-details {
+    grid-template-columns: 1fr;
+  }
+
+  .cauco-control-details dd + dt {
+    margin-top: var(--size-4-2);
+  }
+
+  .cauco-step-heading,
+  .cauco-inline-confirmation label {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .cauco-proposal-details dd + dt {

@@ -169,6 +169,23 @@ Execution states are `pending_execution`, `running`, `completed`, `failed`, and 
 
 Unknown reviews/executions/steps return `404`; ineligible reviews, digest failures, repeated creation/execution, and runtime-disabled operations return `409`; invalid controls return `422`; forbidden or sensitive paths return `403`. Responses contain workspace-relative paths only. Execution records and audit events are process-local and disappear on restart.
 
+### Mutation preview and confirmation
+
+- `POST /api/executions/{execution_id}/steps/{step_index}/mutation-preview` creates an inert immutable preview (`201`).
+- `GET /api/executions/{execution_id}/steps/{step_index}/mutation-preview` returns the active preview.
+- `POST /api/executions/{execution_id}/steps/{step_index}/confirm-mutation` claims and executes it once (`200`).
+- `POST /api/executions/{execution_id}/steps/{step_index}/cancel-mutation-preview` cancels a pending preview.
+
+The preview includes the exact stored operation, relative target, normalized approved arguments, safe before/after metadata, bounded textual diff, SHA-256 `preview_digest`, expiry, and operation-specific `confirmation_phrase`. Its digest covers the full normalized mutation even when display output is bounded. Confirmation accepts only `preview_id`, `preview_digest`, and `confirmation_phrase`; generic confirmation such as `yes` is invalid. Digest mismatch, stale state, expired/cancelled/consumed previews, invalid review state, and duplicate confirmation return conflicts. Phrase mismatch and invalid text return `422`; forbidden targets return `403`.
+
+Preview creation leaves `execution_performed=false`. Adapter invocation sets it true even if the adapter safely fails. `mutation_performed=true` only reports a verified persistent-state change; duplicate-prevented memory content can be execution-performed without being mutation-performed.
+
+### Obsidian client behavior
+
+The Phase 6C plugin calls planning and review endpoints separately, retrieves readiness from planning/review responses, creates an execution record only after an explicit click, and calls a single stored step endpoint only after an inline two-click confirmation. Approval never chains into execution creation, and execution creation never chains into step execution.
+
+The plugin read-only step request sends only `timeout_seconds` and `max_output_chars`. A mutation confirmation sends only the three integrity/interaction fields above; it never sends content or a target. GET refreshes are manual and stale responses are ignored; there is no polling. POST actions are never automatically retried.
+
 ## `GET /api/ai/status`
 
 Reports provider availability and whether the configured default model appears in Ollama's installed model list. An unavailable Ollama service returns `200` with `available: false` so the dashboard can present an offline state.

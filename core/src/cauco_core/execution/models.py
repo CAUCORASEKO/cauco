@@ -72,7 +72,10 @@ class AgentPlanExecutionRecord:
     execution_performed: bool
     failure_reason: str | None
     audit_events: tuple[ExecutionAuditEvent, ...]
-    warning: str = "Execution is limited to explicitly requested allowlisted read-only steps."
+    warning: str = (
+        "Execution is limited to allowlisted approved steps; mutations require preview and "
+        "separate single-use confirmation."
+    )
 
     def __post_init__(self) -> None:
         if not re.fullmatch(r"exec_[A-Za-z0-9_-]{20,}", self.execution_id):

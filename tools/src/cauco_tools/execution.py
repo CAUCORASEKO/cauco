@@ -48,10 +48,13 @@ class ToolExecutionResult:
     error_message: str | None = None
     truncated: bool = False
     execution_performed: bool = True
+    mutation_performed: bool = False
 
     def __post_init__(self) -> None:
         if not self.execution_performed:
             raise ValueError("Adapter results must represent a real invocation.")
+        if self.mutation_performed and not self.success:
+            raise ValueError("Failed results cannot report a completed mutation.")
         if self.duration_ms < 0 or self.completed_at < self.started_at:
             raise ValueError("Execution result timestamps are inconsistent.")
         if self.success and (

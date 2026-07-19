@@ -14,7 +14,9 @@ from cauco_agents.models import (
     AgentRouteResult,
 )
 
-APPROVAL_WARNING = "Approval authorizes the reviewed plan snapshot only. No action was executed."
+APPROVAL_WARNING = (
+    "Approval authorizes the reviewed plan snapshot only. No action was executed."
+)
 
 
 class AgentPlanReviewStatus(StrEnum):
@@ -54,17 +56,21 @@ class AgentPlanReviewRecord:
         if not re.fullmatch(r"planrev_[A-Za-z0-9_-]{20,}", self.review_id):
             raise ValueError("Plan review ID must be an opaque URL-safe identifier.")
         if not re.fullmatch(r"[0-9a-f]{64}", self.snapshot_digest):
-            raise ValueError("Plan review snapshot digest must be a SHA-256 hex digest.")
+            raise ValueError(
+                "Plan review snapshot digest must be a SHA-256 hex digest."
+            )
         if self.execution_performed:
             raise ValueError("Plan review records cannot report performed execution.")
-        if self.execution_authorized != (
-            self.status is AgentPlanReviewStatus.APPROVED
-        ):
-            raise ValueError("Only approved plan reviews can authorize future execution.")
+        if self.execution_authorized != (self.status is AgentPlanReviewStatus.APPROVED):
+            raise ValueError(
+                "Only approved plan reviews can authorize future execution."
+            )
         if self.expires_at <= self.created_at or self.updated_at < self.created_at:
             raise ValueError("Plan review timestamps are inconsistent.")
         if self.instruction != self.context.instruction:
-            raise ValueError("The reviewed instruction must match the resolved context.")
+            raise ValueError(
+                "The reviewed instruction must match the resolved context."
+            )
         if self.selected_agent_id != self.plan.agent_id:
             raise ValueError("The selected agent must match the reviewed plan.")
         if self.context.agent_id != self.selected_agent_id:
@@ -73,9 +79,13 @@ class AgentPlanReviewRecord:
             raise ValueError("The reviewed routing must match the selected agent.")
         if self.status is AgentPlanReviewStatus.APPROVED:
             if self.approved_at is None or self.approval_warning != APPROVAL_WARNING:
-                raise ValueError("Approved plan reviews require an approval timestamp and warning.")
+                raise ValueError(
+                    "Approved plan reviews require an approval timestamp and warning."
+                )
         elif self.approved_at is not None or self.approval_warning is not None:
-            raise ValueError("Only approved plan reviews can contain approval metadata.")
+            raise ValueError(
+                "Only approved plan reviews can contain approval metadata."
+            )
         if (self.status is AgentPlanReviewStatus.REJECTED) != (
             self.rejected_at is not None
         ):
@@ -92,7 +102,9 @@ class AgentPlanReviewRecord:
             self.status is not AgentPlanReviewStatus.CANCELLED
             and self.cancellation_reason is not None
         ):
-            raise ValueError("Only cancelled plan reviews can contain a cancellation reason.")
+            raise ValueError(
+                "Only cancelled plan reviews can contain a cancellation reason."
+            )
         if (self.status is AgentPlanReviewStatus.EXPIRED) != (
             self.expired_at is not None
         ):
@@ -141,7 +153,9 @@ def _copy_context(context: AgentContext) -> AgentContext:
         agent_id=context.agent_id,
         instruction=context.instruction,
         resolved_intent=context.resolved_intent,
-        memory_references=tuple(replace(reference) for reference in context.memory_references),
+        memory_references=tuple(
+            replace(reference) for reference in context.memory_references
+        ),
         context_summary=context.context_summary,
         limitations=tuple(context.limitations),
         metadata=dict(context.metadata),
@@ -155,7 +169,17 @@ def _copy_plan(plan: AgentPlan) -> AgentPlan:
         status=plan.status,
         objective=plan.objective,
         context_used=plan.context_used,
-        steps=tuple(replace(step) for step in plan.steps),
+        steps=tuple(
+            replace(
+                step,
+                operation_input=(
+                    replace(step.operation_input)
+                    if step.operation_input is not None
+                    else None
+                ),
+            )
+            for step in plan.steps
+        ),
         open_questions=tuple(plan.open_questions),
         warnings=tuple(plan.warnings),
         requires_confirmation=plan.requires_confirmation,

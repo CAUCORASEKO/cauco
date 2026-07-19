@@ -11,11 +11,19 @@ MEMORY_TOOL = ToolDefinition(
     operations=(
         operation("read", "Read registered bounded memory."),
         operation("search", "Search registered memory."),
-        operation("create_proposal", "Create a controlled memory-write proposal."),
+        operation(
+            "create_proposal",
+            "Create a controlled memory-write proposal.",
+            confirmation=True,
+            runtime_allowed=True,
+            mutation=True,
+        ),
         operation(
             "confirm_proposal",
             "Confirm a stored memory-write proposal.",
             confirmation=True,
+            runtime_allowed=True,
+            mutation=True,
         ),
     ),
     permissions=(

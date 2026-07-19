@@ -142,6 +142,7 @@ def record_response(record: AgentPlanExecutionRecord) -> dict[str, Any]:
                         "error_message": step.result.error_message,
                         "truncated": step.result.truncated,
                         "execution_performed": step.result.execution_performed,
+                        "mutation_performed": step.result.mutation_performed,
                     }
                     if step.result is not None
                     else None

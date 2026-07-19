@@ -92,8 +92,13 @@ def test_default_registry_contracts_and_validation() -> None:
         ("git", "status"),
         ("filesystem", "list_directory"),
         ("filesystem", "read_file"),
+        ("filesystem", "write_text_file"),
+        ("memory", "create_proposal"),
+        ("memory", "confirm_proposal"),
     }
     assert not registry.validate("git", "commit").runtime_execution_allowed
     assert not registry.validate("email", "send").runtime_execution_allowed
     assert not registry.validate("calendar", "create_event").runtime_execution_allowed
-    assert not registry.validate("memory", "create_proposal").runtime_execution_allowed
+    memory_mutation = registry.validate("memory", "create_proposal")
+    assert memory_mutation.runtime_execution_allowed
+    assert memory_mutation.mutation and memory_mutation.preview_required

@@ -17,6 +17,8 @@ class PlanToolReadiness:
     runtime_execution_allowed: bool
     adapter_available: bool
     executable_now: bool
+    mutation_confirmation_required: bool
+    preview_required: bool
     execution_enabled: bool = False
 
 
@@ -39,8 +41,7 @@ def evaluate_plan_readiness(
             continue
         validation = registry.validate(reference.tool_id, reference.operation_id)
         adapter_available = bool(
-            adapter_registry
-            and adapter_registry.exists(reference.tool_id, reference.operation_id)
+            adapter_registry and adapter_registry.exists(reference.tool_id, reference.operation_id)
         )
         references.append(
             PlanToolReadiness(
@@ -58,7 +59,10 @@ def evaluate_plan_readiness(
                     validation.valid
                     and validation.runtime_execution_allowed
                     and adapter_available
+                    and not validation.preview_required
                 ),
+                mutation_confirmation_required=validation.mutation,
+                preview_required=validation.preview_required,
             )
         )
     return AgentPlanReadiness(

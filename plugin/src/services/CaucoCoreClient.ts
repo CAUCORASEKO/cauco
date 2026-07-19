@@ -1,4 +1,13 @@
 import { requestUrl } from "obsidian";
+import { ExecutionApiClient } from "../execution/api";
+import type { CoreErrorKind } from "../execution/errors";
+import type {
+  AgentPlanningResponse,
+  ExecutionRecord,
+  PlanReview,
+  StepExecutionControls,
+  MutationPreview,
+} from "../execution/types";
 import type {
   AIChatResponse,
   AIModel,
@@ -326,6 +335,7 @@ export class CaucoCoreApiError extends Error {
   constructor(
     readonly status: number | undefined,
     message: string,
+    readonly kind: CoreErrorKind = "server",
   ) {
     super(message);
     this.name = "CaucoCoreApiError";
@@ -333,7 +343,13 @@ export class CaucoCoreApiError extends Error {
 }
 
 export class CaucoCoreClient {
-  constructor(private readonly coreUrl: string) {}
+  private readonly executionApi: ExecutionApiClient;
+
+  constructor(private readonly coreUrl: string) {
+    this.executionApi = new ExecutionApiClient((path, method, body, timeoutMs) =>
+      this.coreJsonRequest(path, method, body, timeoutMs),
+    );
+  }
 
   async checkConnection(): Promise<ConnectionResult> {
     try {
@@ -439,6 +455,108 @@ export class CaucoCoreClient {
     return parseMemoryWriteConfirmation(value);
   }
 
+  async generatePlan(instruction: string): Promise<AgentPlanningResponse> {
+    return this.executionApi.generatePlan(instruction);
+  }
+
+  async createPlanReview(instruction: string): Promise<PlanReview> {
+    return this.executionApi.createReview(instruction);
+  }
+
+  async getPlanReview(reviewId: string): Promise<PlanReview> {
+    return this.executionApi.getReview(reviewId);
+  }
+
+  async approvePlanReview(reviewId: string): Promise<PlanReview> {
+    return this.executionApi.approveReview(reviewId);
+  }
+
+  async rejectPlanReview(reviewId: string, reason: string): Promise<PlanReview> {
+    return this.executionApi.rejectReview(reviewId, reason);
+  }
+
+  async cancelPlanReview(reviewId: string): Promise<PlanReview> {
+    return this.executionApi.cancelReview(reviewId);
+  }
+
+  async createExecution(reviewId: string): Promise<ExecutionRecord> {
+    return this.executionApi.createExecution(reviewId);
+  }
+
+  async getExecution(executionId: string): Promise<ExecutionRecord> {
+    return this.executionApi.getExecution(executionId);
+  }
+
+  async executeStep(
+    executionId: string,
+    stepIndex: number,
+    controls: StepExecutionControls,
+  ): Promise<ExecutionRecord> {
+    return this.executionApi.executeStep(executionId, stepIndex, controls);
+  }
+
+  async cancelExecution(executionId: string): Promise<ExecutionRecord> {
+    return this.executionApi.cancelExecution(executionId);
+  }
+
+  async createMutationPreview(executionId: string, stepIndex: number): Promise<MutationPreview> {
+    return this.executionApi.createMutationPreview(executionId, stepIndex);
+  }
+
+  async confirmMutation(
+    executionId: string,
+    stepIndex: number,
+    preview: MutationPreview,
+    phrase: string,
+  ): Promise<ExecutionRecord> {
+    return this.executionApi.confirmMutation(executionId, stepIndex, preview, phrase);
+  }
+
+  async cancelMutationPreview(executionId: string, stepIndex: number): Promise<MutationPreview> {
+    return this.executionApi.cancelMutationPreview(executionId, stepIndex);
+  }
+
+  private async coreJsonRequest(
+    path: string,
+    method: "GET" | "POST",
+    body: Readonly<Record<string, unknown>> | undefined,
+    timeoutMs: number,
+  ): Promise<unknown> {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const response = await Promise.race([
+        requestUrl({
+          url: `${this.coreUrl}${path}`,
+          method,
+          contentType: "application/json",
+          body: body === undefined ? undefined : JSON.stringify(body),
+          throw: false,
+        }),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new CaucoCoreApiError(undefined, "The Cauco Core request timed out.", "timeout")),
+            timeoutMs,
+          );
+        }),
+      ]);
+      if (response.status >= 400) {
+        const payload = response.json as unknown;
+        const detail = isRecord(payload) && typeof payload.detail === "string" ? payload.detail : "";
+        throw new CaucoCoreApiError(
+          response.status,
+          sanitizeCoreMessage(detail || "The Cauco Core request failed."),
+          errorKind(response.status),
+        );
+      }
+      return response.json as unknown;
+    } catch (error) {
+      if (error instanceof CaucoCoreApiError) throw error;
+      throw new CaucoCoreApiError(undefined, "Could not reach the local Cauco Core.", "network");
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+  }
+
   private async memoryWriteRequest(
     path: string,
     method: "GET" | "POST",
@@ -467,4 +585,21 @@ export class CaucoCoreClient {
   private errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : "Unknown local AI error.";
   }
+}
+
+function errorKind(
+  status: number,
+): "validation" | "conflict" | "forbidden" | "not-found" | "server" {
+  if (status === 403) return "forbidden";
+  if (status === 404) return "not-found";
+  if (status === 409) return "conflict";
+  if (status === 400 || status === 422) return "validation";
+  return "server";
+}
+
+function sanitizeCoreMessage(value: string): string {
+  return value
+    .replace(/(?:\/Users|\/home|\/private|\/var\/folders)\/[\w.@%+~/-]+/g, "[local path redacted]")
+    .replace(/[A-Za-z]:\\[^\s"']+/g, "[local path redacted]")
+    .slice(0, 500);
 }

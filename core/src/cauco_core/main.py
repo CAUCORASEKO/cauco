@@ -5,7 +5,11 @@ import uvicorn
 from cauco_agents import AgentRouter, create_default_registry
 from cauco_tools import ToolAdapterRegistry
 from cauco_tools import create_default_registry as create_default_tool_registry
-from cauco_tools.adapters import FilesystemAdapter, GitStatusAdapter
+from cauco_tools.adapters import (
+    FilesystemAdapter,
+    FilesystemTextMutationAdapter,
+    GitStatusAdapter,
+)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,6 +25,7 @@ from cauco_core.api.ai_routes import router as ai_router
 from cauco_core.api.context_routes import router as context_router
 from cauco_core.api.execution_routes import router as execution_router
 from cauco_core.api.memory_routes import router as memory_router
+from cauco_core.api.mutation_routes import router as mutation_router
 from cauco_core.api.routes import router
 from cauco_core.api.tool_routes import router as tool_router
 from cauco_core.config import Settings
@@ -36,6 +41,9 @@ from cauco_core.memory.service import MemoryService
 from cauco_core.memory_writing.applier import MemoryWriteProposalApplier
 from cauco_core.memory_writing.proposal_builder import MemoryWriteProposalBuilder
 from cauco_core.memory_writing.store import MemoryWriteProposalStore
+from cauco_core.mutations.memory_adapter import CoreMemoryMutationAdapter
+from cauco_core.mutations.service import MutationService
+from cauco_core.mutations.store import MutationPreviewStore
 
 
 def build_ai_provider(settings: Settings) -> AIProvider:
@@ -48,9 +56,7 @@ def build_ai_provider(settings: Settings) -> AIProvider:
     )
 
 
-def create_app(
-    settings: Settings | None = None, ai_provider: AIProvider | None = None
-) -> FastAPI:
+def create_app(settings: Settings | None = None, ai_provider: AIProvider | None = None) -> FastAPI:
     app = FastAPI(title="Cauco Core", version="0.1.0")
     app.state.settings = settings or Settings()
     app.state.agent_registry = create_default_registry()
@@ -66,8 +72,12 @@ def create_app(
                 max_file_bytes=app.state.settings.execution_max_file_bytes,
             )
         )
+        app.state.tool_adapter_registry.register(GitStatusAdapter(app.state.workspace_policy.root))
         app.state.tool_adapter_registry.register(
-            GitStatusAdapter(app.state.workspace_policy.root)
+            FilesystemTextMutationAdapter(
+                app.state.workspace_policy.root,
+                max_content_chars=app.state.settings.mutation_max_content_characters,
+            )
         )
     app.state.agent_router = AgentRouter(app.state.agent_registry)
     app.state.memory_service = MemoryService(
@@ -93,9 +103,23 @@ def create_app(
         app.state.agent_planning_service,
         app.state.agent_plan_review_store,
     )
-    app.state.execution_store = ExecutionStore(
-        max_records=app.state.settings.execution_max_records
+    app.state.context_builder = ContextBuilder(app.state.memory_engine)
+    app.state.memory_write_proposal_store = MemoryWriteProposalStore(
+        ttl=timedelta(seconds=app.state.settings.memory_write_proposal_ttl_seconds)
     )
+    app.state.memory_write_proposal_builder = MemoryWriteProposalBuilder(app.state.memory_engine)
+    app.state.memory_write_proposal_applier = MemoryWriteProposalApplier(
+        app.state.memory_engine,
+        app.state.memory_write_proposal_store,
+    )
+    app.state.tool_adapter_registry.register(
+        CoreMemoryMutationAdapter(
+            app.state.memory_write_proposal_builder,
+            app.state.memory_write_proposal_store,
+            app.state.memory_write_proposal_applier,
+        )
+    )
+    app.state.execution_store = ExecutionStore(max_records=app.state.settings.execution_max_records)
     app.state.execution_service = ExecutionService(
         app.state.agent_plan_review_store,
         app.state.tool_registry,
@@ -103,15 +127,18 @@ def create_app(
         app.state.execution_store,
         app.state.workspace_policy,
     )
-    app.state.context_builder = ContextBuilder(app.state.memory_engine)
-    app.state.memory_write_proposal_store = MemoryWriteProposalStore(
-        ttl=timedelta(seconds=app.state.settings.memory_write_proposal_ttl_seconds)
+    app.state.mutation_preview_store = MutationPreviewStore(
+        ttl_seconds=app.state.settings.mutation_preview_ttl_seconds,
+        max_records=app.state.settings.mutation_preview_max_records,
     )
-    app.state.memory_write_proposal_builder = MemoryWriteProposalBuilder(
-        app.state.memory_engine
-    )
-    app.state.memory_write_proposal_applier = MemoryWriteProposalApplier(
-        app.state.memory_engine,
+    app.state.mutation_service = MutationService(
+        app.state.execution_service,
+        app.state.execution_store,
+        app.state.agent_plan_review_store,
+        app.state.tool_registry,
+        app.state.tool_adapter_registry,
+        app.state.mutation_preview_store,
+        app.state.memory_write_proposal_builder,
         app.state.memory_write_proposal_store,
     )
     app.state.memory_context_builder = MemoryContextBuilder(
@@ -145,6 +172,7 @@ def create_app(
     app.include_router(agent_router_api)
     app.include_router(tool_router)
     app.include_router(execution_router)
+    app.include_router(mutation_router)
     app.include_router(context_router)
     app.include_router(memory_router)
     app.include_router(ai_router)

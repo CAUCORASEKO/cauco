@@ -136,9 +136,7 @@ class AgentPlanReviewStore:
             )
             return tuple(self._snapshot(record) for record in ordered[:limit])
 
-    def approve(
-        self, review_id: str, *, reviewer_note: str | None = None
-    ) -> AgentPlanReviewRecord:
+    def approve(self, review_id: str, *, reviewer_note: str | None = None) -> AgentPlanReviewRecord:
         return self._transition(
             review_id,
             AgentPlanReviewStatus.APPROVED,
@@ -207,9 +205,7 @@ class AgentPlanReviewStore:
             now = self.clock()
             record = self._expire_if_needed(self._record(review_id), now)
             if record.status is not AgentPlanReviewStatus.PENDING_REVIEW:
-                raise PlanReviewStateConflictError(
-                    f"Plan review is already {record.status.value}."
-                )
+                raise PlanReviewStateConflictError(f"Plan review is already {record.status.value}.")
             self.verify_integrity(record)
             changes: dict[str, Any] = {
                 "status": target,
@@ -233,10 +229,7 @@ class AgentPlanReviewStore:
     def _expire_if_needed(
         self, record: AgentPlanReviewRecord, now: datetime
     ) -> AgentPlanReviewRecord:
-        if (
-            record.status is AgentPlanReviewStatus.PENDING_REVIEW
-            and now >= record.expires_at
-        ):
+        if record.status is AgentPlanReviewStatus.PENDING_REVIEW and now >= record.expires_at:
             record = replace(
                 record,
                 status=AgentPlanReviewStatus.EXPIRED,
@@ -263,9 +256,7 @@ class AgentPlanReviewStore:
             del self._records[record.review_id]
             if len(self._records) < self.max_records:
                 return
-        raise PlanReviewCapacityError(
-            "Plan review capacity is full of active pending records."
-        )
+        raise PlanReviewCapacityError("Plan review capacity is full of active pending records.")
 
     def _record(self, review_id: str) -> AgentPlanReviewRecord:
         record = self._records.get(review_id)
@@ -293,9 +284,7 @@ def validate_ttl(ttl_seconds: int) -> None:
         )
 
 
-def normalize_review_text(
-    value: str | None, *, field_name: str, maximum: int
-) -> str | None:
+def normalize_review_text(value: str | None, *, field_name: str, maximum: int) -> str | None:
     if value is None:
         return None
     normalized = value.replace("\r\n", "\n").replace("\r", "\n").strip()
@@ -441,6 +430,7 @@ def plan_payload(plan: AgentPlan) -> dict[str, Any]:
                     if step.tool_reference is not None
                     else None
                 ),
+                "operation_input": operation_input_payload(step.operation_input),
             }
             for step in plan.steps
         ],
@@ -450,3 +440,10 @@ def plan_payload(plan: AgentPlan) -> dict[str, Any]:
         "execution_performed": plan.execution_performed,
         "metadata": dict(plan.metadata),
     }
+
+
+def operation_input_payload(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    fields = getattr(value, "__dataclass_fields__", {})
+    return {name: getattr(value, name) for name in fields}

@@ -9,6 +9,7 @@ def operation(
     confirmation: bool = False,
     enabled: bool = True,
     runtime_allowed: bool = False,
+    mutation: bool = False,
 ) -> ToolOperation:
     return ToolOperation(
         operation_id,
@@ -17,6 +18,8 @@ def operation(
         confirmation,
         enabled,
         runtime_execution_allowed=runtime_allowed,
+        mutation=mutation,
+        preview_required=mutation,
     )
 
 

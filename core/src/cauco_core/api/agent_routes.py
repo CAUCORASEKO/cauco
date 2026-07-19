@@ -64,9 +64,7 @@ class AgentPlanRequest(AgentApiModel):
     intent: str | None = Field(default=None, max_length=100)
     preferred_agent_id: str | None = Field(default=None, max_length=100)
     include_context: StrictBool = True
-    max_context_items: int = Field(
-        default=DEFAULT_MAX_CONTEXT_ITEMS, ge=1, le=MAX_CONTEXT_ITEMS
-    )
+    max_context_items: int = Field(default=DEFAULT_MAX_CONTEXT_ITEMS, ge=1, le=MAX_CONTEXT_ITEMS)
     max_excerpt_chars: int = Field(
         default=DEFAULT_MAX_EXCERPT_CHARS,
         ge=MIN_EXCERPT_CHARS,
@@ -202,6 +200,7 @@ class AgentPlanStepResponse(AgentApiModel):
     execution_available: bool
     warnings: list[str]
     tool_reference: AgentToolReferenceResponse
+    operation_input: dict[str, JsonScalar] | None
 
 
 class AgentToolReferenceResponse(AgentApiModel):
@@ -252,6 +251,8 @@ class PlanToolReadinessResponse(AgentApiModel):
     adapter_available: bool
     executable_now: bool
     execution_enabled: bool
+    mutation_confirmation_required: bool
+    preview_required: bool
 
 
 class AgentPlanReadinessResponse(AgentApiModel):
@@ -367,9 +368,7 @@ def create_plan_review(
 @router.get("/plan-reviews", response_model=AgentPlanReviewListResponse)
 def list_plan_reviews(
     request: Request,
-    review_status: Annotated[
-        AgentPlanReviewStatus | None, Query(alias="status")
-    ] = None,
+    review_status: Annotated[AgentPlanReviewStatus | None, Query(alias="status")] = None,
     agent_id: Annotated[str | None, Query(max_length=100)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> AgentPlanReviewListResponse:
@@ -401,9 +400,7 @@ def get_plan_review(review_id: str, request: Request) -> AgentPlanReviewResponse
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 
-@router.post(
-    "/plan-reviews/{review_id}/approve", response_model=AgentPlanReviewResponse
-)
+@router.post("/plan-reviews/{review_id}/approve", response_model=AgentPlanReviewResponse)
 def approve_plan_review(
     review_id: str,
     payload: AgentPlanReviewApproveRequest,
@@ -418,9 +415,7 @@ def approve_plan_review(
     )
 
 
-@router.post(
-    "/plan-reviews/{review_id}/reject", response_model=AgentPlanReviewResponse
-)
+@router.post("/plan-reviews/{review_id}/reject", response_model=AgentPlanReviewResponse)
 def reject_plan_review(
     review_id: str,
     payload: AgentPlanReviewRejectRequest,
@@ -437,9 +432,7 @@ def reject_plan_review(
     )
 
 
-@router.post(
-    "/plan-reviews/{review_id}/cancel", response_model=AgentPlanReviewResponse
-)
+@router.post("/plan-reviews/{review_id}/cancel", response_model=AgentPlanReviewResponse)
 def cancel_plan_review(
     review_id: str,
     payload: AgentPlanReviewCancelRequest,
@@ -684,7 +677,15 @@ def plan_step_response(step: AgentPlanStep) -> AgentPlanStepResponse:
         execution_available=step.execution_available,
         warnings=list(step.warnings),
         tool_reference=tool_reference_response(step.tool_reference),
+        operation_input=operation_input_response(step.operation_input),
     )
+
+
+def operation_input_response(value: object | None) -> dict[str, JsonScalar] | None:
+    if value is None:
+        return None
+    fields = getattr(value, "__dataclass_fields__", {})
+    return {name: getattr(value, name) for name in fields}
 
 
 def plan_response(plan: AgentPlan) -> AgentPlanResponse:
@@ -819,6 +820,8 @@ def readiness_response(
                 adapter_available=item.adapter_available,
                 executable_now=item.executable_now,
                 execution_enabled=item.execution_enabled,
+                mutation_confirmation_required=item.mutation_confirmation_required,
+                preview_required=item.preview_required,
             )
             for item in readiness.references
         ],

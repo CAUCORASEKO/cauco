@@ -42,6 +42,8 @@ class ToolOperation:
     enabled: bool = True
     execution_enabled: bool = False
     runtime_execution_allowed: bool = False
+    mutation: bool = False
+    preview_required: bool = False
 
     def __post_init__(self) -> None:
         validate_identifier(self.id, "Operation ID")
@@ -51,6 +53,12 @@ class ToolOperation:
             raise ValueError("Phase 6A tool operation execution must remain disabled.")
         if self.runtime_execution_allowed and (not self.enabled or not self.safe):
             raise ValueError("Runtime-enabled operations must be enabled and safe.")
+        if self.mutation != self.preview_required:
+            raise ValueError("Mutation operations must require a preview.")
+        if self.mutation and not (
+            self.runtime_execution_allowed and self.confirmation_required
+        ):
+            raise ValueError("Mutations require runtime policy and confirmation.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,4 +115,6 @@ class ToolValidationResult:
     confirmation_required: bool | None
     execution_enabled: bool
     runtime_execution_allowed: bool = False
+    mutation: bool = False
+    preview_required: bool = False
     reason: str | None = None

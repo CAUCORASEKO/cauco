@@ -15,7 +15,19 @@ FILESYSTEM_TOOL = ToolDefinition(
             "List an allowlisted directory.",
             runtime_allowed=True,
         ),
-        operation("write_file", "Write an allowlisted file.", confirmation=True),
+        operation(
+            "write_text_file",
+            "Atomically write an allowlisted bounded UTF-8 text file.",
+            confirmation=True,
+            runtime_allowed=True,
+            mutation=True,
+        ),
+        operation(
+            "write_file",
+            "Generic filesystem writes remain disabled.",
+            confirmation=True,
+            enabled=False,
+        ),
         operation(
             "delete_file",
             "Delete an allowlisted file.",

@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from types import MappingProxyType
-from typing import Mapping, TypeAlias
+from typing import Literal, Mapping, TypeAlias
 
 AgentContextValue: TypeAlias = str | int | float | bool | None
 DEFAULT_MAX_CONTEXT_ITEMS = 4
@@ -52,7 +52,9 @@ class AgentRequest:
             if not isinstance(value, (str, int, float, bool, type(None))):
                 raise ValueError("Agent context values must be JSON scalar values.")
             if isinstance(value, str) and len(value) > 1000:
-                raise ValueError("Agent context text values cannot exceed 1000 characters.")
+                raise ValueError(
+                    "Agent context text values cannot exceed 1000 characters."
+                )
             copied_context[normalized_key] = value
         object.__setattr__(self, "context", MappingProxyType(copied_context))
 
@@ -182,17 +184,71 @@ class AgentToolReference:
         if not re.fullmatch(pattern, self.tool_id) or not re.fullmatch(
             pattern, self.operation_id
         ):
-            raise ValueError("Agent tool and operation IDs must use lowercase snake_case.")
+            raise ValueError(
+                "Agent tool and operation IDs must use lowercase snake_case."
+            )
         target = self.target.strip() if self.target is not None else None
         if target is not None and (not target or len(target) > 500 or "\x00" in target):
-            raise ValueError("Agent tool targets must contain 1 to 500 safe characters.")
+            raise ValueError(
+                "Agent tool targets must contain 1 to 500 safe characters."
+            )
         if target is not None and (
             target.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", target)
         ):
             raise ValueError("Agent tool targets cannot be absolute paths.")
-        if target is not None and ".." in PurePosixPath(target.replace("\\", "/")).parts:
+        if (
+            target is not None
+            and ".." in PurePosixPath(target.replace("\\", "/")).parts
+        ):
             raise ValueError("Agent tool targets cannot traverse parent directories.")
         object.__setattr__(self, "target", target)
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryCreateProposalInput:
+    proposal_type: Literal[
+        "add_task", "add_decision", "add_relationship_note", "add_project_note"
+    ]
+    content: str
+
+    def __post_init__(self) -> None:
+        content = normalize_whitespace(self.content)
+        if not content or len(content) > 4000:
+            raise ValueError(
+                "Memory proposal content must contain 1 to 4000 characters."
+            )
+        object.__setattr__(self, "content", content)
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryConfirmProposalInput:
+    proposal_id: str
+
+    def __post_init__(self) -> None:
+        if not re.fullmatch(r"proposal_[0-9a-f]{24}", self.proposal_id):
+            raise ValueError("Memory confirmation requires an exact proposal ID.")
+
+
+@dataclass(frozen=True, slots=True)
+class FilesystemWriteTextInput:
+    relative_path: str
+    content: str
+    overwrite_policy: Literal["create_only", "replace_existing"]
+
+    def __post_init__(self) -> None:
+        reference = AgentToolReference(
+            "filesystem", "write_text_file", self.relative_path
+        )
+        if len(self.content) > 100_000 or "\x00" in self.content:
+            raise ValueError(
+                "Filesystem text content must be UTF-8 text up to 100000 characters."
+            )
+        object.__setattr__(self, "relative_path", reference.target)
+
+
+AgentOperationInput: TypeAlias = (
+    MemoryCreateProposalInput | MemoryConfirmProposalInput | FilesystemWriteTextInput
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +262,7 @@ class AgentPlanStep:
     execution_available: bool
     warnings: tuple[str, ...] = ()
     tool_reference: AgentToolReference | None = None
+    operation_input: AgentOperationInput | None = None
 
     def __post_init__(self) -> None:
         if self.order < 1:
@@ -214,6 +271,15 @@ class AgentPlanStep:
             raise ValueError("Phase 5B plan execution cannot be available.")
         if self.tool_reference is None:
             raise ValueError("Phase 6A plan steps must reference a tool operation.")
+        expected = {
+            ("memory", "create_proposal"): MemoryCreateProposalInput,
+            ("memory", "confirm_proposal"): MemoryConfirmProposalInput,
+            ("filesystem", "write_text_file"): FilesystemWriteTextInput,
+        }.get((self.tool_reference.tool_id, self.tool_reference.operation_id))
+        if expected is None and self.operation_input is not None:
+            raise ValueError("Read-only plan steps cannot contain mutation input.")
+        if expected is not None and not isinstance(self.operation_input, expected):
+            raise ValueError("Mutation plan step input does not match its operation.")
 
 
 @dataclass(frozen=True, slots=True)

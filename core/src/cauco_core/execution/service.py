@@ -95,11 +95,9 @@ class ExecutionService:
         )
         if executable_count == 0:
             self.execution_store.fail_before_start(
-                record.execution_id, "The approved plan contains no executable read-only steps."
+                record.execution_id, "The approved plan contains no runtime-enabled steps."
             )
-            raise ExecutionConflictError(
-                "The approved plan contains no executable read-only steps."
-            )
+            raise ExecutionConflictError("The approved plan contains no runtime-enabled steps.")
         return record
 
     def execute_step(
@@ -127,6 +125,11 @@ class ExecutionService:
         if not validation.valid or not validation.runtime_execution_allowed:
             self._deny(record, step_index, "Operation is not allowed for runtime execution.")
             raise ExecutionConflictError("Operation is not allowed for runtime execution.")
+        if validation.preview_required:
+            self._deny(record, step_index, "Mutation requires preview and separate confirmation.")
+            raise ExecutionConflictError(
+                "Mutations cannot run through the read-only execution endpoint."
+            )
         if not self.adapter_registry.exists(reference.tool_id, reference.operation_id):
             self._deny(record, step_index, "No runtime adapter is available.")
             raise ExecutionConflictError("No runtime adapter is available.")

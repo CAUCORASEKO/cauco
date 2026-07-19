@@ -9,8 +9,8 @@ The current release keeps data and inference local. Deterministic foundations re
 - Memory access is limited to visible Markdown under one configured directory. Paths are relative, traversal is rejected, hidden directories are pruned, and symlinks are not followed.
 - Individual reads enforce a configurable maximum size and strict UTF-8 decoding. Search skips unreadable and oversized files.
 - File content is exposed through bounded core APIs. Memory insertion is limited to four allowlisted files and existing approved headings, and requires a stored proposal followed by explicit confirmation. No arbitrary update, rename, move, or delete route exists.
-- Tool definitions remain immutable metadata. Runtime policy separately allows only `git.status`, `filesystem.list_directory`, and `filesystem.read_file`; all mutating, destructive, model, communication, scheduling, and network operations remain denied.
-- The Git tool is a placeholder and does not invoke Git or a shell.
+- Tool definitions remain immutable metadata. Runtime policy allows the three read-only operations plus only `memory.create_proposal`, `memory.confirm_proposal`, and `filesystem.write_text_file` through the separate preview-first mutation path. All other mutations remain denied.
+- The only Git adapter invokes fixed-argv `git.status` after an approved snapshot and explicit step request; it never invokes a shell.
 - The scheduler stores validated definitions but runs nothing.
 - The Operations Agent formats structured data and does not call a model.
 - Project, Git, and Research agent routing uses fixed local signals. These agents return proposal-only results and cannot invoke tools, subprocesses, network access, or memory confirmation APIs.
@@ -25,9 +25,13 @@ The current release keeps data and inference local. Deterministic foundations re
 
 ## Explicitly out of scope
 
-There is no authentication, remote/cloud AI provider, unrestricted shell access, tool execution engine, external connector execution, autonomous workflow, background daemon, email sending, calendar mutation, microphone or webcam access, wake-word listener, persistent chat history, arbitrary or AI-driven memory writing, automatic summarization, embeddings, vector database, semantic search, long-term memory extraction, model-driven tool or agent execution, or streaming. Tool validation and plan readiness only inspect registry contracts. Confirmed allowlisted memory insertions are atomic, backed up once per target, and never originate from chat.
+There is no authentication, remote/cloud AI provider, unrestricted shell access, generic tool executor, external connector execution, autonomous workflow, background daemon, email sending, calendar mutation, microphone or webcam access, wake-word listener, persistent chat history, arbitrary or AI-driven memory writing, automatic summarization, embeddings, vector database, semantic search, long-term memory extraction, model-driven tool or agent execution, or streaming. Confirmed allowlisted memory insertions are atomic, backed up once per target, and never originate from chat.
 
 Plan reviews are process-local and disappear on restart. Approval authorizes only the stored plan snapshot for possible future execution; future step/tool confirmation and the separate memory-write confirmation contract are still required. The plugin's core URL is configurable for development, but localhost remains the safe default. Pointing it at a remote service changes the trust boundary and is not supported by this release.
+
+Workspace text writes accept only `.md`, `.txt`, `.json`, `.yaml`, `.yml`, and `.toml`, with a configurable 20,000-character default and 100,000-character hard contract limit. Absolute/traversal paths, symlinks, hidden or secret paths, `.git`, environment/key/certificate files, editor temporaries, non-regular files, source code, manifests, dependency/lock files, Docker/CI configuration, and missing parents are blocked. Existing content is digest-bound at preview time. Replacement creates a bounded internal rotating backup before atomic replacement; verification failure restores the backup or removes a failed create where possible.
+
+Mutation confirmations are single-use and compare the immutable preview digest plus an exact operation-specific phrase. Audit events record lifecycle outcomes and safe metadata only: no full content, phrases, secrets, environment data, absolute paths, or backup paths.
 
 ## Execution boundary
 
@@ -37,3 +41,5 @@ Plan reviews are process-local and disappear on restart. Approval authorizes onl
 - Text reads require regular UTF-8 files, reject binary and oversized files, and enforce character limits. Directory listings are deterministic, bounded, hide sensitive entries, and do not follow symlinks.
 - Execution time and output size are bounded. API and audit data use relative paths and safe messages; environment variables, absolute paths, and file contents are not copied into audit events.
 - Every accepted execution record and step transition is audited. Denied step attempts are recorded without claiming execution.
+- The Obsidian plugin is only a control surface. It uses the configured Core URL, has no subprocess or direct host-filesystem access, never replaces stored step fields, never approves or executes automatically, and never writes execution output into settings or the vault.
+- Returned file content, Git output, and audit data are bounded and inserted as text, never HTML or executable Markdown. Client error and display sanitizers redact host-style absolute paths.

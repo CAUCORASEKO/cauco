@@ -2,7 +2,13 @@ import re
 
 from cauco_agents.base import AgentMetadata
 from cauco_agents.builtin.base import DeterministicSignalAgent
-from cauco_agents.models import AgentContext, AgentPlan, AgentPlanStep, AgentToolReference
+from cauco_agents.models import (
+    AgentContext,
+    AgentPlan,
+    AgentPlanStep,
+    AgentToolReference,
+    FilesystemWriteTextInput,
+)
 
 
 class GitAgent(DeterministicSignalAgent):
@@ -32,7 +38,9 @@ class GitAgent(DeterministicSignalAgent):
     )
 
     def summary(self) -> str:
-        return "This request belongs to Git operations, but no repository was inspected."
+        return (
+            "This request belongs to Git operations, but no repository was inspected."
+        )
 
     def proposed_actions(self) -> tuple[str, ...]:
         return (
@@ -44,10 +52,13 @@ class GitAgent(DeterministicSignalAgent):
     def requires_confirmation(self) -> bool:
         return True
 
-    def plan(self, context: AgentContext, *, allow_execution: bool = False) -> AgentPlan:
+    def plan(
+        self, context: AgentContext, *, allow_execution: bool = False
+    ) -> AgentPlan:
         project_ids = self.source_ids(context, "projects", "tasks")
         requested_operation = requested_git_operation(context.instruction)
         file_target = requested_file_target(context.instruction)
+        write_input = requested_workspace_write(context.instruction)
         steps = (
             AgentPlanStep(
                 1,
@@ -79,10 +90,15 @@ class GitAgent(DeterministicSignalAgent):
                 False,
                 False,
                 tool_reference=(
-                    AgentToolReference("filesystem", "read_file", file_target)
+                    AgentToolReference(
+                        "filesystem", "write_text_file", write_input.relative_path
+                    )
+                    if write_input is not None
+                    else AgentToolReference("filesystem", "read_file", file_target)
                     if file_target is not None
                     else AgentToolReference("git", "diff")
                 ),
+                operation_input=write_input,
             ),
             AgentPlanStep(
                 4,
@@ -106,7 +122,11 @@ class GitAgent(DeterministicSignalAgent):
                 "allow_execution was ignored; execution requires an approved review "
                 "and an explicit step request."
             )
-        questions = () if project_ids else ("Which project or repository does this request concern?",)
+        questions = (
+            ()
+            if project_ids
+            else ("Which project or repository does this request concern?",)
+        )
         return AgentPlan(
             agent_id=self.id,
             agent_name=self.metadata.name,
@@ -118,7 +138,7 @@ class GitAgent(DeterministicSignalAgent):
             warnings=tuple(warnings),
             requires_confirmation=True,
             execution_performed=False,
-            metadata={"framework_phase": "6B", "repository_inspected": False},
+            metadata={"framework_phase": "7A", "repository_inspected": False},
         )
 
 
@@ -139,3 +159,21 @@ def requested_file_target(instruction: str) -> str | None:
         instruction,
     )
     return match.group(1) if match is not None else None
+
+
+def requested_workspace_write(instruction: str) -> FilesystemWriteTextInput | None:
+    match = re.search(
+        r"\b(?:write|create|replace)\s+(?:workspace\s+)?(?:file\s+)?"
+        r"([A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\.(?:md|txt|json|ya?ml|toml))"
+        r"\s+(?:with|containing)\s+(.+)$",
+        instruction.strip(),
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    policy = (
+        "replace_existing"
+        if match.group(0).casefold().startswith("replace")
+        else "create_only"
+    )
+    return FilesystemWriteTextInput(match.group(1), match.group(2).strip(), policy)

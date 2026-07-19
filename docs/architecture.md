@@ -25,7 +25,7 @@ The plugin and core deliberately do not share executable code. Their boundary is
 
 ## Component responsibilities
 
-- `plugin/` renders observable state, stores the core URL and selected model, provides non-streaming chat, browses memory through the core API, and exposes the explicit proposal review/confirmation flow for allowlisted memory additions.
+- `plugin/` renders observable state, stores the core URL and selected model, provides non-streaming chat, browses memory through the core API, exposes the explicit proposal review/confirmation flow for allowlisted memory additions, and acts as the human control surface for planning, plan review, readiness, and single-step read-only execution. It never executes a tool directly.
 - `core/` owns HTTP transport, configuration, safe memory access, status responses, and AI request validation.
 - `core/src/cauco_core/memory/` discovers visible Markdown, enforces root and size boundaries, performs deterministic lexical search, and builds bounded source-labelled context independently from the provider.
 - `core/src/cauco_core/memory_writing/` creates process-local proposals and applies only explicitly confirmed, allowlisted insertions beneath existing headings using a rotating backup and atomic replacement.
@@ -34,7 +34,7 @@ The plugin and core deliberately do not share executable code. Their boundary is
 - `agents/` is the canonical shared agent framework. Core injects its explicit registry and deterministic router into application state; Project, Git, and Research agents return proposals only and never invoke tools or models.
 - `core/src/cauco_core/agents/` resolves only registered Memory Engine objects through the existing safe reader, bounds deterministic excerpts, and passes immutable context to the shared planning contracts.
 - `core/src/cauco_core/agents/review_store.py` owns the independent, process-local plan review lifecycle, integrity checks, expiration, capacity, and lock-protected human decisions. It never executes a plan.
-- `tools/` is the authoritative, thread-safe catalog of immutable tool, operation, and permission contracts. Its seven built-ins expose metadata only and have no execution method. `scheduler/` remains an inactive definition registry.
+- `tools/` is the authoritative, thread-safe catalog of immutable tool, operation, and permission contracts. Runtime adapters are separate and exist only for three allowlisted read-only operations. `scheduler/` remains an inactive definition registry.
 - `installer/` remains reserved for a later packaging milestone.
 
 The source uses no architecture-specific binaries, so Apple Silicon and Intel are supported at source level.
@@ -62,7 +62,7 @@ Markdown excerpt ranking prefers a project heading discovered from registered pr
 
 Phase 5C extends the deterministic flow to `routing → safe context → planning → review store → human decision`. Core stores the exact routing, provenance-bearing context, and plan snapshot as `pending_review`. A human may approve, reject, or cancel it before its TTL expires; lazy expiration is the fourth terminal transition. Every terminal transition is atomic under the store lock and validates the snapshot digest first.
 
-Approval means only that the human authorized the reviewed snapshot for possible use by a future execution system. It does not invoke a tool, run a step, refresh memory, regenerate the plan, or mark work complete. Execution remains outside the current architecture, and the controlled memory-write confirmation workflow remains separate.
+Approval means only that the human authorized the reviewed snapshot for possible execution-record creation. It does not invoke a tool, run a step, refresh memory, regenerate the plan, or mark work complete. Execution-record creation is independently inert, and the controlled memory-write confirmation workflow remains separate.
 
 ## Tool registry and readiness
 
@@ -77,3 +77,15 @@ Phase 6B implements `approved snapshot → execution record → explicit step re
 Core owns the configured workspace root, canonical path policy, review/digest integration, execution lifecycle, in-memory record store, and audit trail. The tools package owns immutable execution contracts and fixed adapters without depending on Core. Execution creation is inert; there is no execute-all path. A step-level POST is the explicit tool confirmation for these initial read-only operations.
 
 Execution records transition from `pending_execution` to `running`, then `completed` or `failed`; only pending records can be cancelled. Unsupported plan steps are retained as `skipped`. Store locks prevent concurrent duplicate execution of a step. Phase 5C review records and snapshot digests are never mutated.
+
+## Controlled mutation path
+
+Phase 7A adds a path separate from read-only execution: `approved immutable step → inert execution record → mutation preview → exact digest and phrase confirmation → fixed adapter → backup/post-write verification → result and audit`. Preview creation never invokes an adapter. The confirmation body cannot replace the stored tool, operation, target, proposal ID, or content, and each preview can be claimed once.
+
+Core owns preview lifecycle, approved-step binding, stale-state checks, audit, and the memory bridge. That bridge calls the existing Phase 4 proposal builder/store/applier rather than duplicating Markdown logic. The tools package owns the Core-independent bounded UTF-8 workspace adapter. It validates a narrow extension allowlist, writes and fsyncs a same-directory temporary, rotates up to three internal backups on replacement, atomically installs the file, and verifies the final digest. Read-only execution continues through its existing endpoint; mutations are rejected there.
+
+## Obsidian execution control
+
+Phase 6C/7A presents the Core lifecycle as `instruction → generated plan and provenance → review decision → readiness → inert execution record → explicit read or preview/confirmation → real result → audit trail`. The plugin keeps transient UI state separate from Core records, defensively validates essential response shapes, ignores stale manual GET responses, and never polls.
+
+Approval, execution-record creation, and step execution are separate controls. Before a step call, the plugin refreshes authoritative readiness and requires a second click attached to that exact step. It sends only bounded timeout and output controls. Results and workspace file content are rendered as inert text through Obsidian element APIs and are not persisted into settings or the vault.
