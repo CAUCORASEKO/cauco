@@ -18,6 +18,7 @@ def system_status(request: Request) -> SystemStatusResponse:
         return StatusService(
             request.app.state.memory_service,
             registered_agents=len(request.app.state.agent_registry),
+            registered_tools=len(request.app.state.tool_registry),
         ).get_status()
     except MemoryDirectoryError as error:
         raise HTTPException(

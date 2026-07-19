@@ -1,6 +1,6 @@
 from cauco_agents.base import AgentMetadata
 from cauco_agents.builtin.base import DeterministicSignalAgent
-from cauco_agents.models import AgentContext, AgentPlan, AgentPlanStep
+from cauco_agents.models import AgentContext, AgentPlan, AgentPlanStep, AgentToolReference
 
 
 class ResearchAgent(DeterministicSignalAgent):
@@ -56,6 +56,7 @@ class ResearchAgent(DeterministicSignalAgent):
                 f"Define the objective for: {context.instruction}",
                 False,
                 False,
+                tool_reference=AgentToolReference("memory", "read", "instruction"),
             ),
             AgentPlanStep(
                 2,
@@ -65,6 +66,7 @@ class ResearchAgent(DeterministicSignalAgent):
                 f"Review research context in {self.source_names(context, 'projects', 'tasks', 'decisions')}.",
                 False,
                 False,
+                tool_reference=AgentToolReference("memory", "read", "selected_memory"),
             ),
             AgentPlanStep(
                 3,
@@ -74,6 +76,7 @@ class ResearchAgent(DeterministicSignalAgent):
                 "Create a bounded list of questions supported by the objective and memory context.",
                 False,
                 False,
+                tool_reference=AgentToolReference("memory", "read", "selected_memory"),
             ),
             AgentPlanStep(
                 4,
@@ -83,6 +86,7 @@ class ResearchAgent(DeterministicSignalAgent):
                 "Propose source categories to consult if external retrieval is later enabled.",
                 False,
                 False,
+                tool_reference=AgentToolReference("memory", "read", "instruction"),
             ),
             AgentPlanStep(
                 5,
@@ -92,6 +96,7 @@ class ResearchAgent(DeterministicSignalAgent):
                 "Describe the expected research deliverable and evaluation criteria.",
                 False,
                 False,
+                tool_reference=AgentToolReference("memory", "read", "selected_memory"),
             ),
         )
         warnings = [
@@ -119,5 +124,5 @@ class ResearchAgent(DeterministicSignalAgent):
             warnings=tuple(warnings),
             requires_confirmation=False,
             execution_performed=False,
-            metadata={"framework_phase": "5B", "external_sources_accessed": False},
+            metadata={"framework_phase": "6A", "external_sources_accessed": False},
         )

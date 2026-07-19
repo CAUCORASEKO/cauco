@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping, TypeAlias
@@ -170,6 +171,28 @@ class AgentContext:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentToolReference:
+    tool_id: str
+    operation_id: str
+    target: str | None = None
+
+    def __post_init__(self) -> None:
+        pattern = r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*"
+        if not re.fullmatch(pattern, self.tool_id) or not re.fullmatch(
+            pattern, self.operation_id
+        ):
+            raise ValueError("Agent tool and operation IDs must use lowercase snake_case.")
+        target = self.target.strip() if self.target is not None else None
+        if target is not None and (not target or len(target) > 500 or "\x00" in target):
+            raise ValueError("Agent tool targets must contain 1 to 500 safe characters.")
+        if target is not None and (
+            target.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", target)
+        ):
+            raise ValueError("Agent tool targets cannot be absolute paths.")
+        object.__setattr__(self, "target", target)
+
+
+@dataclass(frozen=True, slots=True)
 class AgentPlanStep:
     order: int
     title: str
@@ -179,12 +202,15 @@ class AgentPlanStep:
     requires_confirmation: bool
     execution_available: bool
     warnings: tuple[str, ...] = ()
+    tool_reference: AgentToolReference | None = None
 
     def __post_init__(self) -> None:
         if self.order < 1:
             raise ValueError("Agent plan step order must be positive.")
         if self.execution_available:
             raise ValueError("Phase 5B plan execution cannot be available.")
+        if self.tool_reference is None:
+            raise ValueError("Phase 6A plan steps must reference a tool operation.")
 
 
 @dataclass(frozen=True, slots=True)

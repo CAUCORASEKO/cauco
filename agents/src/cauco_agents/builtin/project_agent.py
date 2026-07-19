@@ -1,6 +1,12 @@
 from cauco_agents.base import AgentMetadata
 from cauco_agents.builtin.base import DeterministicSignalAgent
-from cauco_agents.models import AgentContext, AgentMemoryReference, AgentPlan, AgentPlanStep
+from cauco_agents.models import (
+    AgentContext,
+    AgentMemoryReference,
+    AgentPlan,
+    AgentPlanStep,
+    AgentToolReference,
+)
 
 
 class ProjectAgent(DeterministicSignalAgent):
@@ -82,6 +88,7 @@ class ProjectAgent(DeterministicSignalAgent):
                 proposed_action=priority_action,
                 requires_confirmation=False,
                 execution_available=False,
+                tool_reference=AgentToolReference("memory", "read", "Tasks.md"),
             ),
             AgentPlanStep(
                 order=2,
@@ -94,6 +101,7 @@ class ProjectAgent(DeterministicSignalAgent):
                 proposed_action=project_action,
                 requires_confirmation=False,
                 execution_available=False,
+                tool_reference=AgentToolReference("memory", "read", "Projects.md"),
             ),
             AgentPlanStep(
                 order=3,
@@ -105,6 +113,7 @@ class ProjectAgent(DeterministicSignalAgent):
                 proposed_action=comparison_action,
                 requires_confirmation=False,
                 execution_available=False,
+                tool_reference=AgentToolReference("memory", "read", "selected_memory"),
             ),
             AgentPlanStep(
                 order=4,
@@ -114,6 +123,7 @@ class ProjectAgent(DeterministicSignalAgent):
                 proposed_action="Select one bounded next action supported by the recorded context.",
                 requires_confirmation=False,
                 execution_available=False,
+                tool_reference=AgentToolReference("memory", "read", "selected_memory"),
             ),
             AgentPlanStep(
                 order=5,
@@ -124,9 +134,10 @@ class ProjectAgent(DeterministicSignalAgent):
                 ),
                 source_memory_ids=task_ids,
                 proposed_action="Propose, but do not apply, a controlled task-memory addition.",
-                requires_confirmation=True,
+                requires_confirmation=False,
                 execution_available=False,
                 warnings=("No memory change was created or confirmed.",),
+                tool_reference=AgentToolReference("memory", "create_proposal", "Tasks.md"),
             ),
         )
         questions: list[str] = []
@@ -166,7 +177,7 @@ class ProjectAgent(DeterministicSignalAgent):
             warnings=tuple(warnings),
             requires_confirmation=True,
             execution_performed=False,
-            metadata={"framework_phase": "5B", "planning": "deterministic_template"},
+            metadata={"framework_phase": "6A", "planning": "deterministic_template"},
         )
 
 

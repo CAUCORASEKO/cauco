@@ -25,7 +25,7 @@ Returns deterministic observable state. Counts reflect the current local configu
   "runtime": { "status": "online", "version": "0.1.0" },
   "memory": { "status": "ready", "files": 9 },
   "agents": { "status": "idle", "registered": 3, "active": 0 },
-  "tools": { "status": "ready", "registered": 3 },
+  "tools": { "status": "ready", "registered": 7 },
   "scheduler": { "status": "idle", "jobs": 0 }
 }
 ```
@@ -146,6 +146,16 @@ Reviewer notes are capped at 2,000 characters and reasons at 1,000. They are ine
 The SHA-256 `snapshot_digest` covers canonical JSON for the instruction, selected agent, full routing decision, context provenance and excerpts, plan steps and metadata, and the non-execution flags at review creation. Lifecycle timestamps, status, notes, and reasons are excluded, so the digest stays unchanged after a valid human decision. Every transition verifies integrity and fails with `409` if the stored snapshot differs.
 
 Records are in-memory only and disappear when Core restarts. The store retains at most 100 records by default. At capacity it lazily expires pending records and may evict the oldest terminal records, but it never silently evicts a still-valid pending record; creation returns `409` if all capacity is active. Approval returns the warning `Approval authorizes the reviewed plan snapshot only. No action was executed.` There is no execution endpoint.
+
+Plan and plan-review responses include structured `tool_reference` data on every step and a registry-derived `readiness` object. `ready` means every referenced tool and operation currently exists and is enabled. It does not mean actions can run: readiness and every reference report `execution_enabled: false`.
+
+## Tool registry inspection
+
+`GET /api/tools` returns all tool definitions in deterministic ID order. `GET /api/tools/{tool_id}` returns one definition, `GET /api/tools/categories` returns stable categories, and `GET /api/tools/{tool_id}/operations` returns stable operation contracts. Unknown tools return `404`.
+
+`POST /api/tools/validate` accepts `{"tool_id":"git","operation_id":"status"}` and reports registration, tool/operation enablement, safety, confirmation requirements, and `execution_enabled: false`. Unknown or disabled references return `valid: false`; validation never invokes the operation.
+
+The built-in catalog contains `git`, `memory`, `filesystem`, `ollama`, `obsidian`, `calendar`, and `email`. Destructive contracts such as `git.reset_hard`, `filesystem.delete_file`, and `calendar.delete_event` are explicitly disabled. There is no tool execution API in Phase 6A.
 
 ## `GET /api/ai/status`
 

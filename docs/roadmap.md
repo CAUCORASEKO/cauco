@@ -6,7 +6,7 @@
 - Local FastAPI core with health, status, and bounded Markdown metadata endpoints
 - Portable Markdown brain template
 - Deterministic Operations Agent and agent registry
-- Permission-aware registry with three read-only tools
+- Permission-aware metadata registry with seven execution-disabled tool contracts
 - Validated one-time and recurring scheduler job definitions
 
 ## Phase 2 — Local AI provider integration (implemented)
@@ -68,6 +68,14 @@ Implemented in Phase 5C:
 - Canonical snapshot digests and lock-protected single terminal transitions
 - Explicit approval semantics that authorize a snapshot but execute nothing
 
+Implemented in Phase 6A:
+
+- Immutable tool, operation, permission, and validation contracts
+- Thread-safe authoritative registry with seven deterministic built-ins
+- Structured agent plan references and registry-backed readiness reporting
+- Tool catalog, category, operation, and validation inspection APIs
+- Execution disabled globally; no tool execution endpoint or executable tool implementation
+
 Remaining:
 
 - Persistent conversation history and streaming
@@ -76,6 +84,7 @@ Remaining:
 - Tool and agent orchestration through explicit permission policies
 - Evaluation fixtures, budgets, and model-independent fallbacks
 - Phase 6 execution must accept only approved, non-expired, integrity-valid snapshots and must add separate confirmation for each step/tool; it is not implemented
+- Phase 6B Safe Execution Engine with explicit per-operation permission and confirmation enforcement
 
 ## Phase 6 — Interaction and services
 

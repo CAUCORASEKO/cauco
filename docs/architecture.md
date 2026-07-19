@@ -34,7 +34,7 @@ The plugin and core deliberately do not share executable code. Their boundary is
 - `agents/` is the canonical shared agent framework. Core injects its explicit registry and deterministic router into application state; Project, Git, and Research agents return proposals only and never invoke tools or models.
 - `core/src/cauco_core/agents/` resolves only registered Memory Engine objects through the existing safe reader, bounds deterministic excerpts, and passes immutable context to the shared planning contracts.
 - `core/src/cauco_core/agents/review_store.py` owns the independent, process-local plan review lifecycle, integrity checks, expiration, capacity, and lock-protected human decisions. It never executes a plan.
-- `tools/` and `scheduler/` define small contracts and registries. They do not run autonomous loops.
+- `tools/` is the authoritative, thread-safe catalog of immutable tool, operation, and permission contracts. Its seven built-ins expose metadata only and have no execution method. `scheduler/` remains an inactive definition registry.
 - `installer/` remains reserved for a later packaging milestone.
 
 The source uses no architecture-specific binaries, so Apple Silicon and Intel are supported at source level.
@@ -63,3 +63,9 @@ Markdown excerpt ranking prefers a project heading discovered from registered pr
 Phase 5C extends the deterministic flow to `routing → safe context → planning → review store → human decision`. Core stores the exact routing, provenance-bearing context, and plan snapshot as `pending_review`. A human may approve, reject, or cancel it before its TTL expires; lazy expiration is the fourth terminal transition. Every terminal transition is atomic under the store lock and validates the snapshot digest first.
 
 Approval means only that the human authorized the reviewed snapshot for possible use by a future execution system. It does not invoke a tool, run a step, refresh memory, regenerate the plan, or mark work complete. Execution remains outside the current architecture, and the controlled memory-write confirmation workflow remains separate.
+
+## Tool registry and readiness
+
+Phase 6A extends the boundary to `approved plan → tool registry → validated execution contracts → stop`. Agent plan steps contain a structured `tool_id`, `operation_id`, and optional inert target. Core checks those references against the injected registry and reports whether every tool and operation is registered and enabled. This readiness result is inspection metadata, not execution readiness in the operational sense: its own `execution_enabled` flag is always false.
+
+The registry deterministically exposes Git, memory, filesystem, Ollama, Obsidian, calendar, and email definitions. Each operation declares safety, confirmation, enablement, and execution-disabled status; each tool declares its required permissions. Disabled destructive operations remain visible for inspection but are not valid plan capabilities. Phase 6B must introduce a separate Safe Execution Engine before any operation can run.

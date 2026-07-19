@@ -1,6 +1,6 @@
 from cauco_agents.base import AgentMetadata
 from cauco_agents.builtin.base import DeterministicSignalAgent
-from cauco_agents.models import AgentContext, AgentPlan, AgentPlanStep
+from cauco_agents.models import AgentContext, AgentPlan, AgentPlanStep, AgentToolReference
 
 
 class GitAgent(DeterministicSignalAgent):
@@ -44,6 +44,7 @@ class GitAgent(DeterministicSignalAgent):
 
     def plan(self, context: AgentContext, *, allow_execution: bool = False) -> AgentPlan:
         project_ids = self.source_ids(context, "projects", "tasks")
+        requested_operation = requested_git_operation(context.instruction)
         steps = (
             AgentPlanStep(
                 1,
@@ -53,6 +54,7 @@ class GitAgent(DeterministicSignalAgent):
                 f"Review likely project context in {self.source_names(context, 'projects', 'tasks')}.",
                 False,
                 False,
+                tool_reference=AgentToolReference("memory", "read", "selected_memory"),
             ),
             AgentPlanStep(
                 2,
@@ -63,6 +65,7 @@ class GitAgent(DeterministicSignalAgent):
                 False,
                 False,
                 ("No commands were executed.",),
+                AgentToolReference("git", "status"),
             ),
             AgentPlanStep(
                 3,
@@ -72,6 +75,7 @@ class GitAgent(DeterministicSignalAgent):
                 "After inspection is authorized, review the relevant diff before proposing a change.",
                 False,
                 False,
+                tool_reference=AgentToolReference("git", "diff"),
             ),
             AgentPlanStep(
                 4,
@@ -79,9 +83,10 @@ class GitAgent(DeterministicSignalAgent):
                 "Describe the requested future Git operation without running it.",
                 project_ids,
                 "Prepare the Git operation for explicit confirmation.",
-                True,
+                requested_operation in {"commit", "push"},
                 False,
                 ("Any future side effect requires explicit confirmation.",),
+                AgentToolReference("git", requested_operation),
             ),
         )
         warnings = [
@@ -103,5 +108,16 @@ class GitAgent(DeterministicSignalAgent):
             warnings=tuple(warnings),
             requires_confirmation=True,
             execution_performed=False,
-            metadata={"framework_phase": "5B", "repository_inspected": False},
+            metadata={"framework_phase": "6A", "repository_inspected": False},
         )
+
+
+def requested_git_operation(instruction: str) -> str:
+    normalized = instruction.casefold()
+    if "push" in normalized:
+        return "push"
+    if "commit" in normalized:
+        return "commit"
+    if "diff" in normalized:
+        return "diff"
+    return "status"

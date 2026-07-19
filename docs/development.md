@@ -25,7 +25,7 @@ For development, run `npm run dev` and copy or link `manifest.json`, `main.js`, 
 ```bash
 cd core
 python3.11 -m venv .venv
-.venv/bin/pip install -e ../agents -e '.[dev]'
+.venv/bin/pip install -e ../agents -e ../tools -e '.[dev]'
 source .venv/bin/activate
 uvicorn cauco_core.main:app --host 127.0.0.1 --port 8765 --reload
 ```
@@ -123,3 +123,15 @@ curl -s -X POST "http://127.0.0.1:8765/api/agents/plan-reviews/$REVIEW_ID/approv
 ```
 
 The approved response must still show `execution_performed: false`; no plan step or tool ran. Review records, including terminal records, are held only in memory and disappear whenever Cauco Core restarts.
+
+Inspect tool contracts without executing them:
+
+```bash
+curl -s http://127.0.0.1:8765/api/tools
+curl -s http://127.0.0.1:8765/api/tools/git/operations
+curl -s http://127.0.0.1:8765/api/tools/validate \
+  -H 'Content-Type: application/json' \
+  -d '{"tool_id":"git","operation_id":"status"}'
+```
+
+These endpoints return metadata only. Phase 6A contains no execution endpoint or executable tool class.

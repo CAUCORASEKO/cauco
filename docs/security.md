@@ -9,7 +9,7 @@ The current release keeps data and inference local. Deterministic foundations re
 - Memory access is limited to visible Markdown under one configured directory. Paths are relative, traversal is rejected, hidden directories are pruned, and symlinks are not followed.
 - Individual reads enforce a configurable maximum size and strict UTF-8 decoding. Search skips unreadable and oversized files.
 - File content is exposed through bounded core APIs. Memory insertion is limited to four allowlisted files and existing approved headings, and requires a stored proposal followed by explicit confirmation. No arbitrary update, rename, move, or delete route exists.
-- All registered tools declare permission metadata and are currently read-only.
+- All registered tools are immutable metadata-only definitions. Operations declare safety, enablement, confirmation, and permission metadata; every tool and operation has `execution_enabled: false` and exposes no execution method.
 - The Git tool is a placeholder and does not invoke Git or a shell.
 - The scheduler stores validated definitions but runs nothing.
 - The Operations Agent formats structured data and does not call a model.
@@ -25,6 +25,6 @@ The current release keeps data and inference local. Deterministic foundations re
 
 ## Explicitly out of scope
 
-There is no authentication, remote/cloud AI provider, unrestricted shell access, external connector, autonomous workflow, background daemon, email sending, microphone or webcam access, wake-word listener, persistent chat history, arbitrary or AI-driven memory writing, automatic summarization, embeddings, vector database, semantic search, long-term memory extraction, model-driven tool or agent execution, or streaming. Confirmed allowlisted memory insertions are atomic, backed up once per target, and never originate from chat.
+There is no authentication, remote/cloud AI provider, unrestricted shell access, tool execution engine, external connector execution, autonomous workflow, background daemon, email sending, calendar mutation, microphone or webcam access, wake-word listener, persistent chat history, arbitrary or AI-driven memory writing, automatic summarization, embeddings, vector database, semantic search, long-term memory extraction, model-driven tool or agent execution, or streaming. Tool validation and plan readiness only inspect registry contracts. Confirmed allowlisted memory insertions are atomic, backed up once per target, and never originate from chat.
 
 Plan reviews are process-local and disappear on restart. Approval authorizes only the stored plan snapshot for possible future execution; future step/tool confirmation and the separate memory-write confirmation contract are still required. The plugin's core URL is configurable for development, but localhost remains the safe default. Pointing it at a remote service changes the trust boundary and is not supported by this release.

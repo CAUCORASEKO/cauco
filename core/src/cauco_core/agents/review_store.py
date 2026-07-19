@@ -432,6 +432,15 @@ def plan_payload(plan: AgentPlan) -> dict[str, Any]:
                 "requires_confirmation": step.requires_confirmation,
                 "execution_available": step.execution_available,
                 "warnings": list(step.warnings),
+                "tool_reference": (
+                    {
+                        "tool_id": step.tool_reference.tool_id,
+                        "operation_id": step.tool_reference.operation_id,
+                        "target": step.tool_reference.target,
+                    }
+                    if step.tool_reference is not None
+                    else None
+                ),
             }
             for step in plan.steps
         ],

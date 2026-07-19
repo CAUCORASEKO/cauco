@@ -11,6 +11,6 @@ def test_status_is_deterministic(client: TestClient, brain_dir: Path) -> None:
         "runtime": {"status": "online", "version": "0.1.0"},
         "memory": {"status": "ready", "files": 1},
         "agents": {"status": "idle", "registered": 3, "active": 0},
-        "tools": {"status": "ready", "registered": 3},
+        "tools": {"status": "ready", "registered": 7},
         "scheduler": {"status": "idle", "jobs": 0},
     }

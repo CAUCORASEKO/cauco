@@ -1,0 +1,47 @@
+from dataclasses import dataclass
+
+from cauco_agents import AgentPlan
+from cauco_tools import ToolRegistry
+
+
+@dataclass(frozen=True, slots=True)
+class PlanToolReadiness:
+    tool_id: str
+    operation_id: str
+    target: str | None
+    registered: bool
+    enabled: bool
+    safe: bool | None
+    confirmation_required: bool | None
+    execution_enabled: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class AgentPlanReadiness:
+    ready: bool
+    references: tuple[PlanToolReadiness, ...]
+    execution_enabled: bool = False
+
+
+def evaluate_plan_readiness(plan: AgentPlan, registry: ToolRegistry) -> AgentPlanReadiness:
+    references: list[PlanToolReadiness] = []
+    for step in plan.steps:
+        reference = step.tool_reference
+        if reference is None:
+            continue
+        validation = registry.validate(reference.tool_id, reference.operation_id)
+        references.append(
+            PlanToolReadiness(
+                tool_id=reference.tool_id,
+                operation_id=reference.operation_id,
+                target=reference.target,
+                registered=validation.tool_exists and validation.operation_exists,
+                enabled=validation.valid,
+                safe=validation.safe,
+                confirmation_required=validation.confirmation_required,
+            )
+        )
+    return AgentPlanReadiness(
+        ready=bool(references) and all(item.registered and item.enabled for item in references),
+        references=tuple(references),
+    )

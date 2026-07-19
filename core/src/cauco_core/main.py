@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import uvicorn
 from cauco_agents import AgentRouter, create_default_registry
+from cauco_tools import create_default_registry as create_default_tool_registry
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,6 +19,7 @@ from cauco_core.api.ai_routes import router as ai_router
 from cauco_core.api.context_routes import router as context_router
 from cauco_core.api.memory_routes import router as memory_router
 from cauco_core.api.routes import router
+from cauco_core.api.tool_routes import router as tool_router
 from cauco_core.config import Settings
 from cauco_core.context.builder import ContextBuilder
 from cauco_core.memory.context import MemoryContextBuilder
@@ -46,6 +48,7 @@ def create_app(
     app = FastAPI(title="Cauco Core", version="0.1.0")
     app.state.settings = settings or Settings()
     app.state.agent_registry = create_default_registry()
+    app.state.tool_registry = create_default_tool_registry()
     app.state.agent_router = AgentRouter(app.state.agent_registry)
     app.state.memory_service = MemoryService(
         app.state.settings.resolved_brain_dir(), app.state.settings.memory_max_file_size
@@ -110,6 +113,7 @@ def create_app(
     )
     app.include_router(router)
     app.include_router(agent_router_api)
+    app.include_router(tool_router)
     app.include_router(context_router)
     app.include_router(memory_router)
     app.include_router(ai_router)

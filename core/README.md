@@ -24,6 +24,8 @@ confirmation before applying it. Proposals expire after 30 minutes by default an
 lost when Core restarts. Confirmed writes use an atomic same-directory replacement and
 maintain one rotating `<filename>.bak` backup containing the previous file. Chat does not
 execute tools or agents.
+The Core also exposes the Phase 6A tool registry for contract inspection and plan-reference
+readiness. All tool operations remain execution-disabled; there is no execution endpoint.
 
 Regenerating an existing pending proposal returns its originally stored payload without
 extending its expiry. Regenerating an applied proposal does not make it pending again;
