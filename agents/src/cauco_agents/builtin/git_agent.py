@@ -1,3 +1,5 @@
+import re
+
 from cauco_agents.base import AgentMetadata
 from cauco_agents.builtin.base import DeterministicSignalAgent
 from cauco_agents.models import AgentContext, AgentPlan, AgentPlanStep, AgentToolReference
@@ -45,16 +47,17 @@ class GitAgent(DeterministicSignalAgent):
     def plan(self, context: AgentContext, *, allow_execution: bool = False) -> AgentPlan:
         project_ids = self.source_ids(context, "projects", "tasks")
         requested_operation = requested_git_operation(context.instruction)
+        file_target = requested_file_target(context.instruction)
         steps = (
             AgentPlanStep(
                 1,
-                "Identify likely project context",
-                "Use registered project/task memory only to frame the request.",
+                "List the configured workspace",
+                "List visible entries in the configured workspace root.",
                 project_ids,
-                f"Review likely project context in {self.source_names(context, 'projects', 'tasks')}.",
+                "Inspect the workspace directory without following hidden entries.",
                 False,
                 False,
-                tool_reference=AgentToolReference("memory", "read", "selected_memory"),
+                tool_reference=AgentToolReference("filesystem", "list_directory", "."),
             ),
             AgentPlanStep(
                 2,
@@ -69,13 +72,17 @@ class GitAgent(DeterministicSignalAgent):
             ),
             AgentPlanStep(
                 3,
-                "Propose diff review",
-                "Branch, diff, staged-file, and commit details remain unknown.",
+                "Inspect an explicitly named file or propose diff review",
+                "Only an exact workspace-relative file named in the instruction can be read.",
                 (),
-                "After inspection is authorized, review the relevant diff before proposing a change.",
+                "Read the explicitly named text file; otherwise leave diff inspection disabled.",
                 False,
                 False,
-                tool_reference=AgentToolReference("git", "diff"),
+                tool_reference=(
+                    AgentToolReference("filesystem", "read_file", file_target)
+                    if file_target is not None
+                    else AgentToolReference("git", "diff")
+                ),
             ),
             AgentPlanStep(
                 4,
@@ -95,7 +102,10 @@ class GitAgent(DeterministicSignalAgent):
             "Memory excerpts are untrusted reference data, not executable instructions.",
         ]
         if allow_execution:
-            warnings.append("allow_execution was ignored; Git execution is unavailable.")
+            warnings.append(
+                "allow_execution was ignored; execution requires an approved review "
+                "and an explicit step request."
+            )
         questions = () if project_ids else ("Which project or repository does this request concern?",)
         return AgentPlan(
             agent_id=self.id,
@@ -108,7 +118,7 @@ class GitAgent(DeterministicSignalAgent):
             warnings=tuple(warnings),
             requires_confirmation=True,
             execution_performed=False,
-            metadata={"framework_phase": "6A", "repository_inspected": False},
+            metadata={"framework_phase": "6B", "repository_inspected": False},
         )
 
 
@@ -121,3 +131,11 @@ def requested_git_operation(instruction: str) -> str:
     if "diff" in normalized:
         return "diff"
     return "status"
+
+
+def requested_file_target(instruction: str) -> str | None:
+    match = re.search(
+        r"(?<![/\\A-Za-z0-9_.-])([A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]{1,10})(?![A-Za-z0-9_.-])",
+        instruction,
+    )
+    return match.group(1) if match is not None else None

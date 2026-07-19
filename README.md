@@ -22,7 +22,9 @@ Cauco is a local-first AI work orchestration project built around Obsidian and p
 - Process-local human plan review with approve, reject, cancel, TTL, and snapshot integrity
 - Plan approval authorizes only the reviewed snapshot for possible future execution; it executes nothing
 - A central metadata-only registry for Git, memory, filesystem, Ollama, Obsidian, calendar, and email capability contracts
-- Structured plan references and readiness checks; every tool operation remains execution-disabled
+- Structured plan references and readiness checks with runtime permission reported separately
+- Phase 6B step-level execution for three real, allowlisted read-only operations: `git.status`, `filesystem.list_directory`, and `filesystem.read_file`
+- Deny-by-default workspace containment, output/time limits, and audit records; no simulation layer or execute-all endpoint
 - Scheduler models for inactive one-time and recurring job definitions; no scheduler process runs yet
 - Automated Python tests and Ruff configuration, plus plugin type-check and production-build scripts
 
@@ -53,7 +55,7 @@ Local Ollama API
 Independent Python contracts: agents | tools (authoritative capability catalog) | scheduler
 ```
 
-The plugin and core remain separate and communicate through the documented HTTP contract. The core is the only authority for memory access. Relevant Markdown context is selected with deterministic text matching, size-bounded, labelled by source, and passed as untrusted reference data. Chat never writes memory or executes tools or agents. Separately, the Memory panel can propose additions to tasks, decisions, relationship notes, and project notes. Nothing is written until **Apply Change** is pressed; **Cancel** only clears the local review. Agent plans have a separate process-local review lifecycle: approval records human authorization of an exact snapshot but performs no action. Memory proposals and plan reviews are lost when Cauco Core restarts.
+The plugin and core remain separate and communicate through the documented HTTP contract. The core is the only authority for memory access. Chat never writes memory or executes tools or agents. Agent plans have a separate process-local review lifecycle: approval records human authorization of an exact snapshot but performs no action. Phase 6B can create a separate execution record and run exactly one approved, registered read-only step per explicit request. Mutating Git, filesystem, memory, email, calendar, model, Obsidian, scheduler, and network operations remain blocked. Process-local proposals, reviews, and execution records disappear when Core restarts.
 
 See [architecture](docs/architecture.md), [API contract](docs/api-contract.md), [security boundaries](docs/security.md), [development setup](docs/development.md), and the [roadmap](docs/roadmap.md).
 

@@ -82,3 +82,18 @@ def test_default_registry_contracts_and_validation() -> None:
     )
     assert not missing.valid and not missing.tool_exists
     assert not status.execution_enabled
+    runtime_allowed = {
+        (tool.id, operation.id)
+        for tool in registry.list()
+        for operation in tool.operations
+        if operation.runtime_execution_allowed
+    }
+    assert runtime_allowed == {
+        ("git", "status"),
+        ("filesystem", "list_directory"),
+        ("filesystem", "read_file"),
+    }
+    assert not registry.validate("git", "commit").runtime_execution_allowed
+    assert not registry.validate("email", "send").runtime_execution_allowed
+    assert not registry.validate("calendar", "create_event").runtime_execution_allowed
+    assert not registry.validate("memory", "create_proposal").runtime_execution_allowed

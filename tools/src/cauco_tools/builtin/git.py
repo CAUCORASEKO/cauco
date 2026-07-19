@@ -9,7 +9,7 @@ GIT_TOOL = ToolDefinition(
     version="1.0.0",
     enabled=True,
     operations=(
-        operation("status", "Inspect repository status metadata."),
+        operation("status", "Inspect repository status metadata.", runtime_allowed=True),
         operation("diff", "Inspect a repository diff."),
         operation("commit", "Create a commit.", confirmation=True),
         operation("push", "Push commits to a remote.", safe=False, confirmation=True),

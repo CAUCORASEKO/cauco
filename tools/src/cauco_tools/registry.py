@@ -62,6 +62,7 @@ class ToolRegistry:
                     None,
                     None,
                     False,
+                    False,
                     "Tool is not registered.",
                 )
             operation = next(
@@ -79,6 +80,7 @@ class ToolRegistry:
                     None,
                     None,
                     False,
+                    False,
                     "Operation is not registered for this tool.",
                 )
             valid = tool.enabled and operation.enabled
@@ -94,6 +96,7 @@ class ToolRegistry:
                 safe=operation.safe,
                 confirmation_required=operation.confirmation_required,
                 execution_enabled=False,
+                runtime_execution_allowed=operation.runtime_execution_allowed,
                 reason=reason,
             )
 

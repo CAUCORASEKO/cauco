@@ -76,6 +76,14 @@ Implemented in Phase 6A:
 - Tool catalog, category, operation, and validation inspection APIs
 - Execution disabled globally; no tool execution endpoint or executable tool implementation
 
+Implemented in Phase 6B:
+
+- Process-local execution records derived only from approved, unexpired, integrity-valid snapshots
+- Explicit single-step execution with audit events and lock-protected duplicate prevention
+- Real fixed-argv `git.status` and bounded filesystem directory/text inspection
+- Deny-by-default workspace containment, sensitive-file blocking, timeouts, and output limits
+- No simulation layer, execute-all endpoint, arbitrary command surface, or mutating operation
+
 Remaining:
 
 - Persistent conversation history and streaming
@@ -84,7 +92,7 @@ Remaining:
 - Tool and agent orchestration through explicit permission policies
 - Evaluation fixtures, budgets, and model-independent fallbacks
 - Phase 6 execution must accept only approved, non-expired, integrity-valid snapshots and must add separate confirmation for each step/tool; it is not implemented
-- Phase 6B Safe Execution Engine with explicit per-operation permission and confirmation enforcement
+- Carefully selected mutating operations may be considered individually only with stronger per-operation confirmation, recovery, and audit contracts
 
 ## Phase 6 — Interaction and services
 

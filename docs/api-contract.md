@@ -155,7 +155,19 @@ Plan and plan-review responses include structured `tool_reference` data on every
 
 `POST /api/tools/validate` accepts `{"tool_id":"git","operation_id":"status"}` and reports registration, tool/operation enablement, safety, confirmation requirements, and `execution_enabled: false`. Unknown or disabled references return `valid: false`; validation never invokes the operation.
 
-The built-in catalog contains `git`, `memory`, `filesystem`, `ollama`, `obsidian`, `calendar`, and `email`. Destructive contracts such as `git.reset_hard`, `filesystem.delete_file`, and `calendar.delete_event` are explicitly disabled. There is no tool execution API in Phase 6A.
+The built-in catalog contains `git`, `memory`, `filesystem`, `ollama`, `obsidian`, `calendar`, and `email`. Runtime policy separately marks only `git.status`, `filesystem.list_directory`, and `filesystem.read_file` as allowed. Catalog responses expose `runtime_execution_allowed`; readiness additionally exposes adapter availability and `executable_now`.
+
+## Step-level execution
+
+`POST /api/executions` with `{"review_id":"planrev_..."}` creates an inert `pending_execution` record and returns `201`. The review must be approved, unexpired, execution-authorized, and integrity-valid. One record is allowed per review. Creation never invokes an adapter.
+
+`POST /api/executions/{execution_id}/steps/{step_index}/execute` executes exactly the stored operation from that approved step. The body accepts only bounded controls: `timeout_seconds` (0.1–30), `max_output_chars` (100–100,000), `max_chars` (1–100,000), and `max_entries` (1–1,000). It cannot replace the tool, operation, target, cwd, Git arguments, or command. For the three read-only operations, this POST is the explicit tool-level confirmation.
+
+`GET /api/executions/{execution_id}` retrieves a record. `GET /api/executions` lists newest first with optional `status`, `review_id`, and `limit` filters. `POST /api/executions/{execution_id}/cancel` cancels only a pending record. There is no execute-all or arbitrary-tool endpoint.
+
+Execution states are `pending_execution`, `running`, `completed`, `failed`, and `cancelled`. Step states are `pending`, `running`, `completed`, `failed`, `skipped`, and `cancelled`. A review record always retains `execution_performed: false`; an execution and step record become true only after a real adapter invocation. Validation rejection remains false. Timeout produces a stored failed step with a safe error and audit event.
+
+Unknown reviews/executions/steps return `404`; ineligible reviews, digest failures, repeated creation/execution, and runtime-disabled operations return `409`; invalid controls return `422`; forbidden or sensitive paths return `403`. Responses contain workspace-relative paths only. Execution records and audit events are process-local and disappear on restart.
 
 ## `GET /api/ai/status`
 

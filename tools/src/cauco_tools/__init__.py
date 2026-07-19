@@ -1,4 +1,11 @@
 from cauco_tools.base import BaseTool
+from cauco_tools.adapter_registry import ToolAdapterRegistry
+from cauco_tools.execution import (
+    ToolExecutionError,
+    ToolExecutionRequest,
+    ToolExecutionResult,
+    ToolExecutionTimeoutError,
+)
 from cauco_tools.builtin import BUILTIN_TOOLS
 from cauco_tools.models import (
     ToolCategory,
@@ -21,10 +28,15 @@ __all__ = [
     "BUILTIN_TOOLS",
     "BaseTool",
     "ToolCategory",
+    "ToolAdapterRegistry",
     "ToolDefinition",
     "ToolOperation",
     "ToolPermission",
     "ToolRegistry",
     "ToolValidationResult",
+    "ToolExecutionError",
+    "ToolExecutionRequest",
+    "ToolExecutionResult",
+    "ToolExecutionTimeoutError",
     "create_default_registry",
 ]

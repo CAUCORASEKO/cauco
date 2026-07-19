@@ -9,8 +9,12 @@ FILESYSTEM_TOOL = ToolDefinition(
     version="1.0.0",
     enabled=True,
     operations=(
-        operation("read_file", "Read an allowlisted file."),
-        operation("list_files", "List allowlisted files."),
+        operation("read_file", "Read an allowlisted file.", runtime_allowed=True),
+        operation(
+            "list_directory",
+            "List an allowlisted directory.",
+            runtime_allowed=True,
+        ),
         operation("write_file", "Write an allowlisted file.", confirmation=True),
         operation(
             "delete_file",

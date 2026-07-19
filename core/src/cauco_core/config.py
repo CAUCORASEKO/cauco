@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     memory_write_proposal_ttl_seconds: int = Field(default=1800, ge=60, le=86_400)
     agent_plan_review_ttl_seconds: int = Field(default=1800, ge=60, le=86_400)
     agent_plan_review_max_records: int = Field(default=100, ge=1, le=10_000)
+    workspace_dir: Path | None = None
+    execution_max_records: int = Field(default=100, ge=1, le=10_000)
+    execution_max_file_bytes: int = Field(default=1_000_000, ge=1024, le=10_000_000)
     ai_provider: str = "ollama"
     ollama_base_url: str = "http://127.0.0.1:11434"
     default_model: str = "llama3.1:latest"
@@ -63,3 +66,6 @@ class Settings(BaseSettings):
 
     def resolved_brain_dir(self) -> Path:
         return self.brain_dir.expanduser().resolve()
+
+    def resolved_workspace_dir(self) -> Path | None:
+        return self.workspace_dir.expanduser().resolve() if self.workspace_dir else None

@@ -25,7 +25,7 @@ from cauco_agents import (
     AgentToolReference,
     UnknownPreferredAgentError,
 )
-from cauco_tools import ToolRegistry
+from cauco_tools import ToolAdapterRegistry, ToolRegistry
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StringConstraints
 
@@ -247,6 +247,10 @@ class PlanToolReadinessResponse(AgentApiModel):
     enabled: bool
     safe: bool | None
     confirmation_required: bool | None
+    operation_exists: bool
+    runtime_execution_allowed: bool
+    adapter_available: bool
+    executable_now: bool
     execution_enabled: bool
 
 
@@ -338,7 +342,11 @@ def create_plan_review(
             context_request,
             ttl_seconds=payload.ttl_seconds,
         )
-        return plan_review_response(record, request.app.state.tool_registry)
+        return plan_review_response(
+            record,
+            request.app.state.tool_registry,
+            request.app.state.tool_adapter_registry,
+        )
     except UnknownPreferredAgentError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except PlanReviewNoMatchError as error:
@@ -371,7 +379,12 @@ def list_plan_reviews(
         limit=limit,
     )
     reviews = [
-        plan_review_response(record, request.app.state.tool_registry) for record in records
+        plan_review_response(
+            record,
+            request.app.state.tool_registry,
+            request.app.state.tool_adapter_registry,
+        )
+        for record in records
     ]
     return AgentPlanReviewListResponse(reviews=reviews, count=len(reviews))
 
@@ -382,6 +395,7 @@ def get_plan_review(review_id: str, request: Request) -> AgentPlanReviewResponse
         return plan_review_response(
             request.app.state.agent_plan_review_store.get(review_id),
             request.app.state.tool_registry,
+            request.app.state.tool_adapter_registry,
         )
     except PlanReviewNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
@@ -400,6 +414,7 @@ def approve_plan_review(
             review_id, reviewer_note=payload.reviewer_note
         ),
         request.app.state.tool_registry,
+        request.app.state.tool_adapter_registry,
     )
 
 
@@ -418,6 +433,7 @@ def reject_plan_review(
             reviewer_note=payload.reviewer_note,
         ),
         request.app.state.tool_registry,
+        request.app.state.tool_adapter_registry,
     )
 
 
@@ -436,6 +452,7 @@ def cancel_plan_review(
             reviewer_note=payload.reviewer_note,
         ),
         request.app.state.tool_registry,
+        request.app.state.tool_adapter_registry,
     )
 
 
@@ -571,7 +588,11 @@ def perform_plan(
             context_request,
             required_agent_id=required_agent_id,
         )
-        return planning_response(outcome, request.app.state.tool_registry)
+        return planning_response(
+            outcome,
+            request.app.state.tool_registry,
+            request.app.state.tool_adapter_registry,
+        )
     except UnknownPreferredAgentError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except AgentNotRelevantError as error:
@@ -593,7 +614,9 @@ def perform_plan(
 
 
 def planning_response(
-    outcome: AgentPlanningOutcome, tool_registry: ToolRegistry
+    outcome: AgentPlanningOutcome,
+    tool_registry: ToolRegistry,
+    adapter_registry: ToolAdapterRegistry,
 ) -> AgentPlanningResponse:
     routed = outcome.routing
     selected = None
@@ -613,7 +636,7 @@ def planning_response(
         context=context_response(outcome.context) if outcome.context is not None else None,
         plan=plan_response(outcome.plan) if outcome.plan is not None else None,
         readiness=(
-            readiness_response(outcome.plan, tool_registry)
+            readiness_response(outcome.plan, tool_registry, adapter_registry)
             if outcome.plan is not None
             else None
         ),
@@ -695,9 +718,10 @@ def context_request_from_payload(payload: AgentPlanRequest) -> AgentContextReque
 def transition_plan_review(
     transition: Callable[[], AgentPlanReviewRecord],
     tool_registry: ToolRegistry,
+    adapter_registry: ToolAdapterRegistry,
 ) -> AgentPlanReviewResponse:
     try:
-        return plan_review_response(transition(), tool_registry)
+        return plan_review_response(transition(), tool_registry, adapter_registry)
     except PlanReviewNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except (PlanReviewStateConflictError, PlanReviewIntegrityError) as error:
@@ -709,7 +733,9 @@ def transition_plan_review(
 
 
 def plan_review_response(
-    record: AgentPlanReviewRecord, tool_registry: ToolRegistry
+    record: AgentPlanReviewRecord,
+    tool_registry: ToolRegistry,
+    adapter_registry: ToolAdapterRegistry,
 ) -> AgentPlanReviewResponse:
     routed = record.routing
     if (
@@ -758,7 +784,7 @@ def plan_review_response(
         cancellation_reason=record.cancellation_reason,
         approval_warning=record.approval_warning,
         metadata=dict(record.metadata),
-        readiness=readiness_response(record.plan, tool_registry),
+        readiness=readiness_response(record.plan, tool_registry, adapter_registry),
     )
 
 
@@ -771,9 +797,11 @@ def tool_reference_response(reference: AgentToolReference) -> AgentToolReference
 
 
 def readiness_response(
-    plan: AgentPlan, tool_registry: ToolRegistry
+    plan: AgentPlan,
+    tool_registry: ToolRegistry,
+    adapter_registry: ToolAdapterRegistry,
 ) -> AgentPlanReadinessResponse:
-    readiness = evaluate_plan_readiness(plan, tool_registry)
+    readiness = evaluate_plan_readiness(plan, tool_registry, adapter_registry)
     return AgentPlanReadinessResponse(
         ready=readiness.ready,
         execution_enabled=readiness.execution_enabled,
@@ -786,6 +814,10 @@ def readiness_response(
                 enabled=item.enabled,
                 safe=item.safe,
                 confirmation_required=item.confirmation_required,
+                operation_exists=item.operation_exists,
+                runtime_execution_allowed=item.runtime_execution_allowed,
+                adapter_available=item.adapter_available,
+                executable_now=item.executable_now,
                 execution_enabled=item.execution_enabled,
             )
             for item in readiness.references

@@ -41,6 +41,7 @@ class ToolOperation:
     confirmation_required: bool
     enabled: bool = True
     execution_enabled: bool = False
+    runtime_execution_allowed: bool = False
 
     def __post_init__(self) -> None:
         validate_identifier(self.id, "Operation ID")
@@ -48,6 +49,8 @@ class ToolOperation:
             raise ValueError("Operation description cannot be empty.")
         if self.execution_enabled:
             raise ValueError("Phase 6A tool operation execution must remain disabled.")
+        if self.runtime_execution_allowed and (not self.enabled or not self.safe):
+            raise ValueError("Runtime-enabled operations must be enabled and safe.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,4 +106,5 @@ class ToolValidationResult:
     safe: bool | None
     confirmation_required: bool | None
     execution_enabled: bool
+    runtime_execution_allowed: bool = False
     reason: str | None = None

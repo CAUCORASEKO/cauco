@@ -3,7 +3,9 @@ from datetime import timedelta
 
 import uvicorn
 from cauco_agents import AgentRouter, create_default_registry
+from cauco_tools import ToolAdapterRegistry
 from cauco_tools import create_default_registry as create_default_tool_registry
+from cauco_tools.adapters import FilesystemAdapter, GitStatusAdapter
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,11 +19,15 @@ from cauco_core.ai.service import AIService
 from cauco_core.api.agent_routes import router as agent_router_api
 from cauco_core.api.ai_routes import router as ai_router
 from cauco_core.api.context_routes import router as context_router
+from cauco_core.api.execution_routes import router as execution_router
 from cauco_core.api.memory_routes import router as memory_router
 from cauco_core.api.routes import router
 from cauco_core.api.tool_routes import router as tool_router
 from cauco_core.config import Settings
 from cauco_core.context.builder import ContextBuilder
+from cauco_core.execution.policy import WorkspacePolicy
+from cauco_core.execution.service import ExecutionService
+from cauco_core.execution.store import ExecutionStore
 from cauco_core.memory.context import MemoryContextBuilder
 from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.exceptions import MemoryDirectoryError
@@ -49,6 +55,20 @@ def create_app(
     app.state.settings = settings or Settings()
     app.state.agent_registry = create_default_registry()
     app.state.tool_registry = create_default_tool_registry()
+    app.state.tool_adapter_registry = ToolAdapterRegistry()
+    app.state.workspace_policy = None
+    workspace = app.state.settings.resolved_workspace_dir()
+    if workspace is not None:
+        app.state.workspace_policy = WorkspacePolicy(workspace)
+        app.state.tool_adapter_registry.register(
+            FilesystemAdapter(
+                app.state.workspace_policy.root,
+                max_file_bytes=app.state.settings.execution_max_file_bytes,
+            )
+        )
+        app.state.tool_adapter_registry.register(
+            GitStatusAdapter(app.state.workspace_policy.root)
+        )
     app.state.agent_router = AgentRouter(app.state.agent_registry)
     app.state.memory_service = MemoryService(
         app.state.settings.resolved_brain_dir(), app.state.settings.memory_max_file_size
@@ -72,6 +92,16 @@ def create_app(
     app.state.agent_plan_review_service = AgentPlanReviewService(
         app.state.agent_planning_service,
         app.state.agent_plan_review_store,
+    )
+    app.state.execution_store = ExecutionStore(
+        max_records=app.state.settings.execution_max_records
+    )
+    app.state.execution_service = ExecutionService(
+        app.state.agent_plan_review_store,
+        app.state.tool_registry,
+        app.state.tool_adapter_registry,
+        app.state.execution_store,
+        app.state.workspace_policy,
     )
     app.state.context_builder = ContextBuilder(app.state.memory_engine)
     app.state.memory_write_proposal_store = MemoryWriteProposalStore(
@@ -114,6 +144,7 @@ def create_app(
     app.include_router(router)
     app.include_router(agent_router_api)
     app.include_router(tool_router)
+    app.include_router(execution_router)
     app.include_router(context_router)
     app.include_router(memory_router)
     app.include_router(ai_router)

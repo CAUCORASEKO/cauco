@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from cauco_agents import AgentPlan
-from cauco_tools import ToolRegistry
+from cauco_tools import ToolAdapterRegistry, ToolRegistry
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,6 +13,10 @@ class PlanToolReadiness:
     enabled: bool
     safe: bool | None
     confirmation_required: bool | None
+    operation_exists: bool
+    runtime_execution_allowed: bool
+    adapter_available: bool
+    executable_now: bool
     execution_enabled: bool = False
 
 
@@ -23,13 +27,21 @@ class AgentPlanReadiness:
     execution_enabled: bool = False
 
 
-def evaluate_plan_readiness(plan: AgentPlan, registry: ToolRegistry) -> AgentPlanReadiness:
+def evaluate_plan_readiness(
+    plan: AgentPlan,
+    registry: ToolRegistry,
+    adapter_registry: ToolAdapterRegistry | None = None,
+) -> AgentPlanReadiness:
     references: list[PlanToolReadiness] = []
     for step in plan.steps:
         reference = step.tool_reference
         if reference is None:
             continue
         validation = registry.validate(reference.tool_id, reference.operation_id)
+        adapter_available = bool(
+            adapter_registry
+            and adapter_registry.exists(reference.tool_id, reference.operation_id)
+        )
         references.append(
             PlanToolReadiness(
                 tool_id=reference.tool_id,
@@ -39,6 +51,14 @@ def evaluate_plan_readiness(plan: AgentPlan, registry: ToolRegistry) -> AgentPla
                 enabled=validation.valid,
                 safe=validation.safe,
                 confirmation_required=validation.confirmation_required,
+                operation_exists=validation.operation_exists,
+                runtime_execution_allowed=validation.runtime_execution_allowed,
+                adapter_available=adapter_available,
+                executable_now=(
+                    validation.valid
+                    and validation.runtime_execution_allowed
+                    and adapter_available
+                ),
             )
         )
     return AgentPlanReadiness(

@@ -80,6 +80,9 @@ CAUCO_MEMORY_CONTEXT_MAX_FILES=3
 CAUCO_MEMORY_CONTEXT_MAX_CHARACTERS=6000
 CAUCO_AGENT_PLAN_REVIEW_TTL_SECONDS=1800
 CAUCO_AGENT_PLAN_REVIEW_MAX_RECORDS=100
+CAUCO_WORKSPACE_DIR=/path/to/bounded/workspace
+CAUCO_EXECUTION_MAX_RECORDS=100
+CAUCO_EXECUTION_MAX_FILE_BYTES=1000000
 ```
 
 The Ollama URL is restricted to local HTTP addresses. Ollama requires no API key.
@@ -134,4 +137,27 @@ curl -s http://127.0.0.1:8765/api/tools/validate \
   -d '{"tool_id":"git","operation_id":"status"}'
 ```
 
-These endpoints return metadata only. Phase 6A contains no execution endpoint or executable tool class.
+These endpoints return catalog metadata only; they never invoke a runtime adapter.
+
+Phase 6B uses real adapters only when `CAUCO_WORKSPACE_DIR` is explicitly configured. Start with a temporary Git repository:
+
+```bash
+TEST_WORKSPACE=$(mktemp -d)
+git -C "$TEST_WORKSPACE" init
+CAUCO_WORKSPACE_DIR="$TEST_WORKSPACE" uvicorn cauco_core.main:app \
+  --host 127.0.0.1 --port 8765
+```
+
+After creating and approving a Git plan review, create an inert execution record and explicitly execute one stored step:
+
+```bash
+curl -s http://127.0.0.1:8765/api/executions \
+  -H 'Content-Type: application/json' \
+  -d '{"review_id":"planrev_..."}'
+
+curl -s http://127.0.0.1:8765/api/executions/exec_.../steps/2/execute \
+  -H 'Content-Type: application/json' \
+  -d '{"timeout_seconds":5,"max_output_chars":20000}'
+```
+
+The first call performs nothing. The second runs only the exact approved read-only step. Tests always use temporary workspaces and repositories.

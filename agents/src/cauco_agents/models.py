@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, TypeAlias
 
@@ -189,6 +190,8 @@ class AgentToolReference:
             target.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", target)
         ):
             raise ValueError("Agent tool targets cannot be absolute paths.")
+        if target is not None and ".." in PurePosixPath(target.replace("\\", "/")).parts:
+            raise ValueError("Agent tool targets cannot traverse parent directories.")
         object.__setattr__(self, "target", target)
 
 

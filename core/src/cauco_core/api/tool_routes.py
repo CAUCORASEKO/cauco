@@ -24,6 +24,7 @@ class OperationResponse(ToolApiModel):
     confirmation_required: bool
     enabled: bool
     execution_enabled: bool
+    runtime_execution_allowed: bool
 
 
 class ToolResponse(ToolApiModel):
@@ -70,6 +71,7 @@ class ValidationResponse(ToolApiModel):
     safe: bool | None
     confirmation_required: bool | None
     execution_enabled: bool
+    runtime_execution_allowed: bool
     reason: str | None
 
 
@@ -120,6 +122,7 @@ def operation_response(operation: ToolOperation) -> OperationResponse:
             "confirmation_required": operation.confirmation_required,
             "enabled": operation.enabled,
             "execution_enabled": operation.execution_enabled,
+            "runtime_execution_allowed": operation.runtime_execution_allowed,
         }
     )
 

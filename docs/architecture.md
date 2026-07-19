@@ -68,4 +68,12 @@ Approval means only that the human authorized the reviewed snapshot for possible
 
 Phase 6A extends the boundary to `approved plan → tool registry → validated execution contracts → stop`. Agent plan steps contain a structured `tool_id`, `operation_id`, and optional inert target. Core checks those references against the injected registry and reports whether every tool and operation is registered and enabled. This readiness result is inspection metadata, not execution readiness in the operational sense: its own `execution_enabled` flag is always false.
 
-The registry deterministically exposes Git, memory, filesystem, Ollama, Obsidian, calendar, and email definitions. Each operation declares safety, confirmation, enablement, and execution-disabled status; each tool declares its required permissions. Disabled destructive operations remain visible for inspection but are not valid plan capabilities. Phase 6B must introduce a separate Safe Execution Engine before any operation can run.
+The registry deterministically exposes Git, memory, filesystem, Ollama, Obsidian, calendar, and email definitions. Each operation declares safety, confirmation, enablement, and runtime-policy status; each tool declares its required permissions. Disabled destructive operations remain visible for inspection but are not valid execution capabilities.
+
+## Safe execution engine
+
+Phase 6B implements `approved snapshot → execution record → explicit step request → registry and adapter validation → bounded read-only adapter → stored result and audit event`. Metadata definitions remain separate from runtime adapters. Only `git.status`, `filesystem.list_directory`, and `filesystem.read_file` have both runtime policy permission and an adapter.
+
+Core owns the configured workspace root, canonical path policy, review/digest integration, execution lifecycle, in-memory record store, and audit trail. The tools package owns immutable execution contracts and fixed adapters without depending on Core. Execution creation is inert; there is no execute-all path. A step-level POST is the explicit tool confirmation for these initial read-only operations.
+
+Execution records transition from `pending_execution` to `running`, then `completed` or `failed`; only pending records can be cancelled. Unsupported plan steps are retained as `skipped`. Store locks prevent concurrent duplicate execution of a step. Phase 5C review records and snapshot digests are never mutated.
