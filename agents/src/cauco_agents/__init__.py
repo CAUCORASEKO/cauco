@@ -24,6 +24,11 @@ from cauco_agents.router import (
     AgentRouter,
     UnknownPreferredAgentError,
 )
+from cauco_agents.review import (
+    APPROVAL_WARNING,
+    AgentPlanReviewRecord,
+    AgentPlanReviewStatus,
+)
 
 __all__ = [
     "DEFAULT_ROUTING_THRESHOLD",
@@ -41,6 +46,8 @@ __all__ = [
     "AgentMetadata",
     "AgentRegistry",
     "AgentPlan",
+    "AgentPlanReviewRecord",
+    "AgentPlanReviewStatus",
     "AgentPlanStep",
     "AgentRequest",
     "AgentResult",
@@ -54,5 +61,6 @@ __all__ = [
     "PlanningAgent",
     "ResearchAgent",
     "UnknownPreferredAgentError",
+    "APPROVAL_WARNING",
     "create_default_registry",
 ]

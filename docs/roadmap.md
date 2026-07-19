@@ -60,6 +60,14 @@ Implemented in Phase 5B:
 - Template-based Project, Git, and Research plans with explicit unknowns
 - Dedicated planning APIs with context opt-out and no execution
 
+Implemented in Phase 5C:
+
+- Immutable process-local plan review records with opaque IDs and bounded TTL
+- Pending, approved, rejected, cancelled, and expired lifecycle states
+- Human inspection, listing, approval, rejection, and cancellation APIs
+- Canonical snapshot digests and lock-protected single terminal transitions
+- Explicit approval semantics that authorize a snapshot but execute nothing
+
 Remaining:
 
 - Persistent conversation history and streaming
@@ -67,6 +75,7 @@ Remaining:
 - Automatic summarization and long-term memory extraction policies
 - Tool and agent orchestration through explicit permission policies
 - Evaluation fixtures, budgets, and model-independent fallbacks
+- Phase 6 execution must accept only approved, non-expired, integrity-valid snapshots and must add separate confirmation for each step/tool; it is not implemented
 
 ## Phase 6 — Interaction and services
 

@@ -116,6 +116,37 @@ Context contains relative memory provenance, deterministic selection reasons, tr
 
 Each memory reference also exposes `excerpt_strategy` and `selected_headings`. Strategies distinguish exact project headings, instruction-keyword headings, known operational sections, lexical sections, recent-decision fallback, and document-start fallback. `excerpt_truncated` is `true` only when the selected section text was cut by the character cap; selecting part of a document does not by itself count as truncation. Project names are derived from registered `Projects.md` headings rather than a client-provided or hard-coded target list.
 
+### Agent plan reviews
+
+`POST /api/agents/plan-reviews` runs the existing deterministic planning flow once and stores its exact routing, context, provenance, and plan snapshot. The request accepts the planning fields above plus optional `ttl_seconds` from 60 through 86,400; the default is 1,800 seconds. A matched plan returns `201` in `pending_review`. No match returns `409`, unknown preferred agents return `404`, and invalid bodies return `422`.
+
+```json
+{
+  "instruction": "What should I work on next in Cauco?",
+  "max_context_items": 4,
+  "max_excerpt_chars": 1200,
+  "ttl_seconds": 1800
+}
+```
+
+Each record includes `review_id`, lifecycle timestamps, `instruction`, `selected_agent_id`, the stored `routing`, `context`, and `plan`, `snapshot_digest`, review notes/reasons, and the two execution flags. IDs are opaque URL-safe `planrev_...` values. Pending, rejected, cancelled, and expired records have `execution_authorized: false`; approved records have `execution_authorized: true`. `execution_performed` is always `false`.
+
+`GET /api/agents/plan-reviews/{review_id}` returns the exact stored snapshot and its current lifecycle state. Lazy expiration is visible as `expired` with `expired_at`; retrieval still returns `200`. Unknown IDs return `404`.
+
+`GET /api/agents/plan-reviews` lists newest first, with stable review-ID tie-breaking. It accepts optional `status`, `agent_id`, and `limit` filters. The default limit is 20 and maximum is 100.
+
+Human decisions use these endpoints:
+
+- `POST /api/agents/plan-reviews/{review_id}/approve` accepts optional `reviewer_note`.
+- `POST /api/agents/plan-reviews/{review_id}/reject` requires `reason` and accepts optional `reviewer_note`.
+- `POST /api/agents/plan-reviews/{review_id}/cancel` accepts optional `reason` and `reviewer_note`.
+
+Reviewer notes are capped at 2,000 characters and reasons at 1,000. They are inert text. Line endings and outer whitespace are normalized; their content is never routed or executed. Invalid or repeated terminal transitions, including actions on expired records, return `409`. Unknown transition targets return `404` and invalid input returns `422`.
+
+The SHA-256 `snapshot_digest` covers canonical JSON for the instruction, selected agent, full routing decision, context provenance and excerpts, plan steps and metadata, and the non-execution flags at review creation. Lifecycle timestamps, status, notes, and reasons are excluded, so the digest stays unchanged after a valid human decision. Every transition verifies integrity and fails with `409` if the stored snapshot differs.
+
+Records are in-memory only and disappear when Core restarts. The store retains at most 100 records by default. At capacity it lazily expires pending records and may evict the oldest terminal records, but it never silently evicts a still-valid pending record; creation returns `409` if all capacity is active. Approval returns the warning `Approval authorizes the reviewed plan snapshot only. No action was executed.` There is no execution endpoint.
+
 ## `GET /api/ai/status`
 
 Reports provider availability and whether the configured default model appears in Ollama's installed model list. An unavailable Ollama service returns `200` with `available: false` so the dashboard can present an offline state.

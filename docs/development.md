@@ -78,6 +78,8 @@ CAUCO_AI_MAX_OUTPUT_TOKENS=1024
 CAUCO_MEMORY_MAX_FILE_SIZE=524288
 CAUCO_MEMORY_CONTEXT_MAX_FILES=3
 CAUCO_MEMORY_CONTEXT_MAX_CHARACTERS=6000
+CAUCO_AGENT_PLAN_REVIEW_TTL_SECONDS=1800
+CAUCO_AGENT_PLAN_REVIEW_MAX_RECORDS=100
 ```
 
 The Ollama URL is restricted to local HTTP addresses. Ollama requires no API key.
@@ -105,3 +107,19 @@ curl -s http://127.0.0.1:8765/api/agents/plan \
 ```
 
 These endpoints read only bounded registered memory through Cauco Core. Plans are deterministic templates; Git repositories and external research sources are not inspected.
+
+Create, inspect, and approve a process-local plan review:
+
+```bash
+REVIEW_JSON=$(curl -s http://127.0.0.1:8765/api/agents/plan-reviews \
+  -H 'Content-Type: application/json' \
+  -d '{"instruction":"What should I work on next in Cauco?","ttl_seconds":1800}')
+REVIEW_ID=$(printf '%s' "$REVIEW_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_id"])')
+
+curl -s "http://127.0.0.1:8765/api/agents/plan-reviews/$REVIEW_ID"
+curl -s -X POST "http://127.0.0.1:8765/api/agents/plan-reviews/$REVIEW_ID/approve" \
+  -H 'Content-Type: application/json' \
+  -d '{"reviewer_note":"Reviewed for possible future execution."}'
+```
+
+The approved response must still show `execution_performed: false`; no plan step or tool ran. Review records, including terminal records, are held only in memory and disappear whenever Cauco Core restarts.

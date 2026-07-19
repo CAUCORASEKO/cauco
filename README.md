@@ -19,6 +19,8 @@ Cauco is a local-first AI work orchestration project built around Obsidian and p
 - Proposal-only agents that never execute tools, Git commands, or external research
 - Bounded, registry-backed agent context with visible memory provenance
 - Deterministic Project, Git, and Research planning templates grounded in safe memory excerpts
+- Process-local human plan review with approve, reject, cancel, TTL, and snapshot integrity
+- Plan approval authorizes only the reviewed snapshot for possible future execution; it executes nothing
 - A permission-aware tool registry with three read-only tools
 - Scheduler models for inactive one-time and recurring job definitions; no scheduler process runs yet
 - Automated Python tests and Ruff configuration, plus plugin type-check and production-build scripts
@@ -50,7 +52,7 @@ Local Ollama API
 Independent Python contracts: agents | tools | scheduler
 ```
 
-The plugin and core remain separate and communicate through the documented HTTP contract. The core is the only authority for memory access. Relevant Markdown context is selected with deterministic text matching, size-bounded, labelled by source, and passed as untrusted reference data. Chat never writes memory or executes tools or agents. Separately, the Memory panel can propose additions to tasks, decisions, relationship notes, and project notes. Nothing is written until **Apply Change** is pressed; **Cancel** only clears the local review. Proposals are process-local and are lost when Cauco Core restarts.
+The plugin and core remain separate and communicate through the documented HTTP contract. The core is the only authority for memory access. Relevant Markdown context is selected with deterministic text matching, size-bounded, labelled by source, and passed as untrusted reference data. Chat never writes memory or executes tools or agents. Separately, the Memory panel can propose additions to tasks, decisions, relationship notes, and project notes. Nothing is written until **Apply Change** is pressed; **Cancel** only clears the local review. Agent plans have a separate process-local review lifecycle: approval records human authorization of an exact snapshot but performs no action. Memory proposals and plan reviews are lost when Cauco Core restarts.
 
 See [architecture](docs/architecture.md), [API contract](docs/api-contract.md), [security boundaries](docs/security.md), [development setup](docs/development.md), and the [roadmap](docs/roadmap.md).
 

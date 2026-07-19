@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from cauco_core.agents.context import AgentContextResolver
 from cauco_core.agents.planning import AgentPlanningService
+from cauco_core.agents.review_service import AgentPlanReviewService
+from cauco_core.agents.review_store import AgentPlanReviewStore
 from cauco_core.ai.base import AIProvider
 from cauco_core.ai.ollama import OllamaProvider
 from cauco_core.ai.service import AIService
@@ -59,6 +61,14 @@ def create_app(
         app.state.agent_router,
         app.state.agent_registry,
         app.state.agent_context_resolver,
+    )
+    app.state.agent_plan_review_store = AgentPlanReviewStore(
+        default_ttl_seconds=app.state.settings.agent_plan_review_ttl_seconds,
+        max_records=app.state.settings.agent_plan_review_max_records,
+    )
+    app.state.agent_plan_review_service = AgentPlanReviewService(
+        app.state.agent_planning_service,
+        app.state.agent_plan_review_store,
     )
     app.state.context_builder = ContextBuilder(app.state.memory_engine)
     app.state.memory_write_proposal_store = MemoryWriteProposalStore(

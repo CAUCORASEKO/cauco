@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     memory_context_max_files: int = Field(default=3, ge=1, le=10)
     memory_context_max_characters: int = Field(default=6000, ge=500, le=50_000)
     memory_write_proposal_ttl_seconds: int = Field(default=1800, ge=60, le=86_400)
+    agent_plan_review_ttl_seconds: int = Field(default=1800, ge=60, le=86_400)
+    agent_plan_review_max_records: int = Field(default=100, ge=1, le=10_000)
     ai_provider: str = "ollama"
     ollama_base_url: str = "http://127.0.0.1:11434"
     default_model: str = "llama3.1:latest"

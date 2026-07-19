@@ -1,4 +1,6 @@
-from typing import TypeAlias
+from collections.abc import Callable
+from datetime import datetime
+from typing import Annotated, TypeAlias
 
 from cauco_agents import (
     DEFAULT_MAX_CONTEXT_ITEMS,
@@ -11,6 +13,8 @@ from cauco_agents import (
     AgentMatch,
     AgentMetadata,
     AgentPlan,
+    AgentPlanReviewRecord,
+    AgentPlanReviewStatus,
     AgentPlanStep,
     AgentRequest,
     AgentResult,
@@ -18,10 +22,21 @@ from cauco_agents import (
     AgentRouteResult,
     UnknownPreferredAgentError,
 )
-from fastapi import APIRouter, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StringConstraints
 
 from cauco_core.agents.planning import AgentNotRelevantError, AgentPlanningOutcome
+from cauco_core.agents.review_service import PlanReviewNoMatchError
+from cauco_core.agents.review_store import (
+    MAX_PLAN_REVIEW_TTL_SECONDS,
+    MAX_REVIEW_REASON_CHARS,
+    MAX_REVIEWER_NOTE_CHARS,
+    MIN_PLAN_REVIEW_TTL_SECONDS,
+    PlanReviewCapacityError,
+    PlanReviewIntegrityError,
+    PlanReviewNotFoundError,
+    PlanReviewStateConflictError,
+)
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 JsonScalar: TypeAlias = str | int | float | bool | None
@@ -53,6 +68,38 @@ class AgentPlanRequest(AgentApiModel):
         le=MAX_EXCERPT_CHARS,
     )
     allow_execution: StrictBool = False
+
+
+class AgentPlanReviewCreateRequest(AgentPlanRequest):
+    ttl_seconds: int | None = Field(
+        default=None,
+        ge=MIN_PLAN_REVIEW_TTL_SECONDS,
+        le=MAX_PLAN_REVIEW_TTL_SECONDS,
+    )
+
+
+ReviewerNote = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_REVIEWER_NOTE_CHARS),
+]
+ReviewReason = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_REVIEW_REASON_CHARS),
+]
+
+
+class AgentPlanReviewApproveRequest(AgentApiModel):
+    reviewer_note: ReviewerNote | None = None
+
+
+class AgentPlanReviewRejectRequest(AgentApiModel):
+    reason: ReviewReason
+    reviewer_note: ReviewerNote | None = None
+
+
+class AgentPlanReviewCancelRequest(AgentApiModel):
+    reason: ReviewReason | None = None
+    reviewer_note: ReviewerNote | None = None
 
 
 class AgentMetadataResponse(AgentApiModel):
@@ -179,6 +226,45 @@ class AgentPlanningResponse(AgentApiModel):
     plan: AgentPlanResponse | None
 
 
+class AgentReviewRoutingResponse(AgentApiModel):
+    request: AgentRequestResponse
+    selected_agent: SelectedAgentResponse
+    match: AgentMatchResponse
+    matches: list[AgentMatchResponse]
+    result: AgentResultResponse
+    preferred_agent_rejected: bool
+
+
+class AgentPlanReviewResponse(AgentApiModel):
+    review_id: str
+    status: AgentPlanReviewStatus
+    created_at: datetime
+    expires_at: datetime
+    updated_at: datetime
+    instruction: str
+    selected_agent_id: str
+    routing: AgentReviewRoutingResponse
+    context: AgentContextResponse
+    plan: AgentPlanResponse
+    snapshot_digest: str
+    execution_authorized: bool
+    execution_performed: bool
+    approved_at: datetime | None
+    rejected_at: datetime | None
+    cancelled_at: datetime | None
+    expired_at: datetime | None
+    reviewer_note: str | None
+    rejection_reason: str | None
+    cancellation_reason: str | None
+    approval_warning: str | None
+    metadata: dict[str, JsonScalar]
+
+
+class AgentPlanReviewListResponse(AgentApiModel):
+    reviews: list[AgentPlanReviewResponse]
+    count: int
+
+
 def agent_router(request: Request) -> AgentRouter:
     return request.app.state.agent_router
 
@@ -205,6 +291,113 @@ def plan_explicit_agent(
             detail="preferred_agent_id must match the explicit planning agent.",
         )
     return perform_plan(payload, request, required_agent_id=agent_id)
+
+
+@router.post(
+    "/plan-reviews",
+    response_model=AgentPlanReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_plan_review(
+    payload: AgentPlanReviewCreateRequest, request: Request
+) -> AgentPlanReviewResponse:
+    try:
+        context_request = context_request_from_payload(payload)
+        record = request.app.state.agent_plan_review_service.create(
+            context_request,
+            ttl_seconds=payload.ttl_seconds,
+        )
+        return plan_review_response(record)
+    except UnknownPreferredAgentError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except PlanReviewNoMatchError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except PlanReviewCapacityError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from error
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The plan review could not be created.",
+        ) from error
+
+
+@router.get("/plan-reviews", response_model=AgentPlanReviewListResponse)
+def list_plan_reviews(
+    request: Request,
+    review_status: Annotated[
+        AgentPlanReviewStatus | None, Query(alias="status")
+    ] = None,
+    agent_id: Annotated[str | None, Query(max_length=100)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AgentPlanReviewListResponse:
+    records = request.app.state.agent_plan_review_store.list(
+        status=review_status,
+        agent_id=agent_id,
+        limit=limit,
+    )
+    reviews = [plan_review_response(record) for record in records]
+    return AgentPlanReviewListResponse(reviews=reviews, count=len(reviews))
+
+
+@router.get("/plan-reviews/{review_id}", response_model=AgentPlanReviewResponse)
+def get_plan_review(review_id: str, request: Request) -> AgentPlanReviewResponse:
+    try:
+        return plan_review_response(request.app.state.agent_plan_review_store.get(review_id))
+    except PlanReviewNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@router.post(
+    "/plan-reviews/{review_id}/approve", response_model=AgentPlanReviewResponse
+)
+def approve_plan_review(
+    review_id: str,
+    payload: AgentPlanReviewApproveRequest,
+    request: Request,
+) -> AgentPlanReviewResponse:
+    return transition_plan_review(
+        lambda: request.app.state.agent_plan_review_store.approve(
+            review_id, reviewer_note=payload.reviewer_note
+        ),
+    )
+
+
+@router.post(
+    "/plan-reviews/{review_id}/reject", response_model=AgentPlanReviewResponse
+)
+def reject_plan_review(
+    review_id: str,
+    payload: AgentPlanReviewRejectRequest,
+    request: Request,
+) -> AgentPlanReviewResponse:
+    return transition_plan_review(
+        lambda: request.app.state.agent_plan_review_store.reject(
+            review_id,
+            reason=payload.reason,
+            reviewer_note=payload.reviewer_note,
+        ),
+    )
+
+
+@router.post(
+    "/plan-reviews/{review_id}/cancel", response_model=AgentPlanReviewResponse
+)
+def cancel_plan_review(
+    review_id: str,
+    payload: AgentPlanReviewCancelRequest,
+    request: Request,
+) -> AgentPlanReviewResponse:
+    return transition_plan_review(
+        lambda: request.app.state.agent_plan_review_store.cancel(
+            review_id,
+            reason=payload.reason,
+            reviewer_note=payload.reviewer_note,
+        ),
+    )
 
 
 @router.get("", response_model=AgentListResponse)
@@ -435,4 +628,82 @@ def plan_response(plan: AgentPlan) -> AgentPlanResponse:
         requires_confirmation=plan.requires_confirmation,
         execution_performed=plan.execution_performed,
         metadata=dict(plan.metadata),
+    )
+
+
+def context_request_from_payload(payload: AgentPlanRequest) -> AgentContextRequest:
+    return AgentContextRequest(
+        instruction=payload.instruction,
+        intent=payload.intent,
+        preferred_agent_id=payload.preferred_agent_id,
+        include_context=payload.include_context,
+        max_context_items=payload.max_context_items,
+        max_excerpt_chars=payload.max_excerpt_chars,
+        allow_execution=payload.allow_execution,
+    )
+
+
+def transition_plan_review(
+    transition: Callable[[], AgentPlanReviewRecord],
+) -> AgentPlanReviewResponse:
+    try:
+        return plan_review_response(transition())
+    except PlanReviewNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except (PlanReviewStateConflictError, PlanReviewIntegrityError) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from error
+
+
+def plan_review_response(record: AgentPlanReviewRecord) -> AgentPlanReviewResponse:
+    routed = record.routing
+    if (
+        routed.selected_agent_id is None
+        or routed.selected_agent_name is None
+        or routed.match is None
+        or routed.result is None
+    ):
+        raise ValueError("Stored plan review routing is incomplete.")
+    return AgentPlanReviewResponse(
+        review_id=record.review_id,
+        status=record.status,
+        created_at=record.created_at,
+        expires_at=record.expires_at,
+        updated_at=record.updated_at,
+        instruction=record.instruction,
+        selected_agent_id=record.selected_agent_id,
+        routing=AgentReviewRoutingResponse(
+            request=AgentRequestResponse(
+                instruction=routed.request.instruction,
+                intent=routed.request.intent,
+                context=dict(routed.request.context),
+                preferred_agent_id=routed.request.preferred_agent_id,
+                allow_execution=routed.request.allow_execution,
+            ),
+            selected_agent=SelectedAgentResponse(
+                id=routed.selected_agent_id,
+                name=routed.selected_agent_name,
+            ),
+            match=match_response(routed.match),
+            matches=[match_response(match) for match in routed.matches],
+            result=result_response(routed.result),
+            preferred_agent_rejected=routed.preferred_agent_rejected,
+        ),
+        context=context_response(record.context),
+        plan=plan_response(record.plan),
+        snapshot_digest=record.snapshot_digest,
+        execution_authorized=record.execution_authorized,
+        execution_performed=record.execution_performed,
+        approved_at=record.approved_at,
+        rejected_at=record.rejected_at,
+        cancelled_at=record.cancelled_at,
+        expired_at=record.expired_at,
+        reviewer_note=record.reviewer_note,
+        rejection_reason=record.rejection_reason,
+        cancellation_reason=record.cancellation_reason,
+        approval_warning=record.approval_warning,
+        metadata=dict(record.metadata),
     )
