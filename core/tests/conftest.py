@@ -8,6 +8,11 @@ from cauco_core.config import Settings
 from cauco_core.main import create_app
 
 
+@pytest.fixture(autouse=True)
+def isolated_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CAUCO_DATABASE_PATH", str(tmp_path / "cauco-test.db"))
+
+
 @pytest.fixture
 def brain_dir(tmp_path: Path) -> Path:
     brain = tmp_path / "brain"

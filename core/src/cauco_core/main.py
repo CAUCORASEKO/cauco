@@ -35,7 +35,7 @@ from cauco_core.config import Settings
 from cauco_core.context.builder import ContextBuilder
 from cauco_core.execution.policy import WorkspacePolicy
 from cauco_core.execution.service import ExecutionService
-from cauco_core.execution.store import ExecutionStore
+from cauco_core.execution.sqlite_store import SQLiteExecutionStore
 from cauco_core.memory.context import MemoryContextBuilder
 from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.exceptions import MemoryDirectoryError
@@ -47,6 +47,7 @@ from cauco_core.memory_writing.store import MemoryWriteProposalStore
 from cauco_core.mutations.memory_adapter import CoreMemoryMutationAdapter
 from cauco_core.mutations.service import MutationService
 from cauco_core.mutations.store import MutationPreviewStore
+from cauco_core.persistence import SQLiteDatabase
 
 
 def build_ai_provider(settings: Settings) -> AIProvider:
@@ -140,7 +141,14 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
             app.state.memory_write_proposal_applier,
         )
     )
-    app.state.execution_store = ExecutionStore(max_records=app.state.settings.execution_max_records)
+    app.state.database = SQLiteDatabase(
+        app.state.settings.resolved_database_path(),
+        busy_timeout_ms=app.state.settings.database_busy_timeout_ms,
+    )
+    app.state.execution_store = SQLiteExecutionStore(
+        app.state.database,
+        max_records=app.state.settings.execution_max_records,
+    )
     app.state.execution_service = ExecutionService(
         app.state.agent_plan_review_store,
         app.state.tool_registry,
