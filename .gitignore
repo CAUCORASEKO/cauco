@@ -29,3 +29,6 @@ htmlcov/
 # Temporary files
 *.tmp
 *.swp
+
+# Cauco operational data
+data/

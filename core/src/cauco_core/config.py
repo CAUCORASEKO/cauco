@@ -10,12 +10,19 @@ def default_brain_directory() -> Path:
     return Path(__file__).resolve().parents[3] / "brain-template"
 
 
+def default_database_path() -> Path:
+    """Return the repository-local development database path."""
+    return Path(__file__).resolve().parents[3] / "data" / "cauco-dev.db"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CAUCO_", extra="ignore")
 
     host: str = "127.0.0.1"
     port: int = Field(default=8765, ge=1, le=65535)
     brain_dir: Path = Field(default_factory=default_brain_directory)
+    database_path: Path = Field(default_factory=default_database_path)
+    database_busy_timeout_ms: int = Field(default=5000, ge=100, le=60_000)
     memory_max_file_size: int = Field(default=524_288, ge=1024, le=10_485_760)
     memory_context_max_files: int = Field(default=3, ge=1, le=10)
     memory_context_max_characters: int = Field(default=6000, ge=500, le=50_000)
@@ -69,6 +76,9 @@ class Settings(BaseSettings):
 
     def resolved_brain_dir(self) -> Path:
         return self.brain_dir.expanduser().resolve()
+
+    def resolved_database_path(self) -> Path:
+        return self.database_path.expanduser().resolve()
 
     def resolved_workspace_dir(self) -> Path | None:
         return self.workspace_dir.expanduser().resolve() if self.workspace_dir else None
