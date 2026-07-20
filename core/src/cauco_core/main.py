@@ -46,7 +46,7 @@ from cauco_core.memory_writing.proposal_builder import MemoryWriteProposalBuilde
 from cauco_core.memory_writing.store import MemoryWriteProposalStore
 from cauco_core.mutations.memory_adapter import CoreMemoryMutationAdapter
 from cauco_core.mutations.service import MutationService
-from cauco_core.mutations.store import MutationPreviewStore
+from cauco_core.mutations.sqlite_store import SQLiteMutationPreviewStore
 from cauco_core.persistence import SQLiteDatabase
 
 
@@ -156,7 +156,8 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.execution_store,
         app.state.workspace_policy,
     )
-    app.state.mutation_preview_store = MutationPreviewStore(
+    app.state.mutation_preview_store = SQLiteMutationPreviewStore(
+        app.state.database,
         ttl_seconds=app.state.settings.mutation_preview_ttl_seconds,
         max_records=app.state.settings.mutation_preview_max_records,
     )
