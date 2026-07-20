@@ -29,7 +29,8 @@ Cauco is a local-first AI work orchestration project built around Obsidian and p
 - Plan approval, execution creation, and step execution remain visibly separate; the plugin never approves or executes automatically
 - Phase 7A's first controlled local mutations: memory proposal creation/confirmation and bounded workspace text writes
 - Phase 7B controlled `git.add` for an exact approved set of workspace-relative text files
-- Every mutation requires an inert preview plus a separate operation-specific confirmation; commit, push, and broader Git mutations remain disabled
+- Phase 7C controlled local `git.commit` from an exact preview-bound staged tree
+- Every mutation requires an inert preview plus a separate operation-specific confirmation; commit never stages additional files or pushes, and broader Git mutations remain disabled
 - Scheduler models for inactive one-time and recurring job definitions; no scheduler process runs yet
 - Automated Python tests and Ruff configuration, plus plugin type-check and production-build scripts
 
@@ -60,7 +61,7 @@ Local Ollama API
 Independent Python contracts: agents | tools (authoritative capability catalog) | scheduler
 ```
 
-The plugin and core remain separate and communicate through the documented HTTP contract. Core is the authority for memory and tool access; the plugin never reads host files, invokes Git, or spawns a process. Chat never writes memory or executes tools or agents. Approval and execution-record creation are inert. Read-only steps retain explicit step execution. Mutation steps require preview creation and a second request bound to the exact preview digest and Core-provided phrase. Only `memory.create_proposal`, `memory.confirm_proposal`, `filesystem.write_text_file`, and exact-path `git.add` are mutation-enabled. Commit, push, broad staging, communication, model, Obsidian, scheduler, network, source-code, and generic filesystem mutations remain blocked. Process-local proposals, reviews, previews, locks, and execution records disappear when Core restarts.
+The plugin and core remain separate and communicate through the documented HTTP contract. Core is the authority for memory and tool access; the plugin never reads host files, invokes Git, or spawns a process. Chat never writes memory or executes tools or agents. Approval and execution-record creation are inert. Read-only steps retain explicit step execution. Mutation steps require preview creation and a second request bound to the exact preview digest and Core-provided phrase. Only `memory.create_proposal`, `memory.confirm_proposal`, `filesystem.write_text_file`, exact-path `git.add`, and exact-tree `git.commit` are mutation-enabled. Commits use the fixed approved message and create one local commit only; they never stage or push. Push, broad staging, communication, model, Obsidian, scheduler, network, source-code, and generic filesystem mutations remain blocked. Process-local proposals, reviews, previews, locks, and execution records disappear when Core restarts.
 
 See [architecture](docs/architecture.md), [API contract](docs/api-contract.md), [security boundaries](docs/security.md), [development setup](docs/development.md), and the [roadmap](docs/roadmap.md).
 

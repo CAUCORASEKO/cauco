@@ -16,6 +16,8 @@ export function renderToolResult(card: HTMLElement, result: ToolResult): void {
     renderGitResult(details, result);
   } else if (result.tool_id === "git" && result.operation_id === "add") {
     renderGitAddResult(details, result);
+  } else if (result.tool_id === "git" && result.operation_id === "commit") {
+    renderGitCommitResult(details, result);
   } else if (result.tool_id === "filesystem" && result.operation_id === "list_directory") {
     renderDirectoryResult(details, result);
   } else if (result.tool_id === "filesystem" && result.operation_id === "read_file") {
@@ -29,6 +31,21 @@ export function renderToolResult(card: HTMLElement, result: ToolResult): void {
     text: safeDisplayText(result.output),
     cls: "cauco-result-output",
   });
+}
+
+function renderGitCommitResult(container: HTMLElement, result: ToolResult): void {
+  const data = result.structured_data;
+  const summary = container.createEl("dl", { cls: "cauco-control-details" });
+  addDetail(summary, "Commit", structuredString(data.commit_short_id) ?? "Unavailable");
+  addDetail(summary, "Message", structuredString(data.commit_message) ?? "Unavailable");
+  addDetail(summary, "Previous HEAD", structuredString(data.previous_head)?.slice(0, 12) ?? "Unborn");
+  addDetail(summary, "New HEAD", structuredString(data.new_head)?.slice(0, 12) ?? "Unavailable");
+  addDetail(summary, "Tree verification", data.verification_passed === true ? "Passed" : "Failed");
+  const committed = Array.isArray(data.committed_paths) ? data.committed_paths : [];
+  const list = container.createEl("ul", { cls: "cauco-result-list" });
+  for (const path of committed) {
+    if (typeof path === "string") list.createEl("li", { text: safeDisplayText(path, 500) });
+  }
 }
 
 function renderGitAddResult(container: HTMLElement, result: ToolResult): void {

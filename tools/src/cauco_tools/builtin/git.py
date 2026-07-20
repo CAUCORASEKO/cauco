@@ -23,7 +23,10 @@ GIT_TOOL = ToolDefinition(
         operation(
             "add_all", "Stage all repository changes.", enabled=False, confirmation=True
         ),
-        operation("commit", "Create a commit.", enabled=False, confirmation=True),
+        operation(
+            "commit", "Create one local commit from an exact approved staged tree.",
+            confirmation=True, runtime_allowed=True, mutation=True,
+        ),
         operation(
             "push",
             "Push commits to a remote.",

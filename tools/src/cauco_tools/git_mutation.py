@@ -4,6 +4,7 @@ from pathlib import PurePosixPath
 
 
 MAX_GIT_ADD_PATHS = 20
+MAX_GIT_COMMIT_MESSAGE = 120
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,3 +56,37 @@ class GitAddInput:
         if len({item.casefold() for item in normalized}) != len(normalized):
             raise ValueError("git.add paths must be unique after normalization.")
         object.__setattr__(self, "paths", tuple(normalized))
+
+
+@dataclass(frozen=True, slots=True)
+class GitCommitInput:
+    """Immutable approved input for one local commit of the existing index."""
+
+    message: str
+    expected_staged_paths: tuple[str, ...]
+    intent_summary: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.message, str):
+            raise ValueError("git.commit requires a UTF-8 text message.")
+        message = self.message.strip()
+        if (
+            not message
+            or len(message) > MAX_GIT_COMMIT_MESSAGE
+            or "\n" in message
+            or "\r" in message
+            or "\x00" in message
+            or any(ord(character) < 32 or ord(character) == 127 for character in message)
+            or message.casefold().startswith(("fixup!", "squash!"))
+            or message.startswith("-")
+        ):
+            raise ValueError("git.commit message does not meet the Phase 7C policy.")
+        if re.search(r"(?:api[_ -]?key|password|secret|token)\s*[:=]", message, re.I):
+            raise ValueError("git.commit message appears to contain credential material.")
+        paths = GitAddInput(tuple(self.expected_staged_paths)).paths
+        if self.intent_summary is not None and (
+            not isinstance(self.intent_summary, str) or "\x00" in self.intent_summary
+        ):
+            raise ValueError("git.commit intent summary must be safe text.")
+        object.__setattr__(self, "message", message)
+        object.__setattr__(self, "expected_staged_paths", paths)

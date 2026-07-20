@@ -11,6 +11,7 @@ from typing import Any
 from cauco_agents import (
     FilesystemWriteTextInput,
     GitAddInput,
+    GitCommitInput,
     MemoryConfirmProposalInput,
     MemoryCreateProposalInput,
 )
@@ -20,7 +21,7 @@ from cauco_tools import (
     ToolExecutionRequest,
     ToolRegistry,
 )
-from cauco_tools.adapters import FilesystemTextMutationAdapter, GitAddAdapter
+from cauco_tools.adapters import FilesystemTextMutationAdapter, GitAddAdapter, GitCommitAdapter
 
 from cauco_core.agents.review_store import (
     AgentPlanReviewStore,
@@ -64,6 +65,7 @@ PHRASES = {
     ("memory", "confirm_proposal"): "CONFIRM MEMORY WRITE",
     ("filesystem", "write_text_file"): "WRITE WORKSPACE FILE",
     ("git", "add"): "STAGE APPROVED FILES",
+    ("git", "commit"): "CREATE APPROVED COMMIT",
 }
 DIFF_LIMIT = 20_000
 
@@ -97,6 +99,8 @@ class MutationService:
         key = (reference.tool_id, reference.operation_id)
         if key == ("git", "add"):
             self._event(record.execution_id, step, "git_staging_preview_requested", "accepted")
+        if key == ("git", "commit"):
+            self._event(record.execution_id, step, "commit_preview_requested", "accepted")
         if key not in PHRASES:
             self._event(record.execution_id, step, "preview_rejected", "rejected")
             raise MutationConflictError("The approved step is not an enabled mutation.")
@@ -114,6 +118,10 @@ class MutationService:
             if key == ("git", "add"):
                 self._event(record.execution_id, step, "repository_validation_passed", "success")
                 self._event(record.execution_id, step, "path_validation_passed", "success")
+            if key == ("git", "commit"):
+                self._event(record.execution_id, step, "repository_validation_passed", "success")
+                self._event(record.execution_id, step, "staged_tree_captured", "success")
+                self._event(record.execution_id, step, "identity_validation_passed", "success")
             created_at = self.preview_store.clock()
             expires_at = created_at + self.preview_store.ttl
             phrase = PHRASES[key]
@@ -164,6 +172,11 @@ class MutationService:
                 "repository_mismatch",
                 "not_git_repository",
                 "index_locked",
+                "no_staged_changes",
+                "staged_paths_mismatch",
+                "identity_missing",
+                "detached_head",
+                "stale_state",
             }:
                 raise MutationConflictError(error.safe_message) from error
             raise MutationValidationError(error.safe_message) from error
@@ -284,6 +297,9 @@ class MutationService:
         if data.get("fixed_git_add_invoked"):
             self._event(execution_id, step, "fixed_git_add_invoked", "success")
             self._event(execution_id, step, "post_status_captured", "success")
+        if data.get("fixed_git_commit_invoked"):
+            self._event(execution_id, step, "fixed_git_commit_invoked", "success")
+            self._event(execution_id, step, "commit_verification_passed", "success")
         if data.get("verification_passed"):
             self._event(execution_id, step, "verification_passed", "success")
         if data.get("memory_refreshed"):
@@ -398,6 +414,48 @@ class MutationService:
                 },
                 "diff_preview": captured["diff_preview"],
             }
+        if isinstance(operation_input, GitCommitInput):
+            policy = self.execution_service.workspace_policy
+            if policy is None:
+                raise MutationConflictError("No execution workspace is configured.")
+            adapter = self.adapter_registry.get(tool_id, operation_id)
+            if not isinstance(adapter, GitCommitAdapter) or adapter.workspace != policy.root:
+                raise MutationConflictError("The configured Git commit adapter is unavailable.")
+            captured = adapter.inspect_commit(
+                operation_input.message, operation_input.expected_staged_paths
+            )
+            return {
+                "target": None,
+                "normalized_arguments": {
+                    "message": captured["message"],
+                    "expected_staged_paths": captured["expected_staged_paths"],
+                    "staged_tree_id": captured["staged_tree_id"],
+                    "current_head_id": captured["current_head_id"],
+                    "current_branch": captured["current_branch"],
+                    "index_digest": captured["index_digest"],
+                },
+                "before_state": {
+                    "repository_label": captured["repository_label"],
+                    "repository_id": captured["repository_id"],
+                    "current_head_id": captured["current_head_id"],
+                    "current_branch": captured["current_branch"],
+                    "staged_tree_id": captured["staged_tree_id"],
+                    "index_digest": captured["index_digest"],
+                    "author_name": captured["author_name"],
+                    "author_email_masked": captured["author_email_masked"],
+                },
+                "proposed_after_state": {
+                    "commit_message": captured["message"],
+                    "expected_staged_paths": captured["expected_staged_paths"],
+                    "actual_staged_paths": captured["actual_staged_paths"],
+                    "staged_path_count": len(captured["actual_staged_paths"]),
+                    "staged_tree_id": captured["staged_tree_id"],
+                    "diff_stat": captured["diff_stat"],
+                    "hooks_policy": "Local Git hooks may run during commit.",
+                    "warning": "This creates one local commit. It does not stage files or push.",
+                },
+                "diff_preview": captured["diff_preview"],
+            }
         if isinstance(operation_input, MemoryCreateProposalInput):
             proposal = self.proposal_builder.build(
                 MemoryWriteRequest(
@@ -478,6 +536,21 @@ class MutationService:
                     if item.step_index == preview.step_index
                 )
                 self._event(preview.execution_id, step, event, "rejected")
+                self._stale(preview)
+            return
+        if preview.tool_id == "git" and preview.operation_id == "commit":
+            adapter = self.adapter_registry.get("git", "commit")
+            if not isinstance(adapter, GitCommitAdapter):
+                self._stale(preview)
+            try:
+                adapter.verify_commit_preview(preview.normalized_arguments)
+            except ToolExecutionError:
+                step = next(
+                    item
+                    for item in self.execution_store.get(preview.execution_id).step_records
+                    if item.step_index == preview.step_index
+                )
+                self._event(preview.execution_id, step, "commit_state_stale", "rejected")
                 self._stale(preview)
             return
         if preview.operation_id == "create_proposal":

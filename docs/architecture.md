@@ -86,6 +86,8 @@ Core owns preview lifecycle, approved-step binding, stale-state checks, audit, a
 
 Phase 7B adds a dedicated Core-independent Git staging contract and adapter. Core binds the configured repository, approved paths, before-index digest, staged-state digest, and per-path worktree state into the preview. The adapter accepts no raw argv, flags, cwd, environment, or repository input; it invokes only `git add -- <paths>`, backs up the index outside the worktree, and verifies that only approved paths became newly staged. It initially supports straightforward modified tracked and new untracked UTF-8 text files only.
 
+Phase 7C keeps index mutation distinct from history mutation: `staged tree → commit preview → exact tree/HEAD/index binding → confirmation → fixed commit → verification`. The commit adapter accepts only the immutable approved message and staged paths captured in the preview, invokes fixed `git commit --no-gpg-sign -m <message>`, and verifies the resulting HEAD, tree, subject, and changed paths. It never stages, pushes, rewrites history, or rolls back a completed commit. Local hooks are allowed as normal Git behavior, with bounded output and timeout; failures are reported after checking whether HEAD changed.
+
 ## Obsidian execution control
 
 Phase 6C/7A presents the Core lifecycle as `instruction → generated plan and provenance → review decision → readiness → inert execution record → explicit read or preview/confirmation → real result → audit trail`. The plugin keeps transient UI state separate from Core records, defensively validates essential response shapes, ignores stale manual GET responses, and never polls.

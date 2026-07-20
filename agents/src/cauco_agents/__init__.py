@@ -33,7 +33,7 @@ from cauco_agents.review import (
     AgentPlanReviewRecord,
     AgentPlanReviewStatus,
 )
-from cauco_tools import GitAddInput
+from cauco_tools import GitAddInput, GitCommitInput
 
 __all__ = [
     "DEFAULT_ROUTING_THRESHOLD",
@@ -57,6 +57,7 @@ __all__ = [
     "AgentToolReference",
     "FilesystemWriteTextInput",
     "GitAddInput",
+    "GitCommitInput",
     "MemoryConfirmProposalInput",
     "MemoryCreateProposalInput",
     "AgentRequest",

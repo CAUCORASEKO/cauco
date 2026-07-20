@@ -361,6 +361,7 @@ export class CaucoExecutionPanel {
 
   private renderMutationControls(card: HTMLElement, step: StepExecutionRecord): void {
     const staging = step.tool_id === "git" && step.operation_id === "add";
+    const committing = step.tool_id === "git" && step.operation_id === "commit";
     card.createEl("p", {
       text: staging
         ? "Creating this preview does not modify the Git index."
@@ -375,7 +376,7 @@ export class CaucoExecutionPanel {
       const create = card.createEl("button", {
         text: this.state.pendingAction === "create-mutation-preview"
           ? "Creating inert preview…"
-          : staging ? "Create Staging Preview" : "Create Mutation Preview",
+          : staging ? "Create Staging Preview" : committing ? "Create Commit Preview" : "Create Mutation Preview",
         attr: { type: "button" },
       });
       create.disabled = this.state.pendingAction !== null;
@@ -390,13 +391,19 @@ export class CaucoExecutionPanel {
     addDetail(details, "Status", statusLabel(preview.status));
     addDetail(details, "Expires", formatTimestamp(preview.expires_at));
     addDetail(details, "Preview digest", preview.preview_digest.slice(0, 12));
-    if (staging) {
-      const paths = preview.proposed_after_state.paths;
+    if (staging || committing) {
+      const paths = staging ? preview.proposed_after_state.paths : preview.proposed_after_state.expected_staged_paths;
       addDetail(details, "Path count", String(preview.proposed_after_state.path_count ?? 0));
       const list = card.createEl("ul", { cls: "cauco-result-list" });
       if (Array.isArray(paths)) for (const path of paths) {
         if (typeof path === "string") list.createEl("li", { text: safeDisplayText(path, 500) });
       }
+    }
+    if (committing) {
+      addDetail(details, "Commit message", String(preview.proposed_after_state.commit_message ?? ""));
+      addDetail(details, "Branch", String(preview.before_state.current_branch ?? ""));
+      addDetail(details, "Staged tree", String(preview.before_state.staged_tree_id ?? "").slice(0, 12));
+      card.createEl("p", { text: "This creates one local Git commit. It does not stage additional files or push to a remote. Local Git hooks may run during commit.", cls: "cauco-trust-note" });
     }
     const policy = preview.proposed_after_state.overwrite_policy;
     if (typeof policy === "string") addDetail(details, "Write policy", policy);
@@ -406,6 +413,7 @@ export class CaucoExecutionPanel {
     card.createEl("p", {
       text: staging
         ? "This stages only the exact approved files listed above. It does not create a commit or push anything."
+        : committing ? "The commit message and staged paths are fixed and cannot be edited during confirmation."
         : "The target and approved content are fixed and cannot be edited during confirmation.",
       cls: "cauco-trust-note",
     });
@@ -423,7 +431,7 @@ export class CaucoExecutionPanel {
     const confirm = actions.createEl("button", {
       text: this.state.pendingAction === "confirm-mutation"
         ? "Applying exact mutation…"
-        : staging ? "Stage Approved Files" : "Confirm and Apply Mutation",
+        : staging ? "Stage Approved Files" : committing ? "Create Approved Commit" : "Confirm and Apply Mutation",
       cls: "mod-cta",
       attr: { type: "button" },
     });

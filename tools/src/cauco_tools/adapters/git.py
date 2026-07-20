@@ -19,6 +19,16 @@ from cauco_tools.execution import (
 )
 
 
+_MUTATION_LOCKS: dict[Path, Lock] = {}
+_MUTATION_LOCKS_GUARD = Lock()
+
+
+def mutation_lock(workspace: Path) -> Lock:
+    """Return the process-local mutation lock shared by Git add and commit."""
+    with _MUTATION_LOCKS_GUARD:
+        return _MUTATION_LOCKS.setdefault(workspace, Lock())
+
+
 class GitStatusAdapter:
     tool_id = "git"
     operations = frozenset({"status"})
@@ -157,7 +167,7 @@ class GitAddAdapter:
         self.max_paths = max_paths
         self.max_file_bytes = max_file_bytes
         self.max_aggregate_bytes = max_aggregate_bytes
-        self._lock = Lock()
+        self._lock = mutation_lock(self.workspace)
         executable = shutil.which("git", path=os.defpath)
         if executable is None:
             raise ToolExecutionError("git_unavailable", "Git is not available.")
@@ -695,6 +705,162 @@ class GitAddAdapter:
         if "index.lock" in folded or "another git process" in folded:
             return "The Git index is locked by another operation."
         return "Git could not stage the approved paths."
+
+
+class GitCommitAdapter(GitAddAdapter):
+    """Creates one verified local commit from a preview-bound existing index.
+
+    Hooks are deliberately allowed for this operation; unlike inspection commands,
+    the commit subprocess does not override ``core.hooksPath``.
+    """
+
+    operations = frozenset({"commit"})
+
+    def inspect_commit(self, message: str, expected_paths: tuple[str, ...]) -> dict[str, Any]:
+        self._validate_repository()
+        self._validate_operation_state()
+        branch = self._branch()
+        if branch is None:
+            raise ToolExecutionError("detached_head", "Detached HEAD commits are not supported.")
+        name, email = self._identity()
+        paths = tuple(sorted(self._staged_paths()))
+        if not paths:
+            raise ToolExecutionError("no_staged_changes", "A local commit requires staged changes.")
+        if paths != tuple(sorted(expected_paths)):
+            raise ToolExecutionError("staged_paths_mismatch", "The staged paths do not match the approved commit step.")
+        total = 0
+        for relative in paths:
+            state = self._staged_path_state(relative)
+            total += state["size"]
+            if total > self.max_aggregate_bytes:
+                raise ToolExecutionError("oversized_staged_state", "Staged content exceeds the commit safety limit.")
+        tree = self._write_tree()
+        head = self._head()
+        diff = self._run(["diff", "--cached", "--no-ext-diff", "--no-color"], optional_locks=False)
+        if diff.returncode not in {0, 1}:
+            raise ToolExecutionError("git_diff_failed", "The staged diff could not be inspected.")
+        return {
+            "repository_label": self.workspace.name,
+            "repository_id": hashlib.sha256(self.workspace.as_posix().encode()).hexdigest(),
+            "message": message,
+            "expected_staged_paths": tuple(expected_paths),
+            "actual_staged_paths": paths,
+            "staged_tree_id": tree,
+            "current_head_id": head,
+            "current_branch": branch,
+            "index_digest": self.index_digest(),
+            "author_name": name,
+            "author_email_masked": self._mask_email(email),
+            "diff_preview": bounded_text(diff.stdout, 20_000)[0],
+            "diff_stat": bounded_text(self._run(["diff", "--cached", "--stat"], optional_locks=False).stdout, 4_000)[0],
+        }
+
+    def verify_commit_preview(self, arguments: Any) -> None:
+        allowed = {"message", "expected_staged_paths", "staged_tree_id", "current_head_id", "current_branch", "index_digest"}
+        if set(arguments) != allowed:
+            raise ToolExecutionError("invalid_arguments", "git.commit accepts only preview-bound input.")
+        from cauco_tools.git_mutation import GitCommitInput
+        try:
+            input_value = GitCommitInput(arguments["message"], tuple(arguments["expected_staged_paths"]))
+        except (KeyError, TypeError, ValueError) as error:
+            raise ToolExecutionError("invalid_arguments", "git.commit input is invalid.") from error
+        captured = self.inspect_commit(input_value.message, input_value.expected_staged_paths)
+        for key in ("staged_tree_id", "current_head_id", "current_branch", "index_digest"):
+            if captured[key] != arguments[key]:
+                raise ToolExecutionError("stale_state", "Git state changed after commit preview creation.")
+
+    def execute(self, request: ToolExecutionRequest) -> ToolExecutionResult:
+        if request.tool_id != "git" or request.operation_id != "commit":
+            raise ToolExecutionError("unsupported_operation", "The Git mutation is not supported.")
+        started_at, started = datetime.now(tz=UTC), monotonic()
+        with self._lock:
+            self.verify_commit_preview(request.arguments)
+            before = dict(request.arguments)
+            try:
+                completed = self._commit_run(["commit", "--no-gpg-sign", "-m", before["message"]], request.timeout_seconds)
+            except ToolExecutionTimeoutError as error:
+                self._verify_ambiguous_commit(before, error)
+                raise
+            if completed.returncode != 0:
+                error = ToolExecutionError("git_commit_failed", "Git could not create the approved local commit.")
+                self._verify_ambiguous_commit(before, error)
+                raise error
+            result = self._verify_commit(before)
+            completed_at = datetime.now(tz=UTC)
+            output, truncated = bounded_text(completed.stdout + completed.stderr, request.max_output_chars)
+            return ToolExecutionResult(
+                tool_id="git", operation_id="commit", success=True,
+                started_at=started_at, completed_at=completed_at,
+                duration_ms=max(0, round((monotonic() - started) * 1000)), output=output,
+                structured_data={**result, "repository_label": self.workspace.name,
+                    "hooks_policy": "local_hooks_allowed", "hook_output_present": bool(completed.stderr.strip()),
+                    "fixed_git_commit_invoked": True, "verification_passed": True},
+                truncated=truncated, mutation_performed=True,
+            )
+
+    def _verify_commit(self, before: dict[str, Any]) -> dict[str, Any]:
+        new_head = self._head()
+        if new_head == before["current_head_id"]:
+            raise ToolExecutionError("verification_failed", "Git did not create a new commit.")
+        tree = self._run(["rev-parse", "HEAD^{tree}"], optional_locks=False).stdout.strip()
+        message = self._run(["log", "-1", "--format=%s"], optional_locks=False).stdout.rstrip("\n")
+        changed = tuple(sorted(self._run(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"], optional_locks=False).stdout.splitlines()))
+        if tree != before["staged_tree_id"] or message != before["message"] or changed != tuple(sorted(before["expected_staged_paths"])):
+            raise ToolExecutionError("verification_failed", "Post-commit verification did not match the approved preview.")
+        return {"previous_head": before["current_head_id"], "new_head": new_head,
+                "commit_short_id": new_head[:12], "commit_message": message,
+                "committed_paths": changed, "committed_path_count": len(changed),
+                "staged_tree_id": before["staged_tree_id"], "commit_tree_id": tree,
+                "branch": before["current_branch"]}
+
+    def _verify_ambiguous_commit(self, before: dict[str, Any], error: ToolExecutionError) -> None:
+        if self._head() != before["current_head_id"]:
+            setattr(error, "head_changed_despite_error", True)
+
+    def _staged_path_state(self, relative: str) -> dict[str, Any]:
+        if git_path_sensitive(relative) or self._internal_path(relative):
+            raise ToolExecutionError("sensitive_path", "A staged path is blocked by commit policy.", forbidden=True)
+        raw = self._run(["show", f":{relative}"], optional_locks=False)
+        if raw.returncode != 0 or b"\x00" in raw.stdout.encode("utf-8", errors="surrogateescape"):
+            raise ToolExecutionError("binary_staged_file", "Binary staged files are not supported.")
+        return {"size": len(raw.stdout.encode("utf-8", errors="surrogateescape"))}
+
+    def _write_tree(self) -> str:
+        value = self._run(["write-tree"], optional_locks=True)
+        if value.returncode != 0 or not value.stdout.strip():
+            raise ToolExecutionError("git_tree_failed", "The staged tree could not be captured.")
+        return value.stdout.strip()
+
+    def _head(self) -> str:
+        value = self._run(["rev-parse", "--verify", "HEAD"], optional_locks=False)
+        return value.stdout.strip() if value.returncode == 0 else "UNBORN"
+
+    def _branch(self) -> str | None:
+        value = self._run(["symbolic-ref", "--quiet", "--short", "HEAD"], optional_locks=False)
+        return value.stdout.strip() if value.returncode == 0 else None
+
+    def _identity(self) -> tuple[str, str]:
+        try:
+            name = self._commit_run(["config", "--get", "user.name"], 5).stdout.strip()
+            email = self._commit_run(["config", "--get", "user.email"], 5).stdout.strip()
+        except ToolExecutionTimeoutError as error:
+            raise ToolExecutionError("identity_missing", "Git author identity is unavailable.") from error
+        if not name or not email:
+            raise ToolExecutionError("identity_missing", "Git author identity is not configured.")
+        return name, email
+
+    def _commit_run(self, arguments: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run([self.executable, *arguments], cwd=self.workspace,
+                env={"PATH": os.defpath, "LANG": "C", "LC_ALL": "C", "GIT_PAGER": "cat", "PAGER": "cat", "GIT_EDITOR": "true", "GIT_TERMINAL_PROMPT": "0"},
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False, shell=False)
+        except subprocess.TimeoutExpired as error:
+            raise ToolExecutionTimeoutError() from error
+
+    @staticmethod
+    def _mask_email(value: str) -> str:
+        local, separator, domain = value.partition("@")
+        return (local[:1] + "***" + separator + domain) if separator else "configured"
 
 
 def digest_json(value: Any) -> str:

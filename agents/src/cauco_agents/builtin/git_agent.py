@@ -9,6 +9,7 @@ from cauco_agents.models import (
     AgentToolReference,
     FilesystemWriteTextInput,
     GitAddInput,
+    GitCommitInput,
 )
 
 
@@ -59,6 +60,7 @@ class GitAgent(DeterministicSignalAgent):
         project_ids = self.source_ids(context, "projects", "tasks")
         requested_operation = requested_git_operation(context.instruction)
         add_input = requested_git_add(context.instruction)
+        commit_input = requested_git_commit(context.instruction)
         file_target = requested_file_target(context.instruction)
         write_input = requested_workspace_write(context.instruction)
         steps = (
@@ -112,7 +114,7 @@ class GitAgent(DeterministicSignalAgent):
                 False,
                 ("Any future side effect requires explicit confirmation.",),
                 AgentToolReference("git", requested_operation),
-                operation_input=add_input,
+                operation_input=add_input or commit_input,
             ),
         )
         warnings = [
@@ -149,13 +151,33 @@ def requested_git_operation(instruction: str) -> str:
     normalized = instruction.casefold()
     if requested_git_add(instruction) is not None:
         return "add"
+    if requested_git_commit(instruction) is not None:
+        return "commit"
     if "push" in normalized:
         return "push"
     if "commit" in normalized:
-        return "commit"
+        return "status"
     if "diff" in normalized:
         return "diff"
     return "status"
+
+
+def requested_git_commit(instruction: str) -> GitCommitInput | None:
+    match = re.search(
+        r'\bcommit\s+["\']([^"\'\r\n]+)["\']\s+(?:paths?|files?)\s+(.+)$',
+        instruction.strip(), flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    paths = tuple(
+        item.strip(" ,\t\r\n'\"")
+        for item in re.split(r"\s+(?:and\s+)?|,", match.group(2))
+        if item.strip(" ,\t\r\n'\"")
+    )
+    try:
+        return GitCommitInput(match.group(1), paths)
+    except ValueError:
+        return None
 
 
 def requested_git_add(instruction: str) -> GitAddInput | None:
