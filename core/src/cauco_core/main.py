@@ -8,6 +8,7 @@ from cauco_tools import create_default_registry as create_default_tool_registry
 from cauco_tools.adapters import (
     FilesystemAdapter,
     FilesystemTextMutationAdapter,
+    GitAddAdapter,
     GitStatusAdapter,
 )
 from fastapi import FastAPI
@@ -73,6 +74,12 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
             )
         )
         app.state.tool_adapter_registry.register(GitStatusAdapter(app.state.workspace_policy.root))
+        app.state.tool_adapter_registry.register(
+            GitAddAdapter(
+                app.state.workspace_policy.root,
+                max_file_bytes=app.state.settings.execution_max_file_bytes,
+            )
+        )
         app.state.tool_adapter_registry.register(
             FilesystemTextMutationAdapter(
                 app.state.workspace_policy.root,

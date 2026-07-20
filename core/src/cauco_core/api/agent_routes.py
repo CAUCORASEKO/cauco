@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
-from typing import Annotated, TypeAlias
+from typing import Annotated, Any, TypeAlias
 
 from cauco_agents import (
     DEFAULT_MAX_CONTEXT_ITEMS,
@@ -200,7 +200,7 @@ class AgentPlanStepResponse(AgentApiModel):
     execution_available: bool
     warnings: list[str]
     tool_reference: AgentToolReferenceResponse
-    operation_input: dict[str, JsonScalar] | None
+    operation_input: dict[str, Any] | None
 
 
 class AgentToolReferenceResponse(AgentApiModel):
@@ -253,6 +253,7 @@ class PlanToolReadinessResponse(AgentApiModel):
     execution_enabled: bool
     mutation_confirmation_required: bool
     preview_required: bool
+    blocking_reasons: list[str]
 
 
 class AgentPlanReadinessResponse(AgentApiModel):
@@ -681,11 +682,14 @@ def plan_step_response(step: AgentPlanStep) -> AgentPlanStepResponse:
     )
 
 
-def operation_input_response(value: object | None) -> dict[str, JsonScalar] | None:
+def operation_input_response(value: object | None) -> dict[str, Any] | None:
     if value is None:
         return None
     fields = getattr(value, "__dataclass_fields__", {})
-    return {name: getattr(value, name) for name in fields}
+    return {
+        name: list(item) if isinstance(item := getattr(value, name), tuple) else item
+        for name in fields
+    }
 
 
 def plan_response(plan: AgentPlan) -> AgentPlanResponse:
@@ -822,6 +826,7 @@ def readiness_response(
                 execution_enabled=item.execution_enabled,
                 mutation_confirmation_required=item.mutation_confirmation_required,
                 preview_required=item.preview_required,
+                blocking_reasons=list(item.blocking_reasons),
             )
             for item in readiness.references
         ],

@@ -80,9 +80,11 @@ Execution records transition from `pending_execution` to `running`, then `comple
 
 ## Controlled mutation path
 
-Phase 7A adds a path separate from read-only execution: `approved immutable step → inert execution record → mutation preview → exact digest and phrase confirmation → fixed adapter → backup/post-write verification → result and audit`. Preview creation never invokes an adapter. The confirmation body cannot replace the stored tool, operation, target, proposal ID, or content, and each preview can be claimed once.
+Phase 7A/7B use a path separate from read-only execution: `approved immutable step → inert execution record → mutation preview → exact digest and phrase confirmation → fixed adapter → backup/post-write verification → result and audit`. Preview creation is inert. The confirmation body cannot replace the stored tool, operation, target, paths, repository, proposal ID, or content, and each preview can be claimed once.
 
 Core owns preview lifecycle, approved-step binding, stale-state checks, audit, and the memory bridge. That bridge calls the existing Phase 4 proposal builder/store/applier rather than duplicating Markdown logic. The tools package owns the Core-independent bounded UTF-8 workspace adapter. It validates a narrow extension allowlist, writes and fsyncs a same-directory temporary, rotates up to three internal backups on replacement, atomically installs the file, and verifies the final digest. Read-only execution continues through its existing endpoint; mutations are rejected there.
+
+Phase 7B adds a dedicated Core-independent Git staging contract and adapter. Core binds the configured repository, approved paths, before-index digest, staged-state digest, and per-path worktree state into the preview. The adapter accepts no raw argv, flags, cwd, environment, or repository input; it invokes only `git add -- <paths>`, backs up the index outside the worktree, and verifies that only approved paths became newly staged. It initially supports straightforward modified tracked and new untracked UTF-8 text files only.
 
 ## Obsidian execution control
 

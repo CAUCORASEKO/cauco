@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
-from cauco_agents import AgentPlan
-from cauco_tools import ToolAdapterRegistry, ToolRegistry
+from cauco_agents import AgentPlan, GitAddInput
+from cauco_tools import ToolAdapterRegistry, ToolExecutionError, ToolRegistry
+from cauco_tools.adapters import GitAddAdapter
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,7 @@ class PlanToolReadiness:
     executable_now: bool
     mutation_confirmation_required: bool
     preview_required: bool
+    blocking_reasons: tuple[str, ...] = ()
     execution_enabled: bool = False
 
 
@@ -43,6 +45,20 @@ def evaluate_plan_readiness(
         adapter_available = bool(
             adapter_registry and adapter_registry.exists(reference.tool_id, reference.operation_id)
         )
+        blocking_reasons: tuple[str, ...] = ()
+        if (
+            reference.tool_id == "git"
+            and reference.operation_id == "add"
+            and isinstance(step.operation_input, GitAddInput)
+            and adapter_registry
+            and adapter_available
+        ):
+            adapter = adapter_registry.get("git", "add")
+            if isinstance(adapter, GitAddAdapter):
+                try:
+                    adapter.inspect(step.operation_input.paths)
+                except ToolExecutionError as error:
+                    blocking_reasons = (error.safe_message,)
         references.append(
             PlanToolReadiness(
                 tool_id=reference.tool_id,
@@ -63,9 +79,13 @@ def evaluate_plan_readiness(
                 ),
                 mutation_confirmation_required=validation.mutation,
                 preview_required=validation.preview_required,
+                blocking_reasons=blocking_reasons,
             )
         )
     return AgentPlanReadiness(
-        ready=bool(references) and all(item.registered and item.enabled for item in references),
+        ready=bool(references)
+        and all(
+            item.registered and item.enabled and not item.blocking_reasons for item in references
+        ),
         references=tuple(references),
     )

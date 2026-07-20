@@ -14,6 +14,8 @@ export function renderToolResult(card: HTMLElement, result: ToolResult): void {
   });
   if (result.tool_id === "git" && result.operation_id === "status") {
     renderGitResult(details, result);
+  } else if (result.tool_id === "git" && result.operation_id === "add") {
+    renderGitAddResult(details, result);
   } else if (result.tool_id === "filesystem" && result.operation_id === "list_directory") {
     renderDirectoryResult(details, result);
   } else if (result.tool_id === "filesystem" && result.operation_id === "read_file") {
@@ -27,6 +29,20 @@ export function renderToolResult(card: HTMLElement, result: ToolResult): void {
     text: safeDisplayText(result.output),
     cls: "cauco-result-output",
   });
+}
+
+function renderGitAddResult(container: HTMLElement, result: ToolResult): void {
+  const data = result.structured_data;
+  const summary = container.createEl("dl", { cls: "cauco-control-details" });
+  addDetail(summary, "Index changed", data.index_changed === true ? "Yes" : "No");
+  addDetail(summary, "Verification", data.verification_passed === true ? "Passed" : "Failed");
+  addDetail(summary, "Before index", structuredString(data.before_index_digest)?.slice(0, 12) ?? "Unavailable");
+  addDetail(summary, "After index", structuredString(data.after_index_digest)?.slice(0, 12) ?? "Unavailable");
+  const staged = Array.isArray(data.staged_paths) ? data.staged_paths : [];
+  const list = container.createEl("ul", { cls: "cauco-result-list" });
+  for (const path of staged) {
+    if (typeof path === "string") list.createEl("li", { text: safeDisplayText(path, 500) });
+  }
 }
 
 export function renderAuditTrail(section: HTMLElement, events: readonly AuditEvent[]): void {

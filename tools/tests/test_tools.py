@@ -71,10 +71,12 @@ def test_default_registry_contracts_and_validation() -> None:
     )
     status = registry.validate("git", "status")
     commit = registry.validate("git", "commit")
+    push = registry.validate("git", "push")
     dangerous = registry.validate("git", "reset_hard")
     missing = registry.validate("missing", "run")
     assert status.valid and status.safe and not status.confirmation_required
-    assert commit.valid and commit.confirmation_required
+    assert not commit.valid and commit.confirmation_required
+    assert not push.valid and push.confirmation_required
     assert (
         not dangerous.valid
         and dangerous.operation_exists
@@ -90,6 +92,7 @@ def test_default_registry_contracts_and_validation() -> None:
     }
     assert runtime_allowed == {
         ("git", "status"),
+        ("git", "add"),
         ("filesystem", "list_directory"),
         ("filesystem", "read_file"),
         ("filesystem", "write_text_file"),

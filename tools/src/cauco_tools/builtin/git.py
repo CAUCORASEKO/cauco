@@ -9,10 +9,28 @@ GIT_TOOL = ToolDefinition(
     version="1.0.0",
     enabled=True,
     operations=(
-        operation("status", "Inspect repository status metadata.", runtime_allowed=True),
+        operation(
+            "status", "Inspect repository status metadata.", runtime_allowed=True
+        ),
         operation("diff", "Inspect a repository diff."),
-        operation("commit", "Create a commit.", confirmation=True),
-        operation("push", "Push commits to a remote.", safe=False, confirmation=True),
+        operation(
+            "add",
+            "Stage an exact approved set of regular text files.",
+            confirmation=True,
+            runtime_allowed=True,
+            mutation=True,
+        ),
+        operation(
+            "add_all", "Stage all repository changes.", enabled=False, confirmation=True
+        ),
+        operation("commit", "Create a commit.", enabled=False, confirmation=True),
+        operation(
+            "push",
+            "Push commits to a remote.",
+            safe=False,
+            enabled=False,
+            confirmation=True,
+        ),
         operation(
             "reset_hard",
             "Discard repository changes.",

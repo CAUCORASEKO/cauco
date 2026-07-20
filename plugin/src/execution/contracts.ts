@@ -229,6 +229,10 @@ function parseReadinessReference(value: unknown): ToolReadiness {
         : booleanValue(value, "mutation_confirmation_required"),
     preview_required:
       value.preview_required === undefined ? false : booleanValue(value, "preview_required"),
+    blocking_reasons:
+      value.blocking_reasons === undefined
+        ? Object.freeze([])
+        : stringArray(value.blocking_reasons, "blocking_reasons"),
     execution_enabled: booleanValue(value, "execution_enabled"),
   });
 }
@@ -366,6 +370,8 @@ function parseToolResult(value: unknown): ToolResult {
     error_message: nullableString(value, "error_message"),
     truncated: booleanValue(value, "truncated"),
     execution_performed: booleanValue(value, "execution_performed"),
+    mutation_performed:
+      value.mutation_performed === undefined ? false : booleanValue(value, "mutation_performed"),
   });
 }
 

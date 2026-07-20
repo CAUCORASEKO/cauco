@@ -155,7 +155,7 @@ Plan and plan-review responses include structured `tool_reference` data on every
 
 `POST /api/tools/validate` accepts `{"tool_id":"git","operation_id":"status"}` and reports registration, tool/operation enablement, safety, confirmation requirements, and `execution_enabled: false`. Unknown or disabled references return `valid: false`; validation never invokes the operation.
 
-The built-in catalog contains `git`, `memory`, `filesystem`, `ollama`, `obsidian`, `calendar`, and `email`. Runtime policy separately marks only `git.status`, `filesystem.list_directory`, and `filesystem.read_file` as allowed. Catalog responses expose `runtime_execution_allowed`; readiness additionally exposes adapter availability and `executable_now`.
+The built-in catalog contains `git`, `memory`, `filesystem`, `ollama`, `obsidian`, `calendar`, and `email`. Runtime policy allows the three read-only operations and preview-first mutations including exact-path `git.add`. Catalog responses expose `runtime_execution_allowed`; readiness additionally exposes adapter availability and `executable_now`.
 
 ## Step-level execution
 
@@ -177,6 +177,8 @@ Unknown reviews/executions/steps return `404`; ineligible reviews, digest failur
 - `POST /api/executions/{execution_id}/steps/{step_index}/cancel-mutation-preview` cancels a pending preview.
 
 The preview includes the exact stored operation, relative target, normalized approved arguments, safe before/after metadata, bounded textual diff, SHA-256 `preview_digest`, expiry, and operation-specific `confirmation_phrase`. Its digest covers the full normalized mutation even when display output is bounded. Confirmation accepts only `preview_id`, `preview_digest`, and `confirmation_phrase`; generic confirmation such as `yes` is invalid. Digest mismatch, stale state, expired/cancelled/consumed previews, invalid review state, and duplicate confirmation return conflicts. Phrase mismatch and invalid text return `422`; forbidden targets return `403`.
+
+For `git.add`, the approved input is only `paths`. Preview output uses relative paths and a safe repository label and binds the current index, staged state, and approved worktree state. Confirmation requires `STAGE APPROVED FILES`; the client cannot send paths or Git options. The implementation rejects broad/pathspec staging, partial staging, deleted targets, ignored or sensitive paths, non-regular or binary files, oversized sets, and active merge/rebase-style states.
 
 Preview creation leaves `execution_performed=false`. Adapter invocation sets it true even if the adapter safely fails. `mutation_performed=true` only reports a verified persistent-state change; duplicate-prevented memory content can be execution-performed without being mutation-performed.
 

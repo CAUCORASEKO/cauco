@@ -8,6 +8,7 @@ from cauco_agents.models import (
     AgentPlanStep,
     AgentToolReference,
     FilesystemWriteTextInput,
+    GitAddInput,
 )
 
 
@@ -57,6 +58,7 @@ class GitAgent(DeterministicSignalAgent):
     ) -> AgentPlan:
         project_ids = self.source_ids(context, "projects", "tasks")
         requested_operation = requested_git_operation(context.instruction)
+        add_input = requested_git_add(context.instruction)
         file_target = requested_file_target(context.instruction)
         write_input = requested_workspace_write(context.instruction)
         steps = (
@@ -106,10 +108,11 @@ class GitAgent(DeterministicSignalAgent):
                 "Describe the requested future Git operation without running it.",
                 project_ids,
                 "Prepare the Git operation for explicit confirmation.",
-                requested_operation in {"commit", "push"},
+                requested_operation in {"add", "commit", "push"},
                 False,
                 ("Any future side effect requires explicit confirmation.",),
                 AgentToolReference("git", requested_operation),
+                operation_input=add_input,
             ),
         )
         warnings = [
@@ -138,12 +141,14 @@ class GitAgent(DeterministicSignalAgent):
             warnings=tuple(warnings),
             requires_confirmation=True,
             execution_performed=False,
-            metadata={"framework_phase": "7A", "repository_inspected": False},
+            metadata={"framework_phase": "7B", "repository_inspected": False},
         )
 
 
 def requested_git_operation(instruction: str) -> str:
     normalized = instruction.casefold()
+    if requested_git_add(instruction) is not None:
+        return "add"
     if "push" in normalized:
         return "push"
     if "commit" in normalized:
@@ -151,6 +156,27 @@ def requested_git_operation(instruction: str) -> str:
     if "diff" in normalized:
         return "diff"
     return "status"
+
+
+def requested_git_add(instruction: str) -> GitAddInput | None:
+    match = re.search(r"\bgit\s+add\s+(.+)$", instruction.strip(), flags=re.IGNORECASE)
+    if match is None:
+        match = re.search(
+            r"\bstage\s+(?:the\s+)?(?:files?\s+)?(.+)$",
+            instruction.strip(),
+            flags=re.IGNORECASE,
+        )
+    if match is None:
+        return None
+    candidates = tuple(
+        item.strip(" ,\t\r\n'\"")
+        for item in re.split(r"\s+(?:and\s+)?|,", match.group(1))
+        if item.strip(" ,\t\r\n'\"")
+    )
+    try:
+        return GitAddInput(candidates)
+    except ValueError:
+        return None
 
 
 def requested_file_target(instruction: str) -> str | None:

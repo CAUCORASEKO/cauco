@@ -123,6 +123,7 @@ export interface ToolReadiness {
   readonly executable_now: boolean;
   readonly mutation_confirmation_required: boolean;
   readonly preview_required: boolean;
+  readonly blocking_reasons: readonly string[];
   readonly execution_enabled: boolean;
 }
 
@@ -202,6 +203,7 @@ export interface ToolResult {
   readonly error_message: string | null;
   readonly truncated: boolean;
   readonly execution_performed: boolean;
+  readonly mutation_performed: boolean;
 }
 
 export interface StepExecutionRecord {

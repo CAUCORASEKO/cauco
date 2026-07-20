@@ -4,6 +4,8 @@ from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Literal, Mapping, TypeAlias
 
+from cauco_tools import GitAddInput
+
 AgentContextValue: TypeAlias = str | int | float | bool | None
 DEFAULT_MAX_CONTEXT_ITEMS = 4
 DEFAULT_MAX_EXCERPT_CHARS = 2000
@@ -247,7 +249,10 @@ class FilesystemWriteTextInput:
 
 
 AgentOperationInput: TypeAlias = (
-    MemoryCreateProposalInput | MemoryConfirmProposalInput | FilesystemWriteTextInput
+    MemoryCreateProposalInput
+    | MemoryConfirmProposalInput
+    | FilesystemWriteTextInput
+    | GitAddInput
 )
 
 
@@ -275,6 +280,7 @@ class AgentPlanStep:
             ("memory", "create_proposal"): MemoryCreateProposalInput,
             ("memory", "confirm_proposal"): MemoryConfirmProposalInput,
             ("filesystem", "write_text_file"): FilesystemWriteTextInput,
+            ("git", "add"): GitAddInput,
         }.get((self.tool_reference.tool_id, self.tool_reference.operation_id))
         if expected is None and self.operation_input is not None:
             raise ValueError("Read-only plan steps cannot contain mutation input.")

@@ -446,4 +446,7 @@ def operation_input_payload(value: Any) -> dict[str, Any] | None:
     if value is None:
         return None
     fields = getattr(value, "__dataclass_fields__", {})
-    return {name: getattr(value, name) for name in fields}
+    return {
+        name: list(item) if isinstance(item := getattr(value, name), tuple) else item
+        for name in fields
+    }

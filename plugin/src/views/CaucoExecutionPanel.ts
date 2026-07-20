@@ -1,6 +1,7 @@
 import type { CaucoCoreClient } from "../services/CaucoCoreClient";
 import { CaucoCoreApiError } from "../services/CaucoCoreClient";
 import { executionErrorMessage } from "../execution/errors";
+import { safeDisplayText } from "../execution/contracts";
 import {
   acceptNewPlan,
   armStepConfirmation,
@@ -312,6 +313,7 @@ export class CaucoExecutionPanel {
       item?.preview_required ? "Preview required" : item?.executable_now ? "Ready" : "Blocked",
     );
     addDetail(details, "Execution performed", step.execution_performed ? "Yes" : "No");
+    if (item?.blocking_reasons.length) renderWarnings(card, item.blocking_reasons);
     if (step.error) renderSafeError(card, step.error);
     if (step.result) renderToolResult(card, step.result);
 
@@ -358,8 +360,11 @@ export class CaucoExecutionPanel {
   }
 
   private renderMutationControls(card: HTMLElement, step: StepExecutionRecord): void {
+    const staging = step.tool_id === "git" && step.operation_id === "add";
     card.createEl("p", {
-      text: "Mutation requires preview and confirmation. Approval and preview creation do not change persistent state; confirmation is single-use.",
+      text: staging
+        ? "Creating this preview does not modify the Git index."
+        : "Mutation requires preview and confirmation. Approval and preview creation do not change persistent state; confirmation is single-use.",
       cls: "cauco-trust-note",
     });
     if (step.status !== "pending") return;
@@ -370,7 +375,7 @@ export class CaucoExecutionPanel {
       const create = card.createEl("button", {
         text: this.state.pendingAction === "create-mutation-preview"
           ? "Creating inert preview…"
-          : "Create Mutation Preview",
+          : staging ? "Create Staging Preview" : "Create Mutation Preview",
         attr: { type: "button" },
       });
       create.disabled = this.state.pendingAction !== null;
@@ -378,17 +383,30 @@ export class CaucoExecutionPanel {
       return;
     }
     const details = card.createEl("dl", { cls: "cauco-control-details" });
-    addDetail(details, "Target", preview.target ?? "Controlled memory proposal store");
+    const repository = preview.before_state.repository_label;
+    addDetail(details, staging ? "Repository" : "Target", staging && typeof repository === "string"
+      ? repository
+      : preview.target ?? "Controlled memory proposal store");
     addDetail(details, "Status", statusLabel(preview.status));
     addDetail(details, "Expires", formatTimestamp(preview.expires_at));
-    addDetail(details, "Preview digest", preview.preview_digest);
+    addDetail(details, "Preview digest", preview.preview_digest.slice(0, 12));
+    if (staging) {
+      const paths = preview.proposed_after_state.paths;
+      addDetail(details, "Path count", String(preview.proposed_after_state.path_count ?? 0));
+      const list = card.createEl("ul", { cls: "cauco-result-list" });
+      if (Array.isArray(paths)) for (const path of paths) {
+        if (typeof path === "string") list.createEl("li", { text: safeDisplayText(path, 500) });
+      }
+    }
     const policy = preview.proposed_after_state.overwrite_policy;
     if (typeof policy === "string") addDetail(details, "Write policy", policy);
     const characters = preview.proposed_after_state.characters;
     if (typeof characters === "number") addDetail(details, "Characters", String(characters));
     card.createEl("p", { text: preview.warning, cls: "cauco-trust-note" });
     card.createEl("p", {
-      text: "The target and approved content are fixed and cannot be edited during confirmation.",
+      text: staging
+        ? "This stages only the exact approved files listed above. It does not create a commit or push anything."
+        : "The target and approved content are fixed and cannot be edited during confirmation.",
       cls: "cauco-trust-note",
     });
     const diff = card.createEl("pre", { cls: "cauco-tool-output" });
@@ -405,7 +423,7 @@ export class CaucoExecutionPanel {
     const confirm = actions.createEl("button", {
       text: this.state.pendingAction === "confirm-mutation"
         ? "Applying exact mutation…"
-        : "Confirm and Apply Mutation",
+        : staging ? "Stage Approved Files" : "Confirm and Apply Mutation",
       cls: "mod-cta",
       attr: { type: "button" },
     });

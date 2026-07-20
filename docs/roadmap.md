@@ -114,7 +114,14 @@ Remaining:
 - Preview-first execution for memory proposal creation, memory proposal confirmation, and bounded workspace text writes
 - Operation-specific confirmation, immutable digest binding, stale-state detection, backup/recovery, verification, concurrency protection, and redacted audit
 - Automated temporary-workspace/Brain API validation and plugin contract/build validation
-- Git mutations remain disabled; Phase 7B is controlled `git.add`
+- Git mutations remain disabled except for the Phase 7B controlled `git.add` lifecycle
+
+## Phase 7B — Controlled Git staging (implemented; interactive validation pending)
+
+- Exact immutable workspace-relative path set only
+- Inert staging preview bound to index and worktree state
+- Operation-specific confirmation, fixed argv, index backup, and post-stage verification
+- No stage-all, commit, push, or generic Git executor
 - Final interactive Obsidian light/dark-theme validation remains before marking complete
 
 ## Later advanced workflows

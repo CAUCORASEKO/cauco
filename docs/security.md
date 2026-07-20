@@ -9,8 +9,8 @@ The current release keeps data and inference local. Deterministic foundations re
 - Memory access is limited to visible Markdown under one configured directory. Paths are relative, traversal is rejected, hidden directories are pruned, and symlinks are not followed.
 - Individual reads enforce a configurable maximum size and strict UTF-8 decoding. Search skips unreadable and oversized files.
 - File content is exposed through bounded core APIs. Memory insertion is limited to four allowlisted files and existing approved headings, and requires a stored proposal followed by explicit confirmation. No arbitrary update, rename, move, or delete route exists.
-- Tool definitions remain immutable metadata. Runtime policy allows the three read-only operations plus only `memory.create_proposal`, `memory.confirm_proposal`, and `filesystem.write_text_file` through the separate preview-first mutation path. All other mutations remain denied.
-- The only Git adapter invokes fixed-argv `git.status` after an approved snapshot and explicit step request; it never invokes a shell.
+- Tool definitions remain immutable metadata. Runtime policy allows the three read-only operations plus only `memory.create_proposal`, `memory.confirm_proposal`, `filesystem.write_text_file`, and exact-path `git.add` through the preview-first mutation path. All other mutations remain denied.
+- Git uses dedicated adapters only: fixed `git.status` and fixed `git add -- <approved paths>`, always with `shell=False`, a bounded environment, explicit workspace, and no client arguments.
 - The scheduler stores validated definitions but runs nothing.
 - The Operations Agent formats structured data and does not call a model.
 - Project, Git, and Research agent routing uses fixed local signals. These agents return proposal-only results and cannot invoke tools, subprocesses, network access, or memory confirmation APIs.
@@ -37,7 +37,7 @@ Mutation confirmations are single-use and compare the immutable preview digest p
 
 - A configured `CAUCO_WORKSPACE_DIR` is required. `/`, the home directory, and broad system roots are rejected.
 - Paths are workspace-relative, canonicalized, traversal-resistant, and checked against symlink escape. `.env`, SSH/cloud/credential directories, keys, certificates, token-named files, and hidden directory entries are blocked.
-- Git uses one fixed argument vector, `git status --short --branch`, with `shell=False`, a controlled environment, no terminal prompts, and no pager. No arbitrary Git arguments are accepted.
+- `git.add` accepts only immutable approved relative paths. It rejects wildcards, directories, symlinks, ignored/sensitive/binary/oversized files, partial staging, deletions, and complex Git states. Preview binds index and worktree digests; execution backs up and verifies the index. Locks and preview stores are process-local, so external index changes are detected as stale rather than serialized by Cauco.
 - Text reads require regular UTF-8 files, reject binary and oversized files, and enforce character limits. Directory listings are deterministic, bounded, hide sensitive entries, and do not follow symlinks.
 - Execution time and output size are bounded. API and audit data use relative paths and safe messages; environment variables, absolute paths, and file contents are not copied into audit events.
 - Every accepted execution record and step transition is audited. Denied step attempts are recorded without claiming execution.

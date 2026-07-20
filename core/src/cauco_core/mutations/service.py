@@ -3,12 +3,14 @@ import hashlib
 import json
 import secrets
 from dataclasses import asdict
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from cauco_agents import (
     FilesystemWriteTextInput,
+    GitAddInput,
     MemoryConfirmProposalInput,
     MemoryCreateProposalInput,
 )
@@ -18,7 +20,7 @@ from cauco_tools import (
     ToolExecutionRequest,
     ToolRegistry,
 )
-from cauco_tools.adapters import FilesystemTextMutationAdapter
+from cauco_tools.adapters import FilesystemTextMutationAdapter, GitAddAdapter
 
 from cauco_core.agents.review_store import (
     AgentPlanReviewStore,
@@ -61,6 +63,7 @@ PHRASES = {
     ("memory", "create_proposal"): "APPLY MEMORY PROPOSAL",
     ("memory", "confirm_proposal"): "CONFIRM MEMORY WRITE",
     ("filesystem", "write_text_file"): "WRITE WORKSPACE FILE",
+    ("git", "add"): "STAGE APPROVED FILES",
 }
 DIFF_LIMIT = 20_000
 
@@ -92,6 +95,8 @@ class MutationService:
         reference = plan_step.tool_reference
         assert reference is not None
         key = (reference.tool_id, reference.operation_id)
+        if key == ("git", "add"):
+            self._event(record.execution_id, step, "git_staging_preview_requested", "accepted")
         if key not in PHRASES:
             self._event(record.execution_id, step, "preview_rejected", "rejected")
             raise MutationConflictError("The approved step is not an enabled mutation.")
@@ -106,12 +111,20 @@ class MutationService:
             raise MutationConflictError("The approved mutation is not runtime-enabled.")
         try:
             fields = self._preview_fields(plan_step.operation_input, *key)
+            if key == ("git", "add"):
+                self._event(record.execution_id, step, "repository_validation_passed", "success")
+                self._event(record.execution_id, step, "path_validation_passed", "success")
+            created_at = self.preview_store.clock()
+            expires_at = created_at + self.preview_store.ttl
+            phrase = PHRASES[key]
             digest = preview_digest(
                 execution_id=execution_id,
                 review_id=review.review_id,
                 step_index=step_index,
                 tool_id=key[0],
                 operation_id=key[1],
+                expires_at=expires_at,
+                confirmation_phrase_id=phrase,
                 **fields,
             )
             preview = self.preview_store.create(
@@ -121,14 +134,37 @@ class MutationService:
                 tool_id=key[0],
                 operation_id=key[1],
                 preview_digest=digest,
-                confirmation_phrase=PHRASES[key],
+                confirmation_phrase=phrase,
+                created_at=created_at,
+                expires_at=expires_at,
                 **fields,
             )
         except ToolExecutionError as error:
+            if key == ("git", "add"):
+                validation_event = {
+                    "sensitive_path": "sensitive_path_rejected",
+                    "ignored_target": "ignored_path_rejected",
+                    "binary_target": "binary_path_rejected",
+                    "oversized_target": "oversized_path_rejected",
+                    "partial_staging": "partial_staging_rejected",
+                    "blocked_git_state": "blocked_git_operation_state",
+                    "unmerged_state": "blocked_git_operation_state",
+                }.get(error.code, "path_validation_failed")
+                self._event(record.execution_id, step, validation_event, "rejected")
             self._event(record.execution_id, step, "preview_rejected", "rejected")
             if error.forbidden:
                 raise MutationForbiddenError(error.safe_message) from error
-            if error.code in {"target_exists", "target_missing"}:
+            if error.code in {
+                "target_exists",
+                "target_missing",
+                "partial_staging",
+                "blocked_git_state",
+                "unmerged_state",
+                "no_changes",
+                "repository_mismatch",
+                "not_git_repository",
+                "index_locked",
+            }:
                 raise MutationConflictError(error.safe_message) from error
             raise MutationValidationError(error.safe_message) from error
         except (MutationConflictError, MutationForbiddenError, MutationValidationError):
@@ -203,6 +239,18 @@ class MutationService:
         try:
             result = adapter.execute(request)
         except ToolExecutionError as error:
+            if preview.tool_id == "git" and preview.operation_id == "add":
+                self._event(execution_id, step, "git_add_failed", "failed")
+                if getattr(error, "recovery_attempted", False):
+                    self._event(execution_id, step, "recovery_attempted", "accepted")
+                    self._event(
+                        execution_id,
+                        step,
+                        "recovery_succeeded"
+                        if getattr(error, "recovery_succeeded", False)
+                        else "recovery_failed",
+                        "success" if getattr(error, "recovery_succeeded", False) else "failed",
+                    )
             result = self.execution_service._failed_result(
                 execution_id, step_index, preview.tool_id, preview.operation_id, error
             )
@@ -232,7 +280,10 @@ class MutationService:
         )
         data = result.structured_data
         if data.get("backup_created"):
-            self._event(execution_id, step, "backup_created", "success")
+            self._event(execution_id, step, "index_backup_created", "success")
+        if data.get("fixed_git_add_invoked"):
+            self._event(execution_id, step, "fixed_git_add_invoked", "success")
+            self._event(execution_id, step, "post_status_captured", "success")
         if data.get("verification_passed"):
             self._event(execution_id, step, "verification_passed", "success")
         if data.get("memory_refreshed"):
@@ -312,6 +363,41 @@ class MutationService:
                 },
                 "diff_preview": bounded_diff(before_text, operation_input.content, relative),
             }
+        if isinstance(operation_input, GitAddInput):
+            policy = self.execution_service.workspace_policy
+            if policy is None:
+                raise MutationConflictError("No execution workspace is configured.")
+            adapter = self.adapter_registry.get(tool_id, operation_id)
+            if not isinstance(adapter, GitAddAdapter) or adapter.workspace != policy.root:
+                raise MutationConflictError("The configured Git staging adapter is unavailable.")
+            captured = adapter.inspect(operation_input.paths)
+            return {
+                "target": None,
+                "normalized_arguments": {
+                    "paths": captured["paths"],
+                    "expected_index_digest": captured["before_index_digest"],
+                    "expected_worktree_digest": captured["before_worktree_state_digest"],
+                    "expected_staged_state_digest": captured["before_staged_state_digest"],
+                },
+                "before_state": {
+                    "repository_label": captured["repository_label"],
+                    "repository_id": captured["repository_id"],
+                    "index_digest": captured["before_index_digest"],
+                    "staged_state_digest": captured["before_staged_state_digest"],
+                    "worktree_state_digest": captured["before_worktree_state_digest"],
+                    "already_staged_paths": captured["before_staged_paths"],
+                },
+                "proposed_after_state": {
+                    "repository_label": captured["repository_label"],
+                    "paths": captured["paths"],
+                    "path_count": captured["path_count"],
+                    "path_states": captured["path_states"],
+                    "warning": (
+                        "This stages only the exact approved files and does not commit or push."
+                    ),
+                },
+                "diff_preview": captured["diff_preview"],
+            }
         if isinstance(operation_input, MemoryCreateProposalInput):
             proposal = self.proposal_builder.build(
                 MemoryWriteRequest(
@@ -378,6 +464,22 @@ class MutationService:
         raise MutationValidationError("The approved mutation input is missing or invalid.")
 
     def _verify_before_state(self, preview: MutationPreview) -> None:
+        if preview.tool_id == "git" and preview.operation_id == "add":
+            adapter = self.adapter_registry.get("git", "add")
+            if not isinstance(adapter, GitAddAdapter):
+                self._stale(preview)
+            try:
+                adapter.verify_preview(preview.normalized_arguments)
+            except ToolExecutionError as error:
+                event = "index_stale" if error.code == "index_stale" else "worktree_stale"
+                step = next(
+                    item
+                    for item in self.execution_store.get(preview.execution_id).step_records
+                    if item.step_index == preview.step_index
+                )
+                self._event(preview.execution_id, step, event, "rejected")
+                self._stale(preview)
+            return
         if preview.operation_id == "create_proposal":
             proposal_type = preview.normalized_arguments.get("proposal_type")
             content = preview.normalized_arguments.get("content")
@@ -488,6 +590,8 @@ def preview_digest(**fields: Any) -> str:
             return value.value
         if isinstance(value, Path):
             return value.as_posix()
+        if isinstance(value, datetime):
+            return value.isoformat()
         return value
 
     canonical = json.dumps(

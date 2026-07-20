@@ -6,6 +6,7 @@ from cauco_tools.execution import (
     ToolExecutionResult,
     ToolExecutionTimeoutError,
 )
+from cauco_tools.git_mutation import GitAddInput
 from cauco_tools.builtin import BUILTIN_TOOLS
 from cauco_tools.models import (
     ToolCategory,
@@ -38,5 +39,6 @@ __all__ = [
     "ToolExecutionRequest",
     "ToolExecutionResult",
     "ToolExecutionTimeoutError",
+    "GitAddInput",
     "create_default_registry",
 ]

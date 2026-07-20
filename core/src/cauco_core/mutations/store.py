@@ -41,11 +41,14 @@ class MutationPreviewStore:
                 if existing.status is MutationPreviewStatus.PENDING_CONFIRMATION:
                     raise MutationConflictError("A pending mutation preview already exists.")
             self._make_room()
-            now = self.clock()
+            now = fields.pop("created_at", None) or self.clock()
+            expires_at = fields.pop("expires_at", None) or (now + self.ttl)
+            if not isinstance(now, datetime) or not isinstance(expires_at, datetime):
+                raise ValueError("Mutation preview timestamps are invalid.")
             preview = MutationPreview(
                 preview_id=f"mutprev_{secrets.token_urlsafe(18)}",
                 created_at=now,
-                expires_at=now + self.ttl,
+                expires_at=expires_at,
                 status=MutationPreviewStatus.PENDING_CONFIRMATION,
                 **fields,  # type: ignore[arg-type]
             )

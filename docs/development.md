@@ -177,3 +177,5 @@ curl -s -X POST http://127.0.0.1:8765/api/executions/exec_.../steps/3/confirm-mu
 ```
 
 The second body must not contain a path, content, proposal ID replacement, tool, operation, command, or working directory.
+
+Phase 7B staging tests must also use a temporary repository. Create or modify only the exact approved UTF-8 text files, request a `git add path` plan, and use the same preview endpoints. Confirm with the Core-provided `STAGE APPROVED FILES` phrase. Verify with `git diff --cached --name-only` that no other changed file was staged. Never exercise these tests against the Cauco worktree.
