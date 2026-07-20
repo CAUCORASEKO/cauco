@@ -52,7 +52,40 @@ def test_initialize_creates_phase_8_tables(tmp_path: Path) -> None:
         "execution_audit_events",
         "rejected_execution_audit_events",
         "mutation_previews",
+        "memory_write_proposals",
     } <= names
+
+
+def test_version_1_database_is_migrated_to_current_version(tmp_path: Path) -> None:
+    path = tmp_path / "cauco.db"
+    database = SQLiteDatabase(path)
+    database.initialize()
+
+    with database.transaction() as connection:
+        connection.execute("DROP TABLE memory_write_proposals")
+        connection.execute(
+            """
+            UPDATE schema_metadata
+            SET value = '1'
+            WHERE key = 'schema_version'
+            """
+        )
+
+    database.initialize()
+
+    assert database.schema_version() == CURRENT_SCHEMA_VERSION
+
+    with database.connection() as connection:
+        row = connection.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name = 'memory_write_proposals'
+            """
+        ).fetchone()
+
+    assert row is not None
 
 
 def test_connection_enables_foreign_keys_and_wal(tmp_path: Path) -> None:

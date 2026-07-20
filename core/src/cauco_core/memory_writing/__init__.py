@@ -8,6 +8,7 @@ from cauco_core.memory_writing.models import (
     MemoryWriteRequest,
 )
 from cauco_core.memory_writing.proposal_builder import MemoryWriteProposalBuilder
+from cauco_core.memory_writing.sqlite_store import SQLiteMemoryWriteProposalStore
 from cauco_core.memory_writing.store import MemoryWriteProposalStore
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "MemoryWriteProposalBuilder",
     "MemoryWriteProposalStore",
     "MemoryWriteRequest",
+    "SQLiteMemoryWriteProposalStore",
 ]

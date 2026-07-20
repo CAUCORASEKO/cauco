@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 class SQLitePersistenceError(RuntimeError):
@@ -61,6 +61,11 @@ class SQLiteDatabase:
                         if version < 1:
                             self._migrate_to_version_1(connection)
                             self._write_schema_version(connection, 1)
+                            version = 1
+
+                        if version < 2:
+                            self._migrate_to_version_2(connection)
+                            self._write_schema_version(connection, 2)
 
                         connection.commit()
                     except Exception:
@@ -89,9 +94,7 @@ class SQLiteDatabase:
             self._configure_connection(connection)
             yield connection
         except sqlite3.Error as error:
-            raise SQLitePersistenceError(
-                "Cauco SQLite operation failed safely."
-            ) from error
+            raise SQLitePersistenceError("Cauco SQLite operation failed safely.") from error
         finally:
             if connection is not None:
                 connection.close()
@@ -153,14 +156,10 @@ class SQLiteDatabase:
         try:
             version = int(row["value"])
         except (TypeError, ValueError) as error:
-            raise SQLiteSchemaVersionError(
-                "SQLite schema version metadata is invalid."
-            ) from error
+            raise SQLiteSchemaVersionError("SQLite schema version metadata is invalid.") from error
 
         if version < 0:
-            raise SQLiteSchemaVersionError(
-                "SQLite schema version metadata is invalid."
-            )
+            raise SQLiteSchemaVersionError("SQLite schema version metadata is invalid.")
 
         return version
 
@@ -176,6 +175,27 @@ class SQLiteDatabase:
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
             """,
             (str(version),),
+        )
+
+    @staticmethod
+    def _migrate_to_version_2(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS memory_write_proposals (
+                proposal_id TEXT PRIMARY KEY NOT NULL,
+                proposal_json TEXT NOT NULL,
+                state TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                applied_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_memory_write_proposals_state
+                ON memory_write_proposals(state);
+
+            CREATE INDEX IF NOT EXISTS idx_memory_write_proposals_expires_at
+                ON memory_write_proposals(expires_at);
+            """
         )
 
     @staticmethod

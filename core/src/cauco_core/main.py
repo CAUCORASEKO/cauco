@@ -43,7 +43,7 @@ from cauco_core.memory.search import MemorySearch
 from cauco_core.memory.service import MemoryService
 from cauco_core.memory_writing.applier import MemoryWriteProposalApplier
 from cauco_core.memory_writing.proposal_builder import MemoryWriteProposalBuilder
-from cauco_core.memory_writing.store import MemoryWriteProposalStore
+from cauco_core.memory_writing.sqlite_store import SQLiteMemoryWriteProposalStore
 from cauco_core.mutations.memory_adapter import CoreMemoryMutationAdapter
 from cauco_core.mutations.service import MutationService
 from cauco_core.mutations.sqlite_store import SQLiteMutationPreviewStore
@@ -126,8 +126,13 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.agent_plan_review_store,
     )
     app.state.context_builder = ContextBuilder(app.state.memory_engine)
-    app.state.memory_write_proposal_store = MemoryWriteProposalStore(
-        ttl=timedelta(seconds=app.state.settings.memory_write_proposal_ttl_seconds)
+    app.state.database = SQLiteDatabase(
+        app.state.settings.resolved_database_path(),
+        busy_timeout_ms=app.state.settings.database_busy_timeout_ms,
+    )
+    app.state.memory_write_proposal_store = SQLiteMemoryWriteProposalStore(
+        app.state.database,
+        ttl=timedelta(seconds=app.state.settings.memory_write_proposal_ttl_seconds),
     )
     app.state.memory_write_proposal_builder = MemoryWriteProposalBuilder(app.state.memory_engine)
     app.state.memory_write_proposal_applier = MemoryWriteProposalApplier(
@@ -140,10 +145,6 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
             app.state.memory_write_proposal_store,
             app.state.memory_write_proposal_applier,
         )
-    )
-    app.state.database = SQLiteDatabase(
-        app.state.settings.resolved_database_path(),
-        busy_timeout_ms=app.state.settings.database_busy_timeout_ms,
     )
     app.state.execution_store = SQLiteExecutionStore(
         app.state.database,
