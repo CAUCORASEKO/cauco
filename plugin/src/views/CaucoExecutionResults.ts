@@ -18,6 +18,8 @@ export function renderToolResult(card: HTMLElement, result: ToolResult): void {
     renderGitAddResult(details, result);
   } else if (result.tool_id === "git" && result.operation_id === "commit") {
     renderGitCommitResult(details, result);
+  } else if (result.tool_id === "git" && result.operation_id === "push") {
+    renderGitPushResult(details, result);
   } else if (result.tool_id === "filesystem" && result.operation_id === "list_directory") {
     renderDirectoryResult(details, result);
   } else if (result.tool_id === "filesystem" && result.operation_id === "read_file") {
@@ -31,6 +33,17 @@ export function renderToolResult(card: HTMLElement, result: ToolResult): void {
     text: safeDisplayText(result.output),
     cls: "cauco-result-output",
   });
+}
+
+function renderGitPushResult(container: HTMLElement, result: ToolResult): void {
+  const data = result.structured_data;
+  const summary = container.createEl("dl", { cls: "cauco-control-details" });
+  addDetail(summary, "Remote", structuredString(data.remote_label) ?? "Unavailable");
+  addDetail(summary, "Branch", structuredString(data.remote_branch) ?? "Unavailable");
+  addDetail(summary, "Commit", structuredString(data.local_commit)?.slice(0, 12) ?? "Unavailable");
+  addDetail(summary, "Previous remote", structuredString(data.previous_remote_commit)?.slice(0, 12) ?? "Unavailable");
+  addDetail(summary, "New remote", structuredString(data.new_remote_commit)?.slice(0, 12) ?? "Unavailable");
+  addDetail(summary, "Verification", data.verification_passed === true ? "Passed" : "Failed");
 }
 
 function renderGitCommitResult(container: HTMLElement, result: ToolResult): void {

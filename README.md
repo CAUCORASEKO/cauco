@@ -30,7 +30,8 @@ Cauco is a local-first AI work orchestration project built around Obsidian and p
 - Phase 7A's first controlled local mutations: memory proposal creation/confirmation and bounded workspace text writes
 - Phase 7B controlled `git.add` for an exact approved set of workspace-relative text files
 - Phase 7C controlled local `git.commit` from an exact preview-bound staged tree
-- Every mutation requires an inert preview plus a separate operation-specific confirmation; commit never stages additional files or pushes, and broader Git mutations remain disabled
+- Phase 7D controlled fast-forward `git.push` of exactly one approved local commit
+- Every mutation requires an inert preview plus a separate operation-specific confirmation; push never stages, commits, forces, publishes tags, or continues automatically, and authentication must already be configured outside Cauco
 - Scheduler models for inactive one-time and recurring job definitions; no scheduler process runs yet
 - Automated Python tests and Ruff configuration, plus plugin type-check and production-build scripts
 

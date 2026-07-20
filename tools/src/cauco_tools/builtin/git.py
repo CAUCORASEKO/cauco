@@ -29,10 +29,8 @@ GIT_TOOL = ToolDefinition(
         ),
         operation(
             "push",
-            "Push commits to a remote.",
-            safe=False,
-            enabled=False,
-            confirmation=True,
+            "Publish one exact approved commit with a fast-forward-only push.",
+            confirmation=True, runtime_allowed=True, mutation=True,
         ),
         operation(
             "reset_hard",

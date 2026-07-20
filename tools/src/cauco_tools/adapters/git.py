@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import hashlib
@@ -861,6 +862,179 @@ class GitCommitAdapter(GitAddAdapter):
     def _mask_email(value: str) -> str:
         local, separator, domain = value.partition("@")
         return (local[:1] + "***" + separator + domain) if separator else "configured"
+
+
+class GitPushAdapter(GitAddAdapter):
+    """Publishes one preview-bound branch tip through a fixed fast-forward push."""
+
+    operations = frozenset({"push"})
+
+    def __init__(self, workspace: Path, *, allow_local_remotes: bool = False, **kwargs: Any) -> None:
+        super().__init__(workspace, **kwargs)
+        self.allow_local_remotes = allow_local_remotes
+
+    def inspect_push(self, push_input: Any) -> dict[str, Any]:
+        from cauco_tools.git_mutation import ABSENT_REMOTE_COMMIT, GitPushInput
+
+        if not isinstance(push_input, GitPushInput):
+            raise ToolExecutionError("invalid_arguments", "git.push requires its immutable typed input.")
+        self._validate_repository()
+        self._validate_operation_state()
+        branch = self._branch()
+        if branch is None:
+            raise ToolExecutionError("detached_head", "Detached HEAD pushes are not supported.")
+        if branch != push_input.local_branch:
+            raise ToolExecutionError("branch_mismatch", "The current branch does not match the approved push branch.")
+        head = self._head()
+        if head == "UNBORN":
+            raise ToolExecutionError("unborn_head", "An unborn branch cannot be pushed.")
+        if head != push_input.expected_local_commit:
+            raise ToolExecutionError("local_commit_mismatch", "The local branch tip does not match the approved commit.")
+        if self._staged_paths():
+            raise ToolExecutionError("staged_index", "Push is blocked while staged changes are uncommitted.")
+        remote_url = self._remote_url(push_input.remote)
+        remote_label = self._safe_remote_label(remote_url)
+        remote_commit = self._remote_head(push_input.remote, push_input.remote_branch)
+        if remote_commit != push_input.expected_remote_commit:
+            raise ToolExecutionError("remote_state_mismatch", "The remote branch no longer matches the approved remote state.")
+        if remote_commit == head:
+            raise ToolExecutionError("already_published", "The approved commit is already published to this remote branch.")
+        if remote_commit == ABSENT_REMOTE_COMMIT:
+            raise ToolExecutionError("remote_branch_absent", "Creating remote branches is not supported in Phase 7D.")
+        ancestor = self._run(["merge-base", "--is-ancestor", remote_commit, head], optional_locks=False)
+        if ancestor.returncode != 0:
+            raise ToolExecutionError("non_fast_forward", "Fast-forward publication cannot be proven safely.")
+        outgoing = tuple(
+            item for item in self._run(
+                ["rev-list", "--reverse", f"{remote_commit}..{head}"], optional_locks=False
+            ).stdout.splitlines() if item
+        )
+        if outgoing != (head,):
+            raise ToolExecutionError("outgoing_commit_count", "Push must publish exactly one approved commit.")
+        subject = self._run(["log", "-1", "--format=%s", head], optional_locks=False).stdout.rstrip("\n")
+        tree = self._run(["rev-parse", f"{head}^{{tree}}"], optional_locks=False).stdout.strip()
+        paths = tuple(self._run(["diff-tree", "--no-commit-id", "--name-only", "-r", head], optional_locks=False).stdout.splitlines())
+        return {
+            "repository_label": self.workspace.name,
+            "repository_id": hashlib.sha256(self.workspace.as_posix().encode()).hexdigest(),
+            "remote_name": push_input.remote, "remote_label": remote_label,
+            "local_branch": branch, "remote_branch": push_input.remote_branch,
+            "local_commit": head, "local_tree_id": tree,
+            "current_remote_commit": remote_commit,
+            "outgoing_commits": outgoing, "outgoing_commit_count": 1,
+            "commit_subject": subject, "changed_paths": paths,
+            "index_digest": self.index_digest(), "index_clean": True,
+            "worktree_dirty": bool(self._run(["status", "--porcelain"], optional_locks=False).stdout.strip()),
+        }
+
+    def verify_push_preview(self, arguments: Any) -> dict[str, Any]:
+        allowed = {"remote", "local_branch", "remote_branch", "expected_local_commit", "expected_remote_commit", "local_tree_id", "outgoing_commits", "index_digest", "remote_label"}
+        if set(arguments) != allowed:
+            raise ToolExecutionError("invalid_arguments", "git.push accepts only preview-bound input.")
+        from cauco_tools.git_mutation import GitPushInput
+        try:
+            input_value = GitPushInput(
+                arguments["remote"], arguments["local_branch"], arguments["remote_branch"],
+                arguments["expected_local_commit"], arguments["expected_remote_commit"],
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ToolExecutionError("invalid_arguments", "git.push input is invalid.") from error
+        captured = self.inspect_push(input_value)
+        checks = {
+            "local_tree_id": captured["local_tree_id"], "outgoing_commits": captured["outgoing_commits"],
+            "index_digest": captured["index_digest"], "remote_label": captured["remote_label"],
+        }
+        if any(arguments[key] != value for key, value in checks.items()):
+            raise ToolExecutionError("stale_state", "Local or remote push state changed after preview creation.")
+        return captured
+
+    def execute(self, request: ToolExecutionRequest) -> ToolExecutionResult:
+        if request.tool_id != "git" or request.operation_id != "push":
+            raise ToolExecutionError("unsupported_operation", "The Git mutation is not supported.")
+        started_at, started = datetime.now(tz=UTC), monotonic()
+        with self._lock:
+            self.verify_push_preview(request.arguments)
+            remote = request.arguments["remote"]
+            local_branch = request.arguments["local_branch"]
+            remote_branch = request.arguments["remote_branch"]
+            assert isinstance(remote, str) and isinstance(local_branch, str) and isinstance(remote_branch, str)
+            refspec = f"refs/heads/{local_branch}:refs/heads/{remote_branch}"
+            try:
+                completed = self._push_run(["push", "--porcelain", remote, refspec], request.timeout_seconds)
+            except ToolExecutionTimeoutError as error:
+                if self._remote_head(remote, remote_branch) == request.arguments["expected_local_commit"]:
+                    setattr(error, "remote_updated_despite_error", True)
+                raise
+            if completed.returncode != 0:
+                raise ToolExecutionError("git_push_failed", "Git could not publish the approved commit.")
+            remote_head = self._remote_head(remote, remote_branch)
+            if remote_head != request.arguments["expected_local_commit"]:
+                raise ToolExecutionError("verification_failed", "Remote verification did not find the approved commit.")
+            output, truncated = bounded_text(completed.stdout + completed.stderr, request.max_output_chars)
+            completed_at = datetime.now(tz=UTC)
+            return ToolExecutionResult(
+                tool_id="git", operation_id="push", success=True, started_at=started_at,
+                completed_at=completed_at, duration_ms=max(0, round((monotonic() - started) * 1000)),
+                output=output, truncated=truncated, mutation_performed=True,
+                structured_data={"repository_label": self.workspace.name, "remote_name": remote,
+                    "remote_label": request.arguments["remote_label"], "local_branch": local_branch,
+                    "remote_branch": remote_branch, "local_commit": request.arguments["expected_local_commit"],
+                    "previous_remote_commit": request.arguments["expected_remote_commit"], "new_remote_commit": remote_head,
+                    "outgoing_commit_count": 1, "fast_forward_verified": True,
+                    "remote_branch_created": False, "verification_passed": True,
+                    "fixed_git_push_invoked": True},
+            )
+
+    def _remote_url(self, remote: str) -> str:
+        value = self._push_run(["remote", "get-url", remote], 5)
+        if value.returncode != 0 or not value.stdout.strip():
+            raise ToolExecutionError("missing_remote", "The approved remote is not configured.")
+        remote_url = value.stdout.strip()
+        if "@" in remote_url.split("://", 1)[0] or re.match(r"^[a-z]+://[^/]*@", remote_url, re.I):
+            raise ToolExecutionError("unsafe_remote", "Remote URLs with embedded credentials are forbidden.", forbidden=True)
+        allowed = remote_url.startswith(("https://", "ssh://")) or re.match(r"^[^@:/\s]+@[^:/\s]+:.+", remote_url)
+        if not allowed and not self.allow_local_remotes:
+            raise ToolExecutionError("unsafe_remote", "Only configured HTTPS and SSH remotes are allowed.", forbidden=True)
+        if not allowed and self.allow_local_remotes and (remote_url.startswith("file:") or Path(remote_url).is_absolute()):
+            return remote_url
+        if not allowed:
+            raise ToolExecutionError("unsafe_remote", "The configured remote URL is not allowed.", forbidden=True)
+        return remote_url
+
+    def _head(self) -> str:
+        value = self._run(["rev-parse", "--verify", "HEAD"], optional_locks=False)
+        return value.stdout.strip() if value.returncode == 0 else "UNBORN"
+
+    def _branch(self) -> str | None:
+        value = self._run(["symbolic-ref", "--quiet", "--short", "HEAD"], optional_locks=False)
+        return value.stdout.strip() if value.returncode == 0 else None
+
+    def _remote_head(self, remote: str, branch: str) -> str:
+        result = self._push_run(["ls-remote", "--heads", remote, f"refs/heads/{branch}"], 10)
+        if result.returncode != 0:
+            raise ToolExecutionError("remote_inspection_failed", "The remote branch could not be inspected safely.")
+        lines = [line.split("\t", 1)[0] for line in result.stdout.splitlines() if line]
+        if len(lines) > 1 or (lines and not re.fullmatch(r"[0-9a-f]{40,64}", lines[0])):
+            raise ToolExecutionError("remote_inspection_failed", "The remote branch response was invalid.")
+        from cauco_tools.git_mutation import ABSENT_REMOTE_COMMIT
+        return lines[0] if lines else ABSENT_REMOTE_COMMIT
+
+    @staticmethod
+    def _safe_remote_label(remote_url: str) -> str:
+        if remote_url.startswith(("https://", "ssh://")):
+            return remote_url.split("://", 1)[1].split("/", 1)[0]
+        if "@" in remote_url and ":" in remote_url:
+            return remote_url.split("@", 1)[1].split(":", 1)[0]
+        return "test-local-remote"
+
+    def _push_run(self, arguments: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run([self.executable, *arguments], cwd=self.workspace,
+                env={"PATH": os.defpath, "LANG": "C", "LC_ALL": "C", "GIT_PAGER": "cat", "PAGER": "cat",
+                     "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": os.devnull, "GIT_SSH_COMMAND": "ssh -o BatchMode=yes"},
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False, shell=False)
+        except subprocess.TimeoutExpired as error:
+            raise ToolExecutionTimeoutError() from error
 
 
 def digest_json(value: Any) -> str:

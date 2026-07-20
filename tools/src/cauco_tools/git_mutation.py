@@ -5,6 +5,7 @@ from pathlib import PurePosixPath
 
 MAX_GIT_ADD_PATHS = 20
 MAX_GIT_COMMIT_MESSAGE = 120
+ABSENT_REMOTE_COMMIT = "ABSENT"
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,3 +91,50 @@ class GitCommitInput:
             raise ValueError("git.commit intent summary must be safe text.")
         object.__setattr__(self, "message", message)
         object.__setattr__(self, "expected_staged_paths", paths)
+
+
+def _git_name(value: str, *, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or value.startswith("-")
+        or any(character.isspace() or ord(character) < 32 for character in value)
+        or any(token in value for token in ("\\", ":", "..", "@{", "~", "^", "?", "*", "["))
+        or value.endswith((".", ".lock"))
+        or "//" in value
+    ):
+        raise ValueError(f"git.push {label} is not a safe exact Git name.")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class GitPushInput:
+    """Immutable approved input for publishing one exact local branch tip."""
+
+    remote: str
+    local_branch: str
+    remote_branch: str
+    expected_local_commit: str
+    expected_remote_commit: str
+    intent_summary: str | None = None
+
+    def __post_init__(self) -> None:
+        remote = _git_name(self.remote, label="remote")
+        local_branch = _git_name(self.local_branch, label="local branch")
+        remote_branch = _git_name(self.remote_branch, label="remote branch")
+        if local_branch != remote_branch:
+            raise ValueError("git.push requires matching local and remote branch names.")
+        if not re.fullmatch(r"[0-9a-f]{40,64}", self.expected_local_commit):
+            raise ValueError("git.push requires an exact local commit ID.")
+        if self.expected_remote_commit != ABSENT_REMOTE_COMMIT and not re.fullmatch(
+            r"[0-9a-f]{40,64}", self.expected_remote_commit
+        ):
+            raise ValueError("git.push requires an exact remote commit ID or ABSENT.")
+        if self.intent_summary is not None and (
+            not isinstance(self.intent_summary, str) or "\x00" in self.intent_summary
+        ):
+            raise ValueError("git.push intent summary must be safe text.")
+        object.__setattr__(self, "remote", remote)
+        object.__setattr__(self, "local_branch", local_branch)
+        object.__setattr__(self, "remote_branch", remote_branch)

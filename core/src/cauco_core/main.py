@@ -10,6 +10,7 @@ from cauco_tools.adapters import (
     FilesystemTextMutationAdapter,
     GitAddAdapter,
     GitCommitAdapter,
+    GitPushAdapter,
     GitStatusAdapter,
 )
 from fastapi import FastAPI
@@ -83,6 +84,12 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         )
         app.state.tool_adapter_registry.register(
             GitCommitAdapter(
+                app.state.workspace_policy.root,
+                max_file_bytes=app.state.settings.execution_max_file_bytes,
+            )
+        )
+        app.state.tool_adapter_registry.register(
+            GitPushAdapter(
                 app.state.workspace_policy.root,
                 max_file_bytes=app.state.settings.execution_max_file_bytes,
             )

@@ -362,6 +362,7 @@ export class CaucoExecutionPanel {
   private renderMutationControls(card: HTMLElement, step: StepExecutionRecord): void {
     const staging = step.tool_id === "git" && step.operation_id === "add";
     const committing = step.tool_id === "git" && step.operation_id === "commit";
+    const pushing = step.tool_id === "git" && step.operation_id === "push";
     card.createEl("p", {
       text: staging
         ? "Creating this preview does not modify the Git index."
@@ -376,7 +377,7 @@ export class CaucoExecutionPanel {
       const create = card.createEl("button", {
         text: this.state.pendingAction === "create-mutation-preview"
           ? "Creating inert preview…"
-          : staging ? "Create Staging Preview" : committing ? "Create Commit Preview" : "Create Mutation Preview",
+          : staging ? "Create Staging Preview" : committing ? "Create Commit Preview" : pushing ? "Create Push Preview" : "Create Mutation Preview",
         attr: { type: "button" },
       });
       create.disabled = this.state.pendingAction !== null;
@@ -405,6 +406,15 @@ export class CaucoExecutionPanel {
       addDetail(details, "Staged tree", String(preview.before_state.staged_tree_id ?? "").slice(0, 12));
       card.createEl("p", { text: "This creates one local Git commit. It does not stage additional files or push to a remote. Local Git hooks may run during commit.", cls: "cauco-trust-note" });
     }
+    if (pushing) {
+      addDetail(details, "Remote", String(preview.before_state.remote_label ?? ""));
+      addDetail(details, "Local branch", String(preview.before_state.local_branch ?? ""));
+      addDetail(details, "Remote branch", String(preview.before_state.remote_branch ?? ""));
+      addDetail(details, "Commit", String(preview.before_state.local_commit ?? "").slice(0, 12));
+      addDetail(details, "Remote HEAD", String(preview.before_state.current_remote_commit ?? "").slice(0, 12));
+      addDetail(details, "Outgoing commits", String(preview.proposed_after_state.outgoing_commit_count ?? 0));
+      card.createEl("p", { text: "This publishes the approved local commit without force. It does not stage files, create a commit, push tags, or push other branches. Authentication must already be configured outside Cauco.", cls: "cauco-trust-note" });
+    }
     const policy = preview.proposed_after_state.overwrite_policy;
     if (typeof policy === "string") addDetail(details, "Write policy", policy);
     const characters = preview.proposed_after_state.characters;
@@ -413,6 +423,7 @@ export class CaucoExecutionPanel {
     card.createEl("p", {
       text: staging
         ? "This stages only the exact approved files listed above. It does not create a commit or push anything."
+        : pushing ? "The remote, branches, and approved commit are fixed and cannot be edited during confirmation."
         : committing ? "The commit message and staged paths are fixed and cannot be edited during confirmation."
         : "The target and approved content are fixed and cannot be edited during confirmation.",
       cls: "cauco-trust-note",
@@ -431,7 +442,7 @@ export class CaucoExecutionPanel {
     const confirm = actions.createEl("button", {
       text: this.state.pendingAction === "confirm-mutation"
         ? "Applying exact mutation…"
-        : staging ? "Stage Approved Files" : committing ? "Create Approved Commit" : "Confirm and Apply Mutation",
+        : staging ? "Stage Approved Files" : committing ? "Create Approved Commit" : pushing ? "Push Approved Commit" : "Confirm and Apply Mutation",
       cls: "mod-cta",
       attr: { type: "button" },
     });

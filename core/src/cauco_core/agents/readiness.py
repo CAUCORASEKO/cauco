@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
-from cauco_agents import AgentPlan, GitAddInput, GitCommitInput
+from cauco_agents import AgentPlan, GitAddInput, GitCommitInput, GitPushInput
 from cauco_tools import ToolAdapterRegistry, ToolExecutionError, ToolRegistry
-from cauco_tools.adapters import GitAddAdapter, GitCommitAdapter
+from cauco_tools.adapters import GitAddAdapter, GitCommitAdapter, GitPushAdapter
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +57,19 @@ def evaluate_plan_readiness(
             if isinstance(adapter, GitAddAdapter):
                 try:
                     adapter.inspect(step.operation_input.paths)
+                except ToolExecutionError as error:
+                    blocking_reasons = (error.safe_message,)
+        if (
+            reference.tool_id == "git"
+            and reference.operation_id == "push"
+            and isinstance(step.operation_input, GitPushInput)
+            and adapter_registry
+            and adapter_available
+        ):
+            adapter = adapter_registry.get("git", "push")
+            if isinstance(adapter, GitPushAdapter):
+                try:
+                    adapter.inspect_push(step.operation_input)
                 except ToolExecutionError as error:
                     blocking_reasons = (error.safe_message,)
         if (

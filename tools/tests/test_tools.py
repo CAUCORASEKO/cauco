@@ -76,7 +76,7 @@ def test_default_registry_contracts_and_validation() -> None:
     missing = registry.validate("missing", "run")
     assert status.valid and status.safe and not status.confirmation_required
     assert commit.valid and commit.confirmation_required and commit.runtime_execution_allowed
-    assert not push.valid and push.confirmation_required
+    assert push.valid and push.confirmation_required and push.runtime_execution_allowed
     assert (
         not dangerous.valid
         and dangerous.operation_exists
@@ -94,6 +94,7 @@ def test_default_registry_contracts_and_validation() -> None:
             ("git", "status"),
             ("git", "add"),
             ("git", "commit"),
+            ("git", "push"),
         ("filesystem", "list_directory"),
         ("filesystem", "read_file"),
         ("filesystem", "write_text_file"),
@@ -101,6 +102,7 @@ def test_default_registry_contracts_and_validation() -> None:
         ("memory", "confirm_proposal"),
     }
     assert registry.validate("git", "commit").runtime_execution_allowed
+    assert registry.validate("git", "push").runtime_execution_allowed
     assert not registry.validate("email", "send").runtime_execution_allowed
     assert not registry.validate("calendar", "create_event").runtime_execution_allowed
     memory_mutation = registry.validate("memory", "create_proposal")

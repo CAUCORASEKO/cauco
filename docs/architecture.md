@@ -88,6 +88,8 @@ Phase 7B adds a dedicated Core-independent Git staging contract and adapter. Cor
 
 Phase 7C keeps index mutation distinct from history mutation: `staged tree → commit preview → exact tree/HEAD/index binding → confirmation → fixed commit → verification`. The commit adapter accepts only the immutable approved message and staged paths captured in the preview, invokes fixed `git commit --no-gpg-sign -m <message>`, and verifies the resulting HEAD, tree, subject, and changed paths. It never stages, pushes, rewrites history, or rolls back a completed commit. Local hooks are allowed as normal Git behavior, with bounded output and timeout; failures are reported after checking whether HEAD changed.
 
+Phase 7D distinguishes local history from remote publication: `local commit → remote inspection → exactly-one outgoing commit validation → push preview → confirmation → fixed push → remote verification`. The adapter publishes only an existing configured HTTPS or SSH remote branch using a constructed full refspec and a non-interactive fast-forward-only push. It never accepts URLs, credentials, flags, tags, force modes, or multiple branches. Remote ref state, local HEAD/tree, index state, and outgoing set are bound into the preview; timeout or network errors do not trigger retry. Git add, commit, and push share the same process-local mutation lock.
+
 ## Obsidian execution control
 
 Phase 6C/7A presents the Core lifecycle as `instruction → generated plan and provenance → review decision → readiness → inert execution record → explicit read or preview/confirmation → real result → audit trail`. The plugin keeps transient UI state separate from Core records, defensively validates essential response shapes, ignores stale manual GET responses, and never polls.

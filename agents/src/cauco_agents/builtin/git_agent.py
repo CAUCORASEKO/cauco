@@ -154,7 +154,7 @@ def requested_git_operation(instruction: str) -> str:
     if requested_git_commit(instruction) is not None:
         return "commit"
     if "push" in normalized:
-        return "push"
+        return "status"
     if "commit" in normalized:
         return "status"
     if "diff" in normalized:

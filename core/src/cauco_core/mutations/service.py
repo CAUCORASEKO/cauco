@@ -12,6 +12,7 @@ from cauco_agents import (
     FilesystemWriteTextInput,
     GitAddInput,
     GitCommitInput,
+    GitPushInput,
     MemoryConfirmProposalInput,
     MemoryCreateProposalInput,
 )
@@ -21,7 +22,12 @@ from cauco_tools import (
     ToolExecutionRequest,
     ToolRegistry,
 )
-from cauco_tools.adapters import FilesystemTextMutationAdapter, GitAddAdapter, GitCommitAdapter
+from cauco_tools.adapters import (
+    FilesystemTextMutationAdapter,
+    GitAddAdapter,
+    GitCommitAdapter,
+    GitPushAdapter,
+)
 
 from cauco_core.agents.review_store import (
     AgentPlanReviewStore,
@@ -66,6 +72,7 @@ PHRASES = {
     ("filesystem", "write_text_file"): "WRITE WORKSPACE FILE",
     ("git", "add"): "STAGE APPROVED FILES",
     ("git", "commit"): "CREATE APPROVED COMMIT",
+    ("git", "push"): "PUSH APPROVED COMMIT",
 }
 DIFF_LIMIT = 20_000
 
@@ -101,6 +108,8 @@ class MutationService:
             self._event(record.execution_id, step, "git_staging_preview_requested", "accepted")
         if key == ("git", "commit"):
             self._event(record.execution_id, step, "commit_preview_requested", "accepted")
+        if key == ("git", "push"):
+            self._event(record.execution_id, step, "push_preview_requested", "accepted")
         if key not in PHRASES:
             self._event(record.execution_id, step, "preview_rejected", "rejected")
             raise MutationConflictError("The approved step is not an enabled mutation.")
@@ -122,6 +131,10 @@ class MutationService:
                 self._event(record.execution_id, step, "repository_validation_passed", "success")
                 self._event(record.execution_id, step, "staged_tree_captured", "success")
                 self._event(record.execution_id, step, "identity_validation_passed", "success")
+            if key == ("git", "push"):
+                self._event(record.execution_id, step, "repository_validation_passed", "success")
+                self._event(record.execution_id, step, "remote_state_discovered", "success")
+                self._event(record.execution_id, step, "fast_forward_verified", "success")
             created_at = self.preview_store.clock()
             expires_at = created_at + self.preview_store.ttl
             phrase = PHRASES[key]
@@ -177,6 +190,14 @@ class MutationService:
                 "identity_missing",
                 "detached_head",
                 "stale_state",
+                "missing_remote",
+                "remote_state_mismatch",
+                "branch_mismatch",
+                "local_commit_mismatch",
+                "staged_index",
+                "non_fast_forward",
+                "outgoing_commit_count",
+                "already_published",
             }:
                 raise MutationConflictError(error.safe_message) from error
             raise MutationValidationError(error.safe_message) from error
@@ -300,6 +321,9 @@ class MutationService:
         if data.get("fixed_git_commit_invoked"):
             self._event(execution_id, step, "fixed_git_commit_invoked", "success")
             self._event(execution_id, step, "commit_verification_passed", "success")
+        if data.get("fixed_git_push_invoked"):
+            self._event(execution_id, step, "fixed_git_push_invoked", "success")
+            self._event(execution_id, step, "remote_verification_passed", "success")
         if data.get("verification_passed"):
             self._event(execution_id, step, "verification_passed", "success")
         if data.get("memory_refreshed"):
@@ -456,6 +480,51 @@ class MutationService:
                 },
                 "diff_preview": captured["diff_preview"],
             }
+        if isinstance(operation_input, GitPushInput):
+            policy = self.execution_service.workspace_policy
+            if policy is None:
+                raise MutationConflictError("No execution workspace is configured.")
+            adapter = self.adapter_registry.get(tool_id, operation_id)
+            if not isinstance(adapter, GitPushAdapter) or adapter.workspace != policy.root:
+                raise MutationConflictError("The configured Git push adapter is unavailable.")
+            captured = adapter.inspect_push(operation_input)
+            return {
+                "target": None,
+                "normalized_arguments": {
+                    "remote": operation_input.remote,
+                    "local_branch": operation_input.local_branch,
+                    "remote_branch": operation_input.remote_branch,
+                    "expected_local_commit": operation_input.expected_local_commit,
+                    "expected_remote_commit": operation_input.expected_remote_commit,
+                    "local_tree_id": captured["local_tree_id"],
+                    "outgoing_commits": captured["outgoing_commits"],
+                    "index_digest": captured["index_digest"],
+                    "remote_label": captured["remote_label"],
+                },
+                "before_state": {
+                    "repository_label": captured["repository_label"],
+                    "remote_label": captured["remote_label"],
+                    "remote_name": captured["remote_name"],
+                    "local_branch": captured["local_branch"],
+                    "remote_branch": captured["remote_branch"],
+                    "local_commit": captured["local_commit"],
+                    "current_remote_commit": captured["current_remote_commit"],
+                    "index_clean": captured["index_clean"],
+                },
+                "proposed_after_state": {
+                    "outgoing_commits": captured["outgoing_commits"],
+                    "outgoing_commit_count": captured["outgoing_commit_count"],
+                    "commit_subject": captured["commit_subject"],
+                    "changed_paths": captured["changed_paths"],
+                    "fast_forward_verified": True,
+                    "worktree_warning": "Unstaged worktree changes are left untouched.",
+                    "warning": (
+                        "This publishes one local commit without force, tags, "
+                        "or additional branches."
+                    ),
+                },
+                "diff_preview": "\n".join(captured["changed_paths"]),
+            }
         if isinstance(operation_input, MemoryCreateProposalInput):
             proposal = self.proposal_builder.build(
                 MemoryWriteRequest(
@@ -551,6 +620,21 @@ class MutationService:
                     if item.step_index == preview.step_index
                 )
                 self._event(preview.execution_id, step, "commit_state_stale", "rejected")
+                self._stale(preview)
+            return
+        if preview.tool_id == "git" and preview.operation_id == "push":
+            adapter = self.adapter_registry.get("git", "push")
+            if not isinstance(adapter, GitPushAdapter):
+                self._stale(preview)
+            try:
+                adapter.verify_push_preview(preview.normalized_arguments)
+            except ToolExecutionError:
+                step = next(
+                    item
+                    for item in self.execution_store.get(preview.execution_id).step_records
+                    if item.step_index == preview.step_index
+                )
+                self._event(preview.execution_id, step, "remote_state_stale", "rejected")
                 self._stale(preview)
             return
         if preview.operation_id == "create_proposal":
