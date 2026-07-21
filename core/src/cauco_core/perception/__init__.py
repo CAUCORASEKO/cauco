@@ -1,3 +1,8 @@
+from cauco_core.perception.manager import (
+    PerceptionCollectionResult,
+    PerceptionManager,
+    PerceptionSourceError,
+)
 from cauco_core.perception.models import (
     PerceptionBatch,
     PerceptionCapability,
@@ -14,11 +19,14 @@ from cauco_core.perception.source import PerceptionSource
 __all__ = [
     "PerceptionBatch",
     "PerceptionCapability",
+    "PerceptionCollectionResult",
     "PerceptionHealth",
+    "PerceptionManager",
     "PerceptionModality",
     "PerceptionRequest",
     "PerceptionSignal",
     "PerceptionSource",
+    "PerceptionSourceError",
     "PerceptionSourceMetadata",
     "PerceptionSourceRegistry",
     "PerceptionSourceStatus",
