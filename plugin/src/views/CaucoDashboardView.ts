@@ -5,6 +5,7 @@ import { CaucoCoreClient } from "../services/CaucoCoreClient";
 import type { AIModel, CaucoStatus, ConnectionResult, StatusSection } from "../types";
 import { CaucoMemoryPanel } from "./CaucoMemoryPanel";
 import { CaucoExecutionPanel } from "./CaucoExecutionPanel";
+import { CaucoPerceptionPanel } from "./CaucoPerceptionPanel";
 
 const SECTION_LABELS: Array<[keyof CaucoStatus, string]> = [
   ["runtime", "Runtime"],
@@ -74,6 +75,7 @@ export class CaucoDashboardView extends ItemView {
     }
     const client = new CaucoCoreClient(this.plugin.settings.coreUrl);
     new CaucoExecutionPanel(client).render(container);
+    new CaucoPerceptionPanel(this.plugin.settings.coreUrl, result.connected).render(container);
     this.renderChat(container, result);
     new CaucoMemoryPanel(
       client,

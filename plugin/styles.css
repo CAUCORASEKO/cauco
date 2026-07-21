@@ -572,6 +572,22 @@
   color: var(--text-muted);
 }
 
+.cauco-perception {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  margin-top: var(--size-4-4);
+  padding: var(--size-4-4);
+}
+.cauco-perception-summary, .cauco-perception-status { color: var(--text-muted); }
+.cauco-perception-controls { display: flex; flex-wrap: wrap; gap: var(--size-4-2); margin: var(--size-4-3) 0; }
+.cauco-perception-controls input { flex: 1 1 14rem; }
+.cauco-perception-source, .cauco-perception-signal { border-top: 1px solid var(--background-modifier-border); padding: var(--size-4-3) 0; }
+.cauco-perception-source small, .cauco-perception-signal small { color: var(--text-muted); display: block; }
+.cauco-perception-badge, .cauco-perception-capabilities { display: inline-block; margin: var(--size-4-1) var(--size-4-1) 0 0; }
+.cauco-perception-badge { background: rgba(var(--color-green-rgb), 0.12); border-radius: var(--radius-s); padding: var(--size-4-1) var(--size-4-2); }
+.cauco-perception-signal p { max-height: 8rem; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+
 .cauco-error {
   background: rgba(var(--color-red-rgb), 0.1);
   border-radius: var(--radius-s);
