@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from cauco_core.agents.context import AgentContextResolver
 from cauco_core.agents.planning import AgentPlanningService
 from cauco_core.agents.review_service import AgentPlanReviewService
-from cauco_core.agents.review_store import AgentPlanReviewStore
+from cauco_core.agents.sqlite_store import SQLiteAgentPlanReviewStore
 from cauco_core.ai.base import AIProvider
 from cauco_core.ai.ollama import OllamaProvider
 from cauco_core.ai.service import AIService
@@ -117,7 +117,12 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.agent_registry,
         app.state.agent_context_resolver,
     )
-    app.state.agent_plan_review_store = AgentPlanReviewStore(
+    app.state.database = SQLiteDatabase(
+        app.state.settings.resolved_database_path(),
+        busy_timeout_ms=app.state.settings.database_busy_timeout_ms,
+    )
+    app.state.agent_plan_review_store = SQLiteAgentPlanReviewStore(
+        app.state.database,
         default_ttl_seconds=app.state.settings.agent_plan_review_ttl_seconds,
         max_records=app.state.settings.agent_plan_review_max_records,
     )
@@ -126,10 +131,6 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.agent_plan_review_store,
     )
     app.state.context_builder = ContextBuilder(app.state.memory_engine)
-    app.state.database = SQLiteDatabase(
-        app.state.settings.resolved_database_path(),
-        busy_timeout_ms=app.state.settings.database_busy_timeout_ms,
-    )
     app.state.memory_write_proposal_store = SQLiteMemoryWriteProposalStore(
         app.state.database,
         ttl=timedelta(seconds=app.state.settings.memory_write_proposal_ttl_seconds),

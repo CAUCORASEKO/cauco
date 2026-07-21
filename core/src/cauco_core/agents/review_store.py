@@ -45,7 +45,7 @@ class PlanReviewCapacityError(PlanReviewStoreError):
 
 
 class AgentPlanReviewStore:
-    """Thread-safe process-local storage for immutable reviewed plan snapshots."""
+    """Thread-safe base storage for immutable reviewed plan snapshots."""
 
     def __init__(
         self,

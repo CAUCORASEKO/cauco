@@ -33,7 +33,7 @@ The plugin and core deliberately do not share executable code. Their boundary is
 - `brain-template/` is portable user-owned Markdown suitable for copying into an Obsidian vault.
 - `agents/` is the canonical shared agent framework. Core injects its explicit registry and deterministic router into application state; Project, Git, and Research agents return proposals only and never invoke tools or models.
 - `core/src/cauco_core/agents/` resolves only registered Memory Engine objects through the existing safe reader, bounds deterministic excerpts, and passes immutable context to the shared planning contracts.
-- `core/src/cauco_core/agents/review_store.py` owns the independent, process-local plan review lifecycle, integrity checks, expiration, capacity, and lock-protected human decisions. It never executes a plan.
+- `core/src/cauco_core/agents/review_store.py` defines the independent plan review lifecycle, integrity checks, expiration, capacity, and lock-protected human decisions. `sqlite_store.py` persists complete reviewed snapshots in SQLite, restores them deterministically, and normalizes pending records that expire during downtime. It never executes a plan.
 - `tools/` is the authoritative, thread-safe catalog of immutable tool, operation, and permission contracts. Runtime adapters are separate and exist only for three allowlisted read-only operations. `scheduler/` remains an inactive definition registry.
 - `installer/` remains reserved for a later packaging milestone.
 
@@ -60,7 +60,7 @@ Markdown excerpt ranking prefers a project heading discovered from registered pr
 
 ## Human plan review
 
-Phase 5C extends the deterministic flow to `routing → safe context → planning → review store → human decision`. Core stores the exact routing, provenance-bearing context, and plan snapshot as `pending_review`. A human may approve, reject, or cancel it before its TTL expires; lazy expiration is the fourth terminal transition. Every terminal transition is atomic under the store lock and validates the snapshot digest first.
+Phase 5C and Phase 8D extend the deterministic flow to `routing → safe context → planning → SQLite review store → human decision`. Core stores the exact routing, provenance-bearing context, and plan snapshot as `pending_review`. A human may approve, reject, or cancel it before its TTL expires; lazy expiration is the fourth terminal transition. Restarts retain terminal states and normalize pending records whose TTL elapsed while offline. Every terminal transition is atomic under the store lock and validates the snapshot digest first.
 
 Approval means only that the human authorized the reviewed snapshot for possible execution-record creation. It does not invoke a tool, run a step, refresh memory, regenerate the plan, or mark work complete. Execution-record creation is independently inert, and the controlled memory-write confirmation workflow remains separate.
 

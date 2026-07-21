@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 class SQLitePersistenceError(RuntimeError):
@@ -66,6 +66,11 @@ class SQLiteDatabase:
                         if version < 2:
                             self._migrate_to_version_2(connection)
                             self._write_schema_version(connection, 2)
+                            version = 2
+
+                        if version < 3:
+                            self._migrate_to_version_3(connection)
+                            self._write_schema_version(connection, 3)
 
                         connection.commit()
                     except Exception:
@@ -195,6 +200,27 @@ class SQLiteDatabase:
 
             CREATE INDEX IF NOT EXISTS idx_memory_write_proposals_expires_at
                 ON memory_write_proposals(expires_at);
+            """
+        )
+
+    @staticmethod
+    def _migrate_to_version_3(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS agent_plan_reviews (
+                review_id TEXT PRIMARY KEY NOT NULL,
+                record_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                selected_agent_id TEXT NOT NULL,
+                snapshot_digest TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_status ON agent_plan_reviews(status);
+            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_agent ON agent_plan_reviews(selected_agent_id);
+            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_created_at ON agent_plan_reviews(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_expires_at ON agent_plan_reviews(expires_at);
             """
         )
 

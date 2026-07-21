@@ -53,7 +53,40 @@ def test_initialize_creates_phase_8_tables(tmp_path: Path) -> None:
         "rejected_execution_audit_events",
         "mutation_previews",
         "memory_write_proposals",
+        "agent_plan_reviews",
     } <= names
+
+
+def test_version_2_database_is_migrated_to_version_3(tmp_path: Path) -> None:
+    database = SQLiteDatabase(tmp_path / "cauco.db")
+    database.initialize()
+
+    with database.transaction() as connection:
+        connection.execute("DROP TABLE agent_plan_reviews")
+        connection.execute(
+            "UPDATE schema_metadata SET value = '2' WHERE key = 'schema_version'"
+        )
+
+    database.initialize()
+
+    assert database.schema_version() == 3
+    with database.connection() as connection:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(agent_plan_reviews)")
+        }
+        indexes = {
+            row["name"]
+            for row in connection.execute("PRAGMA index_list(agent_plan_reviews)")
+        }
+
+    assert {"review_id", "record_json", "status", "selected_agent_id", "snapshot_digest", "created_at", "expires_at", "updated_at"} <= columns
+    assert {
+        "idx_agent_plan_reviews_status",
+        "idx_agent_plan_reviews_agent",
+        "idx_agent_plan_reviews_created_at",
+        "idx_agent_plan_reviews_expires_at",
+    } <= indexes
 
 
 def test_version_1_database_is_migrated_to_current_version(tmp_path: Path) -> None:

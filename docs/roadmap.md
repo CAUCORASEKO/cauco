@@ -62,7 +62,7 @@ Implemented in Phase 5B:
 
 Implemented in Phase 5C:
 
-- Immutable process-local plan review records with opaque IDs and bounded TTL
+- Immutable plan review records with opaque IDs and bounded TTL
 - Pending, approved, rejected, cancelled, and expired lifecycle states
 - Human inspection, listing, approval, rejection, and cancellation APIs
 - Canonical snapshot digests and lock-protected single terminal transitions
@@ -75,6 +75,12 @@ Implemented in Phase 6A:
 - Structured agent plan references and registry-backed readiness reporting
 - Tool catalog, category, operation, and validation inspection APIs
 - Execution disabled globally; no tool execution endpoint or executable tool implementation
+
+Implemented in Phase 8A–8D:
+
+- SQLite persistence for execution, mutation preview, and memory-write proposal records
+- SQLite-persisted agent plan review snapshots with explicit lifecycle state and restart normalization
+- Canonical, integrity-verified review restoration with bounded capacity and terminal-row eviction
 
 Implemented in Phase 6B:
 
