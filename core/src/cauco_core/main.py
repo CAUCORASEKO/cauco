@@ -29,6 +29,7 @@ from cauco_core.api.context_routes import router as context_router
 from cauco_core.api.execution_routes import router as execution_router
 from cauco_core.api.memory_routes import router as memory_router
 from cauco_core.api.mutation_routes import router as mutation_router
+from cauco_core.api.perception_routes import router as perception_router
 from cauco_core.api.routes import router
 from cauco_core.api.tool_routes import router as tool_router
 from cauco_core.config import Settings
@@ -47,6 +48,11 @@ from cauco_core.memory_writing.sqlite_store import SQLiteMemoryWriteProposalStor
 from cauco_core.mutations.memory_adapter import CoreMemoryMutationAdapter
 from cauco_core.mutations.service import MutationService
 from cauco_core.mutations.sqlite_store import SQLiteMutationPreviewStore
+from cauco_core.perception import (
+    BrainMemoryPerceptionSource,
+    PerceptionManager,
+    PerceptionSourceRegistry,
+)
 from cauco_core.persistence import SQLiteDatabase
 
 
@@ -111,6 +117,17 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     # still exposes the domain error after startup.
     with suppress(MemoryDirectoryError):
         app.state.memory_engine.refresh()
+    app.state.perception_source_registry = PerceptionSourceRegistry()
+    app.state.brain_memory_perception_source = BrainMemoryPerceptionSource(
+        app.state.memory_engine,
+        app.state.memory_search,
+    )
+    app.state.perception_source_registry.register(
+        app.state.brain_memory_perception_source
+    )
+    app.state.perception_manager = PerceptionManager(
+        app.state.perception_source_registry
+    )
     app.state.agent_context_resolver = AgentContextResolver(app.state.memory_engine)
     app.state.agent_planning_service = AgentPlanningService(
         app.state.agent_router,
@@ -207,6 +224,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(mutation_router)
     app.include_router(context_router)
     app.include_router(memory_router)
+    app.include_router(perception_router)
     app.include_router(ai_router)
     return app
 
