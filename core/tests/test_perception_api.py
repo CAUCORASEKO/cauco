@@ -32,7 +32,7 @@ def test_create_app_registers_brain_memory_perception_source(
         manager = client.app.state.perception_manager
         source = client.app.state.brain_memory_perception_source
 
-        assert len(registry) == 1
+        assert len(registry) == 2
         assert registry.get("brain_memory") is source
         assert manager.registry is registry
 
@@ -45,7 +45,7 @@ def test_list_and_read_perception_sources(tmp_path: Path) -> None:
 
         assert response.status_code == 200
         payload = response.json()
-        assert payload["count"] == 1
+        assert payload["count"] == 2
 
         source = payload["sources"][0]
         assert source["metadata"]["source_id"] == "brain_memory"
@@ -56,9 +56,7 @@ def test_list_and_read_perception_sources(tmp_path: Path) -> None:
         assert detail.status_code == 200
         assert detail.json()["metadata"]["source_id"] == "brain_memory"
 
-        health = client.get(
-            "/api/perception/sources/brain_memory/health"
-        )
+        health = client.get("/api/perception/sources/brain_memory/health")
         assert health.status_code == 200
         assert health.json()["status"] == "available"
 
@@ -70,9 +68,7 @@ def test_unknown_perception_source_returns_not_found(
 
     with client:
         detail = client.get("/api/perception/sources/missing")
-        health = client.get(
-            "/api/perception/sources/missing/health"
-        )
+        health = client.get("/api/perception/sources/missing/health")
 
         assert detail.status_code == 404
         assert health.status_code == 404
@@ -90,18 +86,18 @@ def test_collects_read_signals_from_all_sources(tmp_path: Path) -> None:
         assert response.status_code == 200
         payload = response.json()
 
-        assert payload["requested_source_ids"] == ["brain_memory"]
-        assert payload["successful_source_ids"] == ["brain_memory"]
+        assert payload["requested_source_ids"] == [
+            "brain_memory",
+            "operational_state",
+        ]
+        assert payload["successful_source_ids"] == [
+            "brain_memory",
+            "operational_state",
+        ]
         assert payload["errors"] == []
         assert len(payload["signals"]) == 2
-        assert {
-            signal["reference"]
-            for signal in payload["signals"]
-        } == {"Projects.md", "Tasks.md"}
-        assert all(
-            signal["source_id"] == "brain_memory"
-            for signal in payload["signals"]
-        )
+        assert {signal["reference"] for signal in payload["signals"]} == {"Projects.md", "Tasks.md"}
+        assert all(signal["source_id"] == "brain_memory" for signal in payload["signals"])
 
 
 def test_collects_search_signals(tmp_path: Path) -> None:
@@ -123,10 +119,7 @@ def test_collects_search_signals(tmp_path: Path) -> None:
         assert payload["successful_source_ids"] == ["brain_memory"]
         assert payload["errors"] == []
         assert len(payload["signals"]) >= 1
-        assert any(
-            signal["reference"] == "Projects.md"
-            for signal in payload["signals"]
-        )
+        assert any(signal["reference"] == "Projects.md" for signal in payload["signals"])
 
 
 def test_collect_reports_unknown_sources_without_losing_successes(
