@@ -38,7 +38,7 @@ from cauco_core.context.builder import ContextBuilder
 from cauco_core.execution.policy import WorkspacePolicy
 from cauco_core.execution.service import ExecutionService
 from cauco_core.execution.sqlite_store import SQLiteExecutionStore
-from cauco_core.executive import ExecutiveControlService
+from cauco_core.executive import ExecutiveControlService, ExecutiveStateResolver
 from cauco_core.memory.context import MemoryContextBuilder
 from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.exceptions import MemoryDirectoryError
@@ -173,6 +173,10 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     )
     app.state.perception_source_registry.register(app.state.operational_state_perception_source)
     app.state.executive_control_service = ExecutiveControlService()
+    app.state.executive_state_resolver = ExecutiveStateResolver(
+        app.state.agent_plan_review_store,
+        app.state.execution_store,
+    )
     app.state.execution_service = ExecutionService(
         app.state.agent_plan_review_store,
         app.state.tool_registry,

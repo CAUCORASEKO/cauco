@@ -4,6 +4,10 @@ from cauco_core.executive.models import (
     ExecutiveState,
     IntentStatus,
 )
+from cauco_core.executive.resolver import (
+    ExecutiveStateResolutionError,
+    ExecutiveStateResolver,
+)
 from cauco_core.executive.service import ExecutiveControlService
 
 __all__ = [
@@ -11,5 +15,7 @@ __all__ = [
     "ExecutiveControlService",
     "ExecutiveDecision",
     "ExecutiveState",
+    "ExecutiveStateResolutionError",
+    "ExecutiveStateResolver",
     "IntentStatus",
 ]

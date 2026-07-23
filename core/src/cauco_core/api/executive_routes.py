@@ -4,10 +4,12 @@ from cauco_agents import AgentPlanReviewStatus
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
+from cauco_core.agents.review_store import PlanReviewNotFoundError
 from cauco_core.execution.models import ExecutionStatus
 from cauco_core.executive import (
     ExecutiveControlService,
     ExecutiveState,
+    ExecutiveStateResolutionError,
     IntentStatus,
 )
 
@@ -72,6 +74,38 @@ def decide(
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+
+    decision = _service(request).decide(state)
+
+    return ExecutiveDecisionResponse(
+        next_action=decision.next_action.value,
+        requires_human_approval=decision.requires_human_approval,
+        transition_permitted=decision.transition_permitted,
+        reason=decision.reason,
+        blocking_reasons=list(decision.blocking_reasons),
+    )
+
+
+@router.get(
+    "/reviews/{review_id}/decision",
+    response_model=ExecutiveDecisionResponse,
+)
+def decide_from_review(
+    review_id: str,
+    request: Request,
+) -> ExecutiveDecisionResponse:
+    try:
+        state = request.app.state.executive_state_resolver.resolve(review_id)
+    except PlanReviewNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Plan review not found.",
+        ) from error
+    except ExecutiveStateResolutionError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(error),
         ) from error
 
