@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 class SQLitePersistenceError(RuntimeError):
@@ -76,6 +76,11 @@ class SQLiteDatabase:
                         if version < 4:
                             self._migrate_to_version_4(connection)
                             self._write_schema_version(connection, 4)
+                            version = 4
+
+                        if version < 5:
+                            self._migrate_to_version_5(connection)
+                            self._write_schema_version(connection, 5)
 
                         connection.commit()
                     except Exception:
@@ -264,6 +269,36 @@ class SQLiteDatabase:
 
             CREATE INDEX IF NOT EXISTS idx_verification_records_created_at
                 ON verification_records(created_at DESC);
+            """
+        )
+
+    @staticmethod
+    def _migrate_to_version_5(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS experience_records (
+                experience_id TEXT PRIMARY KEY NOT NULL,
+                verification_id TEXT NOT NULL UNIQUE,
+                execution_id TEXT NOT NULL,
+                review_id TEXT NOT NULL,
+                snapshot_digest TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                memory_candidate INTEGER NOT NULL,
+                method TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                record_json TEXT NOT NULL,
+                FOREIGN KEY (verification_id)
+                    REFERENCES verification_records(verification_id)
+                    ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_experience_records_review
+                ON experience_records(review_id);
+            CREATE INDEX IF NOT EXISTS idx_experience_records_outcome
+                ON experience_records(outcome);
+            CREATE INDEX IF NOT EXISTS idx_experience_records_memory_candidate
+                ON experience_records(memory_candidate);
+            CREATE INDEX IF NOT EXISTS idx_experience_records_created_at
+                ON experience_records(created_at DESC);
             """
         )
 

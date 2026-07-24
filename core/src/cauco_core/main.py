@@ -28,6 +28,7 @@ from cauco_core.api.ai_routes import router as ai_router
 from cauco_core.api.context_routes import router as context_router
 from cauco_core.api.execution_routes import router as execution_router
 from cauco_core.api.executive_routes import router as executive_router
+from cauco_core.api.experience_routes import router as experience_router
 from cauco_core.api.memory_routes import router as memory_router
 from cauco_core.api.mutation_routes import router as mutation_router
 from cauco_core.api.perception_routes import router as perception_router
@@ -40,6 +41,8 @@ from cauco_core.execution.policy import WorkspacePolicy
 from cauco_core.execution.service import ExecutionService
 from cauco_core.execution.sqlite_store import SQLiteExecutionStore
 from cauco_core.executive import ExecutiveControlService, ExecutiveStateResolver
+from cauco_core.learning.service import ExperienceConsolidationService
+from cauco_core.learning.sqlite_store import SQLiteExperienceStore
 from cauco_core.memory.context import MemoryContextBuilder
 from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.exceptions import MemoryDirectoryError
@@ -184,6 +187,13 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         execution_store=app.state.execution_store,
         verification_store=app.state.verification_store,
     )
+    app.state.experience_store = SQLiteExperienceStore(
+        app.state.database, max_records=app.state.settings.experience_max_records
+    )
+    app.state.experience_consolidation_service = ExperienceConsolidationService(
+        verification_store=app.state.verification_store,
+        experience_store=app.state.experience_store,
+    )
     app.state.executive_control_service = ExecutiveControlService()
     app.state.executive_state_resolver = ExecutiveStateResolver(
         app.state.agent_plan_review_store,
@@ -245,6 +255,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(execution_router)
     app.include_router(executive_router)
     app.include_router(verification_router)
+    app.include_router(experience_router)
     app.include_router(mutation_router)
     app.include_router(context_router)
     app.include_router(memory_router)

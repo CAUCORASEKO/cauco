@@ -255,3 +255,72 @@ def test_version_3_database_is_migrated_to_version_4(tmp_path: Path) -> None:
         "idx_verification_records_outcome",
         "idx_verification_records_created_at",
     } <= indexes
+
+
+def test_version_4_database_is_migrated_to_version_5(
+    tmp_path: Path,
+) -> None:
+    database = SQLiteDatabase(tmp_path / "cauco.db")
+    database.initialize()
+
+    with database.transaction() as connection:
+        connection.execute("DROP TABLE experience_records")
+        connection.execute(
+            """
+            UPDATE schema_metadata
+            SET value = '4'
+            WHERE key = 'schema_version'
+            """
+        )
+
+    database.initialize()
+
+    assert database.schema_version() == CURRENT_SCHEMA_VERSION
+    assert CURRENT_SCHEMA_VERSION == 5
+
+    with database.connection() as connection:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(experience_records)")
+        }
+        indexes = {
+            row["name"] for row in connection.execute("PRAGMA index_list(experience_records)")
+        }
+
+    assert {
+        "experience_id",
+        "verification_id",
+        "execution_id",
+        "review_id",
+        "snapshot_digest",
+        "outcome",
+        "memory_candidate",
+        "method",
+        "created_at",
+        "record_json",
+    } <= columns
+
+    assert {
+        "idx_experience_records_review",
+        "idx_experience_records_outcome",
+        "idx_experience_records_memory_candidate",
+        "idx_experience_records_created_at",
+    } <= indexes
+
+
+def test_new_database_contains_experience_records_table(
+    tmp_path: Path,
+) -> None:
+    database = SQLiteDatabase(tmp_path / "cauco.db")
+    database.initialize()
+
+    with database.connection() as connection:
+        table = connection.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name = 'experience_records'
+            """
+        ).fetchone()
+
+    assert table is not None
