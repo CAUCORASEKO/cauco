@@ -12,6 +12,10 @@ from cauco_core.executive import (
     ExecutiveStateResolver,
     IntentStatus,
 )
+from cauco_core.verification import (
+    VerificationNotFoundError,
+    VerificationOutcome,
+)
 
 REVIEW_ID = "planrev_test_review_identifier"
 EXECUTION_ID = "exec_test_execution_identifier"
@@ -46,9 +50,25 @@ def execution(
     )
 
 
+def verification(
+    outcome: VerificationOutcome,
+    *,
+    execution_id: str = EXECUTION_ID,
+    review_id: str = REVIEW_ID,
+    snapshot_digest: str = SNAPSHOT_DIGEST,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        execution_id=execution_id,
+        review_id=review_id,
+        snapshot_digest=snapshot_digest,
+        outcome=outcome,
+    )
+
+
 def resolver_for(
     review_record: SimpleNamespace,
     execution_record: SimpleNamespace | None = None,
+    verification_record: SimpleNamespace | None = None,
 ) -> ExecutiveStateResolver:
     review_store = Mock()
     review_store.get.return_value = review_record
@@ -56,7 +76,19 @@ def resolver_for(
     execution_store = Mock()
     execution_store.list.return_value = (execution_record,) if execution_record is not None else ()
 
-    return ExecutiveStateResolver(review_store, execution_store)
+    verification_store = Mock()
+    if verification_record is None:
+        verification_store.for_execution.side_effect = VerificationNotFoundError(
+            "Verification record not found."
+        )
+    else:
+        verification_store.for_execution.return_value = verification_record
+
+    return ExecutiveStateResolver(
+        review_store,
+        execution_store,
+        verification_store,
+    )
 
 
 def test_pending_review_is_normalized_without_execution() -> None:
@@ -152,5 +184,96 @@ def test_execution_from_another_review_is_rejected() -> None:
     with pytest.raises(
         ExecutiveStateResolutionError,
         match="does not belong",
+    ):
+        resolver.resolve(REVIEW_ID)
+
+
+def test_successful_verification_completes_workflow() -> None:
+    resolver = resolver_for(
+        review(AgentPlanReviewStatus.APPROVED),
+        execution(ExecutionStatus.COMPLETED, performed=True),
+        verification(VerificationOutcome.SUCCEEDED),
+    )
+
+    state = resolver.resolve(REVIEW_ID)
+    decision = ExecutiveControlService().decide(state)
+
+    assert state.outcome_verified is True
+    assert state.verification_succeeded is True
+    assert decision.next_action is ExecutiveAction.COMPLETE
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        VerificationOutcome.FAILED,
+        VerificationOutcome.PARTIAL_SUCCESS,
+        VerificationOutcome.INSUFFICIENT_EVIDENCE,
+    ],
+)
+def test_non_successful_verification_stops_workflow(
+    outcome: VerificationOutcome,
+) -> None:
+    resolver = resolver_for(
+        review(AgentPlanReviewStatus.APPROVED),
+        execution(ExecutionStatus.COMPLETED, performed=True),
+        verification(outcome),
+    )
+
+    state = resolver.resolve(REVIEW_ID)
+    decision = ExecutiveControlService().decide(state)
+
+    assert state.outcome_verified is True
+    assert state.verification_succeeded is False
+    assert decision.next_action is ExecutiveAction.STOP
+
+
+def test_verification_from_another_execution_is_rejected() -> None:
+    resolver = resolver_for(
+        review(AgentPlanReviewStatus.APPROVED),
+        execution(ExecutionStatus.COMPLETED, performed=True),
+        verification(
+            VerificationOutcome.SUCCEEDED,
+            execution_id="exec_other_execution_identifier",
+        ),
+    )
+
+    with pytest.raises(
+        ExecutiveStateResolutionError,
+        match="does not belong to the resolved execution",
+    ):
+        resolver.resolve(REVIEW_ID)
+
+
+def test_verification_from_another_review_is_rejected() -> None:
+    resolver = resolver_for(
+        review(AgentPlanReviewStatus.APPROVED),
+        execution(ExecutionStatus.COMPLETED, performed=True),
+        verification(
+            VerificationOutcome.SUCCEEDED,
+            review_id="planrev_other_review_identifier",
+        ),
+    )
+
+    with pytest.raises(
+        ExecutiveStateResolutionError,
+        match="does not belong to the requested review",
+    ):
+        resolver.resolve(REVIEW_ID)
+
+
+def test_verification_snapshot_mismatch_is_rejected() -> None:
+    resolver = resolver_for(
+        review(AgentPlanReviewStatus.APPROVED),
+        execution(ExecutionStatus.COMPLETED, performed=True),
+        verification(
+            VerificationOutcome.SUCCEEDED,
+            snapshot_digest="b" * 64,
+        ),
+    )
+
+    with pytest.raises(
+        ExecutiveStateResolutionError,
+        match="Verification and review snapshot digests do not match",
     ):
         resolver.resolve(REVIEW_ID)

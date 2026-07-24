@@ -57,6 +57,7 @@ from cauco_core.perception import (
     PerceptionSourceRegistry,
 )
 from cauco_core.persistence import SQLiteDatabase
+from cauco_core.verification import VerificationService, VerificationStore
 
 
 def build_ai_provider(settings: Settings) -> AIProvider:
@@ -172,10 +173,19 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.execution_store,
     )
     app.state.perception_source_registry.register(app.state.operational_state_perception_source)
+    app.state.verification_store = VerificationStore(
+        max_records=app.state.settings.execution_max_records,
+    )
+    app.state.verification_service = VerificationService(
+        review_store=app.state.agent_plan_review_store,
+        execution_store=app.state.execution_store,
+        verification_store=app.state.verification_store,
+    )
     app.state.executive_control_service = ExecutiveControlService()
     app.state.executive_state_resolver = ExecutiveStateResolver(
         app.state.agent_plan_review_store,
         app.state.execution_store,
+        app.state.verification_store,
     )
     app.state.execution_service = ExecutionService(
         app.state.agent_plan_review_store,
