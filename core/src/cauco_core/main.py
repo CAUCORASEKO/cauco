@@ -33,6 +33,7 @@ from cauco_core.api.mutation_routes import router as mutation_router
 from cauco_core.api.perception_routes import router as perception_router
 from cauco_core.api.routes import router
 from cauco_core.api.tool_routes import router as tool_router
+from cauco_core.api.verification_routes import router as verification_router
 from cauco_core.config import Settings
 from cauco_core.context.builder import ContextBuilder
 from cauco_core.execution.policy import WorkspacePolicy
@@ -57,7 +58,8 @@ from cauco_core.perception import (
     PerceptionSourceRegistry,
 )
 from cauco_core.persistence import SQLiteDatabase
-from cauco_core.verification import VerificationService, VerificationStore
+from cauco_core.verification import VerificationService
+from cauco_core.verification.sqlite_store import SQLiteVerificationStore
 
 
 def build_ai_provider(settings: Settings) -> AIProvider:
@@ -173,8 +175,9 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.execution_store,
     )
     app.state.perception_source_registry.register(app.state.operational_state_perception_source)
-    app.state.verification_store = VerificationStore(
-        max_records=app.state.settings.execution_max_records,
+    app.state.verification_store = SQLiteVerificationStore(
+        app.state.database,
+        max_records=app.state.settings.verification_max_records,
     )
     app.state.verification_service = VerificationService(
         review_store=app.state.agent_plan_review_store,
@@ -241,6 +244,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(tool_router)
     app.include_router(execution_router)
     app.include_router(executive_router)
+    app.include_router(verification_router)
     app.include_router(mutation_router)
     app.include_router(context_router)
     app.include_router(memory_router)

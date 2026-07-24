@@ -57,30 +57,35 @@ def test_initialize_creates_phase_8_tables(tmp_path: Path) -> None:
     } <= names
 
 
-def test_version_2_database_is_migrated_to_version_3(tmp_path: Path) -> None:
+def test_version_2_database_is_migrated_to_current_version(tmp_path: Path) -> None:
     database = SQLiteDatabase(tmp_path / "cauco.db")
     database.initialize()
 
     with database.transaction() as connection:
         connection.execute("DROP TABLE agent_plan_reviews")
-        connection.execute(
-            "UPDATE schema_metadata SET value = '2' WHERE key = 'schema_version'"
-        )
+        connection.execute("UPDATE schema_metadata SET value = '2' WHERE key = 'schema_version'")
 
     database.initialize()
 
-    assert database.schema_version() == 3
+    assert database.schema_version() == CURRENT_SCHEMA_VERSION
     with database.connection() as connection:
         columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(agent_plan_reviews)")
+            row["name"] for row in connection.execute("PRAGMA table_info(agent_plan_reviews)")
         }
         indexes = {
-            row["name"]
-            for row in connection.execute("PRAGMA index_list(agent_plan_reviews)")
+            row["name"] for row in connection.execute("PRAGMA index_list(agent_plan_reviews)")
         }
 
-    assert {"review_id", "record_json", "status", "selected_agent_id", "snapshot_digest", "created_at", "expires_at", "updated_at"} <= columns
+    assert {
+        "review_id",
+        "record_json",
+        "status",
+        "selected_agent_id",
+        "snapshot_digest",
+        "created_at",
+        "expires_at",
+        "updated_at",
+    } <= columns
     assert {
         "idx_agent_plan_reviews_status",
         "idx_agent_plan_reviews_agent",
@@ -205,3 +210,48 @@ def test_newer_schema_version_is_rejected(tmp_path: Path) -> None:
 def test_invalid_busy_timeout_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="busy timeout"):
         SQLiteDatabase(tmp_path / "cauco.db", busy_timeout_ms=99)
+
+
+def test_version_3_database_is_migrated_to_version_4(tmp_path: Path) -> None:
+    database = SQLiteDatabase(tmp_path / "cauco.db")
+    database.initialize()
+
+    with database.transaction() as connection:
+        connection.execute("DROP TABLE verification_records")
+        connection.execute(
+            """
+            UPDATE schema_metadata
+            SET value = '3'
+            WHERE key = 'schema_version'
+            """
+        )
+
+    database.initialize()
+
+    assert database.schema_version() == CURRENT_SCHEMA_VERSION
+
+    with database.connection() as connection:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(verification_records)")
+        }
+        indexes = {
+            row["name"] for row in connection.execute("PRAGMA index_list(verification_records)")
+        }
+
+    assert {
+        "verification_id",
+        "execution_id",
+        "review_id",
+        "snapshot_digest",
+        "outcome",
+        "recommendation",
+        "method",
+        "created_at",
+        "record_json",
+    } <= columns
+
+    assert {
+        "idx_verification_records_review",
+        "idx_verification_records_outcome",
+        "idx_verification_records_created_at",
+    } <= indexes

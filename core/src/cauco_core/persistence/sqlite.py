@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 class SQLitePersistenceError(RuntimeError):
@@ -71,6 +71,11 @@ class SQLiteDatabase:
                         if version < 3:
                             self._migrate_to_version_3(connection)
                             self._write_schema_version(connection, 3)
+                            version = 3
+
+                        if version < 4:
+                            self._migrate_to_version_4(connection)
+                            self._write_schema_version(connection, 4)
 
                         connection.commit()
                     except Exception:
@@ -217,10 +222,48 @@ class SQLiteDatabase:
                 expires_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_status ON agent_plan_reviews(status);
-            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_agent ON agent_plan_reviews(selected_agent_id);
-            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_created_at ON agent_plan_reviews(created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_expires_at ON agent_plan_reviews(expires_at);
+            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_status
+                ON agent_plan_reviews(status);
+
+            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_agent
+                ON agent_plan_reviews(selected_agent_id);
+
+            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_created_at
+                ON agent_plan_reviews(created_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_agent_plan_reviews_expires_at
+                ON agent_plan_reviews(expires_at);
+
+            """
+        )
+
+    @staticmethod
+    def _migrate_to_version_4(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS verification_records (
+                verification_id TEXT PRIMARY KEY NOT NULL,
+                execution_id TEXT NOT NULL UNIQUE,
+                review_id TEXT NOT NULL,
+                snapshot_digest TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                recommendation TEXT NOT NULL,
+                method TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                record_json TEXT NOT NULL,
+                FOREIGN KEY (execution_id)
+                    REFERENCES executions(execution_id)
+                    ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_verification_records_review
+                ON verification_records(review_id);
+
+            CREATE INDEX IF NOT EXISTS idx_verification_records_outcome
+                ON verification_records(outcome);
+
+            CREATE INDEX IF NOT EXISTS idx_verification_records_created_at
+                ON verification_records(created_at DESC);
             """
         )
 

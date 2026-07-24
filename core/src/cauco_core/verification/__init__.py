@@ -10,9 +10,11 @@ from cauco_core.verification.models import (
     VerificationValidationError,
 )
 from cauco_core.verification.service import VerificationService
+from cauco_core.verification.sqlite_store import SQLiteVerificationStore
 from cauco_core.verification.store import VerificationStore
 
 __all__ = [
+    "SQLiteVerificationStore",
     "StepVerificationResult",
     "VerificationCapacityError",
     "VerificationConflictError",
