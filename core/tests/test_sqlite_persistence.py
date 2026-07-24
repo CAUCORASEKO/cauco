@@ -276,7 +276,7 @@ def test_version_4_database_is_migrated_to_version_5(
     database.initialize()
 
     assert database.schema_version() == CURRENT_SCHEMA_VERSION
-    assert CURRENT_SCHEMA_VERSION == 5
+    assert CURRENT_SCHEMA_VERSION == 6
 
     with database.connection() as connection:
         columns = {
@@ -324,3 +324,89 @@ def test_new_database_contains_experience_records_table(
         ).fetchone()
 
     assert table is not None
+
+
+def test_version_5_database_is_migrated_to_version_6(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "cauco.db"
+
+    database = SQLiteDatabase(database_path)
+    database.initialize()
+
+    with database.transaction() as connection:
+        connection.execute(
+            """
+            DROP TABLE IF EXISTS memory_candidates
+            """
+        )
+        connection.execute(
+            """
+            UPDATE schema_metadata
+            SET value = '5'
+            WHERE key = 'schema_version'
+            """
+        )
+
+    migrated = SQLiteDatabase(database_path)
+    migrated.initialize()
+
+    assert migrated.schema_version() == 6
+    assert CURRENT_SCHEMA_VERSION == 6
+
+    with migrated.connection() as connection:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(memory_candidates)")
+        }
+        indexes = {
+            row["name"] for row in connection.execute("PRAGMA index_list(memory_candidates)")
+        }
+
+    assert {
+        "candidate_id",
+        "experience_id",
+        "verification_id",
+        "execution_id",
+        "review_id",
+        "snapshot_digest",
+        "category",
+        "target",
+        "status",
+        "disposition",
+        "confidence",
+        "created_at",
+        "expires_at",
+        "reviewed_at",
+        "record_json",
+    } <= columns
+
+    assert {
+        "idx_memory_candidates_experience",
+        "idx_memory_candidates_review",
+        "idx_memory_candidates_status",
+        "idx_memory_candidates_target",
+        "idx_memory_candidates_created_at",
+        "idx_memory_candidates_expires_at",
+    } <= indexes
+
+
+def test_new_database_contains_memory_candidates_table(
+    tmp_path: Path,
+) -> None:
+    database = SQLiteDatabase(tmp_path / "cauco.db")
+    database.initialize()
+
+    with database.connection() as connection:
+        tables = {
+            row["name"]
+            for row in connection.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'table'
+                """
+            )
+        }
+
+    assert "memory_candidates" in tables
+    assert database.schema_version() == 6

@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     execution_max_records: int = Field(default=100, ge=1, le=10_000)
     verification_max_records: int = Field(default=100, ge=1, le=10_000)
     experience_max_records: int = Field(default=100, ge=1, le=10_000)
+    memory_candidate_ttl_seconds: int = Field(default=604800, ge=60, le=2592000)
+    memory_candidate_max_records: int = Field(default=500, ge=1, le=10_000)
     execution_max_file_bytes: int = Field(default=1_000_000, ge=1024, le=10_000_000)
     mutation_preview_ttl_seconds: int = Field(default=600, ge=60, le=3600)
     mutation_preview_max_records: int = Field(default=100, ge=1, le=10_000)

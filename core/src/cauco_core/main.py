@@ -29,6 +29,7 @@ from cauco_core.api.context_routes import router as context_router
 from cauco_core.api.execution_routes import router as execution_router
 from cauco_core.api.executive_routes import router as executive_router
 from cauco_core.api.experience_routes import router as experience_router
+from cauco_core.api.memory_candidate_routes import router as memory_candidate_router
 from cauco_core.api.memory_routes import router as memory_router
 from cauco_core.api.mutation_routes import router as mutation_router
 from cauco_core.api.perception_routes import router as perception_router
@@ -48,6 +49,8 @@ from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.exceptions import MemoryDirectoryError
 from cauco_core.memory.search import MemorySearch
 from cauco_core.memory.service import MemoryService
+from cauco_core.memory_candidates.service import MemoryCandidateService
+from cauco_core.memory_candidates.sqlite_store import SQLiteMemoryCandidateStore
 from cauco_core.memory_writing.applier import MemoryWriteProposalApplier
 from cauco_core.memory_writing.proposal_builder import MemoryWriteProposalBuilder
 from cauco_core.memory_writing.sqlite_store import SQLiteMemoryWriteProposalStore
@@ -194,6 +197,15 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         verification_store=app.state.verification_store,
         experience_store=app.state.experience_store,
     )
+    app.state.memory_candidate_store = SQLiteMemoryCandidateStore(
+        app.state.database,
+        ttl=timedelta(seconds=app.state.settings.memory_candidate_ttl_seconds),
+        max_records=app.state.settings.memory_candidate_max_records,
+    )
+    app.state.memory_candidate_service = MemoryCandidateService(
+        experience_store=app.state.experience_store,
+        candidate_store=app.state.memory_candidate_store,
+    )
     app.state.executive_control_service = ExecutiveControlService()
     app.state.executive_state_resolver = ExecutiveStateResolver(
         app.state.agent_plan_review_store,
@@ -256,6 +268,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(executive_router)
     app.include_router(verification_router)
     app.include_router(experience_router)
+    app.include_router(memory_candidate_router)
     app.include_router(mutation_router)
     app.include_router(context_router)
     app.include_router(memory_router)

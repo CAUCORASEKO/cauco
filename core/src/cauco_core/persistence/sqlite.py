@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 
 class SQLitePersistenceError(RuntimeError):
@@ -81,6 +81,10 @@ class SQLiteDatabase:
                         if version < 5:
                             self._migrate_to_version_5(connection)
                             self._write_schema_version(connection, 5)
+                            version = 5
+                        if version < 6:
+                            self._migrate_to_version_6(connection)
+                            self._write_schema_version(connection, 6)
 
                         connection.commit()
                     except Exception:
@@ -301,6 +305,27 @@ class SQLiteDatabase:
                 ON experience_records(created_at DESC);
             """
         )
+
+    @staticmethod
+    def _migrate_to_version_6(connection: sqlite3.Connection) -> None:
+        # ruff: noqa: E501
+        connection.executescript("""
+        CREATE TABLE IF NOT EXISTS memory_candidates (
+            candidate_id TEXT PRIMARY KEY NOT NULL, experience_id TEXT NOT NULL,
+            verification_id TEXT NOT NULL, execution_id TEXT NOT NULL, review_id TEXT NOT NULL,
+            snapshot_digest TEXT NOT NULL, category TEXT NOT NULL, target TEXT NOT NULL,
+            status TEXT NOT NULL, disposition TEXT, confidence REAL NOT NULL,
+            created_at TEXT NOT NULL, expires_at TEXT NOT NULL, reviewed_at TEXT,
+            record_json TEXT NOT NULL,
+            FOREIGN KEY (experience_id) REFERENCES experience_records(experience_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_memory_candidates_experience ON memory_candidates(experience_id);
+        CREATE INDEX IF NOT EXISTS idx_memory_candidates_review ON memory_candidates(review_id);
+        CREATE INDEX IF NOT EXISTS idx_memory_candidates_status ON memory_candidates(status);
+        CREATE INDEX IF NOT EXISTS idx_memory_candidates_target ON memory_candidates(target);
+        CREATE INDEX IF NOT EXISTS idx_memory_candidates_created_at ON memory_candidates(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_memory_candidates_expires_at ON memory_candidates(expires_at);
+        """)
 
     @staticmethod
     def _migrate_to_version_1(connection: sqlite3.Connection) -> None:
