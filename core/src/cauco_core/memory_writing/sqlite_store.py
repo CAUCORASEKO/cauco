@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -44,45 +45,80 @@ class SQLiteMemoryWriteProposalStore(MemoryWriteProposalStore):
 
     def put(self, proposal: MemoryWriteProposal) -> StoredMemoryWriteProposal:
         with self._lock:
-            previous = self._records.get(proposal.proposal_id)
-            previous_state = previous.state if previous is not None else None
+            previous_records = deepcopy(self._records)
 
-            stored = super().put(proposal)
-            current = self._records[proposal.proposal_id]
+            try:
+                previous = self._records.get(proposal.proposal_id)
+                previous_state = previous.state if previous is not None else None
 
-            if previous is None or current is not previous or current.state is not previous_state:
-                self._persist_record(current)
+                stored = super().put(proposal)
+                current = self._records[proposal.proposal_id]
 
-            return stored
+                if (
+                    previous is None
+                    or current is not previous
+                    or current.state is not previous_state
+                ):
+                    self._persist_record(current)
+
+                return stored
+            except Exception:
+                self._records = previous_records
+                raise
 
     def get(self, proposal_id: str) -> StoredMemoryWriteProposal:
         with self._lock:
-            record = self._records.get(proposal_id)
-            previous_state = record.state if record is not None else None
+            previous_records = deepcopy(self._records)
 
-            stored = super().get(proposal_id)
-            current = self._records[proposal_id]
+            try:
+                record = self._records.get(proposal_id)
+                previous_state = record.state if record is not None else None
 
-            if previous_state is not None and current.state is not previous_state:
-                self._persist_record(current)
+                stored = super().get(proposal_id)
+                current = self._records[proposal_id]
 
-            return stored
+                if previous_state is not None and current.state is not previous_state:
+                    self._persist_record(current)
+
+                return stored
+            except Exception:
+                self._records = previous_records
+                raise
 
     def get_pending(self, proposal_id: str) -> StoredMemoryWriteProposal:
         with self._lock:
+            previous_records = deepcopy(self._records)
             record = self._records.get(proposal_id)
             previous_state = record.state if record is not None else None
 
             try:
-                return super().get_pending(proposal_id)
-            finally:
+                stored = super().get_pending(proposal_id)
+            except Exception:
                 current = self._records.get(proposal_id)
+
                 if (
                     current is not None
                     and previous_state is not None
                     and current.state is not previous_state
                 ):
+                    try:
+                        self._persist_record(current)
+                    except Exception:
+                        self._records = previous_records
+                        raise
+
+                raise
+
+            current = self._records[proposal_id]
+
+            if previous_state is not None and current.state is not previous_state:
+                try:
                     self._persist_record(current)
+                except Exception:
+                    self._records = previous_records
+                    raise
+
+            return stored
 
     def mark_applied(
         self,
@@ -90,9 +126,15 @@ class SQLiteMemoryWriteProposalStore(MemoryWriteProposalStore):
         applied_at: datetime,
     ) -> StoredMemoryWriteProposal:
         with self._lock:
-            stored = super().mark_applied(proposal_id, applied_at)
-            self._persist_record(self._records[proposal_id])
-            return stored
+            previous_records = deepcopy(self._records)
+
+            try:
+                stored = super().mark_applied(proposal_id, applied_at)
+                self._persist_record(self._records[proposal_id])
+                return stored
+            except Exception:
+                self._records = previous_records
+                raise
 
     def _restore(self) -> None:
         now = self.clock()

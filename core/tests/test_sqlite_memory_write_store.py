@@ -12,6 +12,7 @@ from cauco_core.memory_writing.proposal_builder import MemoryWriteProposalBuilde
 from cauco_core.memory_writing.sqlite_store import SQLiteMemoryWriteProposalStore
 from cauco_core.memory_writing.store import (
     ProposalExpiredError,
+    ProposalNotFoundError,
     ProposalStateConflictError,
 )
 from cauco_core.persistence import SQLiteDatabase
@@ -147,3 +148,91 @@ def test_repeated_pending_proposal_keeps_original_expiry(tmp_path: Path) -> None
 
     assert restored.created_at == initial.created_at
     assert restored.expires_at == initial.expires_at
+
+
+def test_put_restores_memory_when_persistence_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 7, 20, 12, 0, tzinfo=UTC)
+    clock = MutableClock(now)
+    database = SQLiteDatabase(tmp_path / "cauco.db")
+    proposal = build_proposal(tmp_path, clock)
+    store = SQLiteMemoryWriteProposalStore(database, clock=clock)
+
+    def fail_persistence(*args, **kwargs):
+        raise RuntimeError("database write failed")
+
+    monkeypatch.setattr(store, "_persist_record", fail_persistence)
+
+    with pytest.raises(RuntimeError, match="database write failed"):
+        store.put(proposal)
+
+    assert proposal.proposal_id not in store._records
+
+    restored = SQLiteMemoryWriteProposalStore(database, clock=clock)
+    with pytest.raises(ProposalNotFoundError):
+        restored.get(proposal.proposal_id)
+
+
+def test_expiration_restores_memory_when_persistence_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 7, 20, 12, 0, tzinfo=UTC)
+    clock = MutableClock(now)
+    database = SQLiteDatabase(tmp_path / "cauco.db")
+    proposal = build_proposal(tmp_path, clock)
+    store = SQLiteMemoryWriteProposalStore(
+        database,
+        ttl=timedelta(minutes=30),
+        clock=clock,
+    )
+    store.put(proposal)
+
+    clock.current = now + timedelta(minutes=30)
+
+    def fail_persistence(*args, **kwargs):
+        raise RuntimeError("database write failed")
+
+    monkeypatch.setattr(store, "_persist_record", fail_persistence)
+
+    with pytest.raises(RuntimeError, match="database write failed"):
+        store.get(proposal.proposal_id)
+
+    assert store._records[proposal.proposal_id].state is MemoryWriteProposalState.PENDING
+
+    restored = SQLiteMemoryWriteProposalStore(database, clock=lambda: now)
+    assert restored.get(proposal.proposal_id).state is MemoryWriteProposalState.PENDING
+
+
+def test_mark_applied_restores_memory_when_persistence_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 7, 20, 12, 0, tzinfo=UTC)
+    clock = MutableClock(now)
+    database = SQLiteDatabase(tmp_path / "cauco.db")
+    proposal = build_proposal(tmp_path, clock)
+    store = SQLiteMemoryWriteProposalStore(database, clock=clock)
+    store.put(proposal)
+
+    def fail_persistence(*args, **kwargs):
+        raise RuntimeError("database write failed")
+
+    monkeypatch.setattr(store, "_persist_record", fail_persistence)
+
+    with pytest.raises(RuntimeError, match="database write failed"):
+        store.mark_applied(
+            proposal.proposal_id,
+            now + timedelta(minutes=1),
+        )
+
+    current = store.get(proposal.proposal_id)
+    assert current.state is MemoryWriteProposalState.PENDING
+    assert current.applied_at is None
+
+    restored = SQLiteMemoryWriteProposalStore(database, clock=clock)
+    persisted = restored.get(proposal.proposal_id)
+    assert persisted.state is MemoryWriteProposalState.PENDING
+    assert persisted.applied_at is None
