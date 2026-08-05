@@ -49,6 +49,7 @@ from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.exceptions import MemoryDirectoryError
 from cauco_core.memory.search import MemorySearch
 from cauco_core.memory.service import MemoryService
+from cauco_core.memory_candidates.promotion import MemoryCandidatePromotionService
 from cauco_core.memory_candidates.service import MemoryCandidateService
 from cauco_core.memory_candidates.sqlite_store import SQLiteMemoryCandidateStore
 from cauco_core.memory_writing.applier import MemoryWriteProposalApplier
@@ -205,6 +206,11 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.state.memory_candidate_service = MemoryCandidateService(
         experience_store=app.state.experience_store,
         candidate_store=app.state.memory_candidate_store,
+    )
+    app.state.memory_candidate_promotion_service = MemoryCandidatePromotionService(
+        app.state.memory_candidate_store,
+        app.state.memory_write_proposal_builder,
+        app.state.memory_write_proposal_store,
     )
     app.state.executive_control_service = ExecutiveControlService()
     app.state.executive_state_resolver = ExecutiveStateResolver(

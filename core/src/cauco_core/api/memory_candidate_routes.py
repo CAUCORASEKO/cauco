@@ -14,6 +14,7 @@ from cauco_core.memory_candidates.models import (
     MemoryCandidateTarget,
     MemoryCandidateValidationError,
 )
+from cauco_core.memory_candidates.promotion import MemoryCandidateNotPromotableError
 
 router = APIRouter(prefix="/api/memory-candidates", tags=["memory-candidates"])
 Note = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
@@ -115,6 +116,20 @@ def approve(candidate_id: str, payload: ReviewPayload, request: Request):
         raise HTTPException(410, str(e)) from e
     except MemoryCandidateConflictError as e:
         raise HTTPException(409, str(e)) from e
+
+
+@router.post("/{candidate_id}/promote")
+def promote(candidate_id: str, request: Request):
+    try:
+        return request.app.state.memory_candidate_promotion_service.promote(candidate_id)
+    except MemoryCandidateNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+    except MemoryCandidateExpiredError as e:
+        raise HTTPException(410, str(e)) from e
+    except MemoryCandidateNotPromotableError as e:
+        raise HTTPException(409, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(422, "The memory candidate data is invalid.") from e
 
 
 @router.post("/{candidate_id}/reject")

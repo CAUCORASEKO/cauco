@@ -7,6 +7,7 @@ import pytest
 from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.models import MemoryKind, MemoryLayer
 from cauco_core.memory_writing.analyzer import (
+    MemoryWriteProposalError,
     UnsafeMemoryWriteInstructionError,
     UnsupportedMemoryWriteOperationError,
 )
@@ -158,9 +159,7 @@ def test_task_section_selection(tmp_path: Path, instruction: str, section: str) 
 
 def test_supported_operations_use_only_approved_targets(tmp_path: Path) -> None:
     builder, _, _ = proposal_builder(tmp_path)
-    actual = [
-        (item.operation.value, item.target_file) for item in builder.supported_operations()
-    ]
+    actual = [(item.operation.value, item.target_file) for item in builder.supported_operations()]
     assert actual == [
         ("add_task", "Tasks.md"),
         ("add_decision", "Decisions.md"),
@@ -194,15 +193,43 @@ def test_unsafe_instruction_is_rejected(tmp_path: Path, instruction: str) -> Non
         builder.build(MemoryWriteRequest(instruction=instruction))
 
 
-@pytest.mark.parametrize("operation", list(MemoryWriteOperation))
-def test_confirmation_is_required_for_every_operation(
-    tmp_path: Path, operation: MemoryWriteOperation
+@pytest.mark.parametrize(
+    "operation",
+    [
+        operation
+        for operation in MemoryWriteOperation
+        if operation is not MemoryWriteOperation.ADD_LEARNING_NOTE
+    ],
+)
+def test_confirmation_is_required_for_every_public_operation(
+    tmp_path: Path,
+    operation: MemoryWriteOperation,
 ) -> None:
     builder, _, _ = proposal_builder(tmp_path)
     proposal = builder.build(
-        MemoryWriteRequest(instruction="Store this safe note", operation=operation)
+        MemoryWriteRequest(
+            instruction="Store this safe note",
+            operation=operation,
+        )
     )
     assert proposal.requires_confirmation is True
+
+
+def test_public_builder_rejects_internal_learning_note_operation(
+    tmp_path: Path,
+) -> None:
+    builder, _, _ = proposal_builder(tmp_path)
+
+    with pytest.raises(
+        MemoryWriteProposalError,
+        match="only be created from approved memory candidates",
+    ):
+        builder.build(
+            MemoryWriteRequest(
+                instruction="Store this safe learning note",
+                operation=MemoryWriteOperation.ADD_LEARNING_NOTE,
+            )
+        )
 
 
 def test_proposal_does_not_modify_files_or_refresh_engine(tmp_path: Path) -> None:

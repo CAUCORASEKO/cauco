@@ -12,6 +12,7 @@ from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.exceptions import MemoryFileTooLargeError, MemoryFileUnreadableError
 from cauco_core.memory_writing.models import (
     MemoryWriteApplicationResult,
+    MemoryWriteOperation,
     MemoryWriteProposal,
     MemoryWriteProposalState,
 )
@@ -123,12 +124,31 @@ class MemoryWriteProposalApplier:
             raise InvalidProposalIntegrityError(
                 "Stored proposal data does not match the approved operation mapping."
             )
+        if proposal.operation is MemoryWriteOperation.ADD_LEARNING_NOTE:
+            if (
+                proposal.target_section != "Reference notes"
+                or proposal.source_type != "memory_candidate"
+                or proposal.source_id is None
+                or re.fullmatch(
+                    r"memory_candidate_[A-Za-z0-9_-]{20,}",
+                    proposal.source_id,
+                )
+                is None
+            ):
+                raise InvalidProposalIntegrityError("Learning proposal provenance is invalid.")
+        elif proposal.source_type is not None or proposal.source_id is not None:
+            raise InvalidProposalIntegrityError(
+                "User-created memory proposals cannot contain internal provenance."
+            )
+
         expected_id = stable_proposal_id(
             operation=proposal.operation,
             target_file=proposal.target_file,
             target_section=proposal.target_section,
             normalized_content=proposal.normalized_content,
             markdown_preview=proposal.markdown_preview,
+            source_type=proposal.source_type,
+            source_id=proposal.source_id,
         )
         if expected_id != proposal.proposal_id:
             raise InvalidProposalIntegrityError("Stored proposal integrity verification failed.")

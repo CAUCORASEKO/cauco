@@ -8,6 +8,12 @@ from datetime import UTC, date, datetime
 from cauco_core.memory.classifier import normalize_signal
 from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.models import MemoryKind, MemoryLayer
+from cauco_core.memory_candidates.models import (
+    MemoryCandidateDisposition,
+    MemoryCandidateRecord,
+    MemoryCandidateStatus,
+    MemoryCandidateTarget,
+)
 from cauco_core.memory_writing.analyzer import (
     MemoryWriteAnalyzer,
     MemoryWriteProposalError,
@@ -42,6 +48,9 @@ APPROVED_TARGETS = {
     MemoryWriteOperation.ADD_PROJECT_NOTE: ApprovedTarget(
         "Projects.md", MemoryKind.PROJECTS, MemoryLayer.LONG_TERM
     ),
+    MemoryWriteOperation.ADD_LEARNING_NOTE: ApprovedTarget(
+        "memory.md", MemoryKind.GENERAL, MemoryLayer.LONG_TERM
+    ),
 }
 
 
@@ -59,6 +68,12 @@ class MemoryWriteProposalBuilder:
 
     def build(self, request: MemoryWriteRequest) -> MemoryWriteProposal:
         analysis = self.analyzer.analyze(request)
+
+        if analysis.operation is MemoryWriteOperation.ADD_LEARNING_NOTE:
+            raise MemoryWriteProposalError(
+                "Learning-note proposals can only be created from approved memory candidates."
+            )
+
         target = APPROVED_TARGETS[analysis.operation]
         created_at = self.clock()
         normalized_instruction = normalize_whitespace(request.instruction)
@@ -101,7 +116,52 @@ class MemoryWriteProposalBuilder:
         return [
             MemoryWriteOperationInfo(operation=operation, target_file=target.file)
             for operation, target in APPROVED_TARGETS.items()
+            if operation is not MemoryWriteOperation.ADD_LEARNING_NOTE
         ]
+
+    def build_from_memory_candidate(self, candidate: MemoryCandidateRecord) -> MemoryWriteProposal:
+        if candidate.status is not MemoryCandidateStatus.APPROVED:
+            raise MemoryWriteProposalError("Only approved memory candidates can be promoted.")
+        if candidate.disposition is not MemoryCandidateDisposition.PROMOTE_TO_MEMORY:
+            raise MemoryWriteProposalError("The memory candidate is not promotable.")
+        if candidate.target is not MemoryCandidateTarget.LEARNING:
+            raise MemoryWriteProposalError("Only learning candidates can be promoted.")
+        target = APPROVED_TARGETS[MemoryWriteOperation.ADD_LEARNING_NOTE]
+        lesson = normalize_whitespace(candidate.lesson.lesson)
+        category = candidate.lesson.category.value
+        confidence = f"{candidate.lesson.confidence:.6f}".rstrip("0").rstrip(".")
+        preview = (
+            f"- **Lesson:** {lesson}\n"
+            f"  - **Category:** {category}\n"
+            f"  - **Confidence:** {confidence}\n"
+            f"  - **Source experience:** {candidate.experience_id}"
+        )
+        content = lesson
+        return MemoryWriteProposal(
+            proposal_id=stable_proposal_id(
+                operation=MemoryWriteOperation.ADD_LEARNING_NOTE,
+                target_file=target.file,
+                target_section="Reference notes",
+                normalized_content=content,
+                markdown_preview=preview,
+                source_type="memory_candidate",
+                source_id=candidate.candidate_id,
+            ),
+            operation=MemoryWriteOperation.ADD_LEARNING_NOTE,
+            target_file=target.file,
+            target_kind=target.kind,
+            target_layer=target.layer,
+            target_section="Reference notes",
+            normalized_content=content,
+            markdown_preview=preview,
+            original_instruction=lesson,
+            reasoning=["Promoted an approved reusable learning candidate."],
+            warnings=[],
+            requires_confirmation=True,
+            created_at=self.clock(),
+            source_type="memory_candidate",
+            source_id=candidate.candidate_id,
+        )
 
     def _proposal_parts(
         self,
@@ -259,15 +319,21 @@ def stable_proposal_id(
     target_section: str,
     normalized_content: str,
     markdown_preview: str,
+    source_type: str | None = None,
+    source_id: str | None = None,
 ) -> str:
+    payload = {
+        "operation": operation.value,
+        "target_file": target_file,
+        "target_section": target_section,
+        "normalized_content": normalized_content,
+        "markdown_preview": markdown_preview,
+    }
+    if source_type is not None or source_id is not None:
+        payload["source_type"] = source_type
+        payload["source_id"] = source_id
     canonical = json.dumps(
-        {
-            "operation": operation.value,
-            "target_file": target_file,
-            "target_section": target_section,
-            "normalized_content": normalized_content,
-            "markdown_preview": markdown_preview,
-        },
+        payload,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),

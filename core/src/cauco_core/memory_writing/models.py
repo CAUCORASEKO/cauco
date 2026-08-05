@@ -23,6 +23,7 @@ class MemoryWriteOperation(StrEnum):
     ADD_DECISION = "add_decision"
     ADD_RELATIONSHIP_NOTE = "add_relationship_note"
     ADD_PROJECT_NOTE = "add_project_note"
+    ADD_LEARNING_NOTE = "add_learning_note"
 
 
 class MemoryWriteProposalState(StrEnum):
@@ -53,6 +54,8 @@ class MemoryWriteProposal(MemoryWritingModel):
     warnings: list[str]
     requires_confirmation: bool
     created_at: datetime
+    source_type: str | None = None
+    source_id: str | None = None
 
 
 class MemoryWriteOperationInfo(MemoryWritingModel):

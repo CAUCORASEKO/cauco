@@ -11,6 +11,10 @@ from cauco_core.memory_candidates.models import (
     MemoryCandidateTarget,
     MemoryCandidateValidationError,
 )
+from cauco_core.memory_candidates.promotion import (
+    MemoryCandidateNotPromotableError,
+    MemoryCandidatePromotionService,
+)
 from cauco_core.memory_candidates.service import MemoryCandidateService
 from cauco_core.memory_candidates.sqlite_store import SQLiteMemoryCandidateStore
 from cauco_core.memory_candidates.store import MemoryCandidateStore
@@ -23,6 +27,8 @@ __all__ = [
     "MemoryCandidateExpiredError",
     "MemoryCandidateLesson",
     "MemoryCandidateNotFoundError",
+    "MemoryCandidateNotPromotableError",
+    "MemoryCandidatePromotionService",
     "MemoryCandidateRecord",
     "MemoryCandidateService",
     "MemoryCandidateStatus",
