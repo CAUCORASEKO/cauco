@@ -25,6 +25,7 @@ from cauco_core.ai.ollama import OllamaProvider
 from cauco_core.ai.service import AIService
 from cauco_core.api.agent_routes import router as agent_router_api
 from cauco_core.api.ai_routes import router as ai_router
+from cauco_core.api.cognitive_cycle_routes import router as cognitive_cycle_router
 from cauco_core.api.context_routes import router as context_router
 from cauco_core.api.execution_routes import router as execution_router
 from cauco_core.api.executive_routes import router as executive_router
@@ -38,6 +39,7 @@ from cauco_core.api.reflection_routes import router as reflection_router
 from cauco_core.api.routes import router
 from cauco_core.api.tool_routes import router as tool_router
 from cauco_core.api.verification_routes import router as verification_router
+from cauco_core.cognitive_cycle.resolver import CognitiveCycleResolver
 from cauco_core.config import Settings
 from cauco_core.context.builder import ContextBuilder
 from cauco_core.execution.policy import WorkspacePolicy
@@ -224,6 +226,14 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.memory_candidate_store,
         app.state.memory_write_proposal_store,
     )
+    app.state.cognitive_cycle_resolver = CognitiveCycleResolver(
+        app.state.agent_plan_review_store,
+        app.state.execution_store,
+        app.state.verification_store,
+        app.state.experience_store,
+        app.state.memory_candidate_store,
+        app.state.memory_write_proposal_store,
+    )
     app.state.agent_context_resolver.learning_guidance_resolver = (
         app.state.learning_guidance_resolver
     )
@@ -292,6 +302,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(memory_candidate_router)
     app.include_router(mutation_router)
     app.include_router(context_router)
+    app.include_router(cognitive_cycle_router)
     app.include_router(memory_router)
     app.include_router(learning_guidance_router)
     app.include_router(reflection_router)
