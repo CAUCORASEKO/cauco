@@ -136,6 +136,21 @@ class SQLiteMemoryWriteProposalStore(MemoryWriteProposalStore):
                 self._records = previous_records
                 raise
 
+    def list(self, **kwargs: Any) -> tuple[StoredMemoryWriteProposal, ...]:
+        with self._lock:
+            previous_records = deepcopy(self._records)
+            try:
+                result = super().list(**kwargs)
+                changed = [
+                    r for r in self._records.values() if r.state is MemoryWriteProposalState.EXPIRED
+                ]
+                for record in changed:
+                    self._persist_record(record)
+                return result
+            except Exception:
+                self._records = previous_records
+                raise
+
     def _restore(self) -> None:
         now = self.clock()
         changed: list[_ProposalRecord] = []

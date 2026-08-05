@@ -29,6 +29,7 @@ from cauco_core.api.context_routes import router as context_router
 from cauco_core.api.execution_routes import router as execution_router
 from cauco_core.api.executive_routes import router as executive_router
 from cauco_core.api.experience_routes import router as experience_router
+from cauco_core.api.learning_guidance_routes import router as learning_guidance_router
 from cauco_core.api.memory_candidate_routes import router as memory_candidate_router
 from cauco_core.api.memory_routes import router as memory_router
 from cauco_core.api.mutation_routes import router as mutation_router
@@ -44,6 +45,7 @@ from cauco_core.execution.sqlite_store import SQLiteExecutionStore
 from cauco_core.executive import ExecutiveControlService, ExecutiveStateResolver
 from cauco_core.learning.service import ExperienceConsolidationService
 from cauco_core.learning.sqlite_store import SQLiteExperienceStore
+from cauco_core.learning_guidance.resolver import LearningGuidanceResolver
 from cauco_core.memory.context import MemoryContextBuilder
 from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.exceptions import MemoryDirectoryError
@@ -212,6 +214,13 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.memory_write_proposal_builder,
         app.state.memory_write_proposal_store,
     )
+    app.state.learning_guidance_resolver = LearningGuidanceResolver(
+        app.state.memory_candidate_store,
+        app.state.memory_write_proposal_store,
+    )
+    app.state.agent_context_resolver.learning_guidance_resolver = (
+        app.state.learning_guidance_resolver
+    )
     app.state.executive_control_service = ExecutiveControlService()
     app.state.executive_state_resolver = ExecutiveStateResolver(
         app.state.agent_plan_review_store,
@@ -278,6 +287,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(mutation_router)
     app.include_router(context_router)
     app.include_router(memory_router)
+    app.include_router(learning_guidance_router)
     app.include_router(perception_router)
     app.include_router(ai_router)
     return app

@@ -88,6 +88,31 @@ class MemoryWriteProposalStore:
                 )
             return self._snapshot(record)
 
+    def list(
+        self,
+        *,
+        state: MemoryWriteProposalState | None = None,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        limit: int = 20,
+    ) -> tuple[StoredMemoryWriteProposal, ...]:
+        if not 1 <= limit <= 100:
+            raise ValueError("Proposal list limit must be between 1 and 100.")
+        with self._lock:
+            for record in self._records.values():
+                self._expire_if_needed(record)
+            records = [
+                record
+                for record in self._records.values()
+                if (state is None or record.state is state)
+                and (source_type is None or record.proposal.source_type == source_type)
+                and (source_id is None or record.proposal.source_id == source_id)
+            ]
+            records.sort(
+                key=lambda r: (r.applied_at or r.created_at, r.proposal.proposal_id), reverse=True
+            )
+            return tuple(self._snapshot(record) for record in records[:limit])
+
     def mark_applied(self, proposal_id: str, applied_at: datetime) -> StoredMemoryWriteProposal:
         with self._lock:
             record = self._record(proposal_id)
@@ -109,10 +134,7 @@ class MemoryWriteProposalStore:
         return record
 
     def _expire_if_needed(self, record: _ProposalRecord) -> None:
-        if (
-            record.state is MemoryWriteProposalState.PENDING
-            and self.clock() >= record.expires_at
-        ):
+        if record.state is MemoryWriteProposalState.PENDING and self.clock() >= record.expires_at:
             record.state = MemoryWriteProposalState.EXPIRED
 
     @staticmethod

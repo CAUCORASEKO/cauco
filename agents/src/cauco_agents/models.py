@@ -170,9 +170,15 @@ class AgentContext:
     context_summary: str
     limitations: tuple[str, ...]
     metadata: Mapping[str, AgentContextValue] = field(default_factory=dict)
+    learning_guidance: tuple[Mapping[str, object], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        object.__setattr__(
+            self,
+            "learning_guidance",
+            tuple(MappingProxyType(dict(item)) for item in self.learning_guidance),
+        )
 
 
 @dataclass(frozen=True, slots=True)

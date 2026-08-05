@@ -10,6 +10,7 @@ from cauco_agents import (
 )
 
 from cauco_core.context.analyzer import IntentAnalyzer
+from cauco_core.learning_guidance.resolver import LearningGuidanceResolver
 from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.exceptions import (
     InvalidMemoryPathError,
@@ -58,6 +59,7 @@ class AgentContextResolver:
         analyzer: IntentAnalyzer | None = None,
         *,
         total_context_chars: int = MAX_TOTAL_CONTEXT_CHARS,
+        learning_guidance_resolver: LearningGuidanceResolver | None = None,
     ) -> None:
         if not 100 <= total_context_chars <= MAX_TOTAL_CONTEXT_CHARS:
             raise ValueError(
@@ -66,6 +68,7 @@ class AgentContextResolver:
         self.memory_engine = memory_engine
         self.analyzer = analyzer or IntentAnalyzer()
         self.total_context_chars = total_context_chars
+        self.learning_guidance_resolver = learning_guidance_resolver
 
     def resolve(self, agent_id: str, request: AgentContextRequest) -> AgentContext:
         resolved_intent = request.intent or self.analyzer.analyze(request.instruction).intent.value
@@ -93,6 +96,7 @@ class AgentContextResolver:
                     "max_excerpt_chars": request.max_excerpt_chars,
                     "total_context_chars": 0,
                 },
+                learning_guidance=(),
             )
 
         references: list[AgentMemoryReference] = []
@@ -171,6 +175,28 @@ class AgentContextResolver:
             if references
             else "No eligible registered memory source was available."
         )
+        guidance = ()
+        if self.learning_guidance_resolver is not None:
+            guidance = tuple(
+                {
+                    "candidate_id": item.candidate_id,
+                    "experience_id": item.experience_id,
+                    "proposal_id": item.proposal_id,
+                    "category": item.category,
+                    "lesson": item.lesson,
+                    "confidence": item.confidence,
+                    "tool_id": item.tool_id,
+                    "operation_id": item.operation_id,
+                    "step_index": item.step_index,
+                    "reason_selected": item.reason_selected,
+                    "source_reference": item.source_reference,
+                }
+                for item in self.learning_guidance_resolver.resolve(
+                    request.instruction, resolved_intent, agent_id
+                )
+            )
+            if guidance:
+                summary += f" Applied learning guidance: {len(guidance)} item(s)."
         return AgentContext(
             agent_id=agent_id,
             instruction=request.instruction,
@@ -184,6 +210,7 @@ class AgentContextResolver:
                 "max_excerpt_chars": request.max_excerpt_chars,
                 "total_context_chars": total_characters,
             },
+            learning_guidance=guidance,
         )
 
     def _known_project_names(self) -> tuple[str, ...]:
@@ -293,17 +320,11 @@ def extract_markdown_excerpt(
     for section in sections:
         heading = normalize_heading(section.heading)
         lexical_score = section_score(section.text, terms)
-        project_match = (
-            heading in project_names and phrase_in_text(heading, instruction_normalized)
-        )
+        project_match = heading in project_names and phrase_in_text(heading, instruction_normalized)
         keyword_score = heading_instruction_score(heading, instruction_normalized)
-        priority = known_priority_heading(
-            agent_id, memory_kind, heading, instruction_normalized
-        )
+        priority = known_priority_heading(agent_id, memory_kind, heading, instruction_normalized)
         generic_project_section = (
-            memory_kind == "projects"
-            and heading in GENERIC_PROJECT_HEADINGS
-            and priority is None
+            memory_kind == "projects" and heading in GENERIC_PROJECT_HEADINGS and priority is None
         )
         if project_match:
             rank = (0, 0, -lexical_score, section.start)
@@ -435,9 +456,7 @@ def section_score(section: str, terms: tuple[str, ...]) -> int:
     lines = section.casefold().splitlines()
     heading = lines[0] if lines else ""
     body = " ".join(lines[1:])
-    return sum(3 for term in terms if term in heading) + sum(
-        1 for term in terms if term in body
-    )
+    return sum(3 for term in terms if term in heading) + sum(1 for term in terms if term in body)
 
 
 def normalize_heading(value: str) -> str:
@@ -451,9 +470,7 @@ def phrase_in_text(phrase: str, text: str) -> bool:
 def heading_instruction_score(heading: str, instruction: str) -> int:
     if phrase_in_text(heading, instruction):
         return 10
-    heading_terms = {
-        term for term in heading.split() if len(term) >= 4 and term not in STOP_WORDS
-    }
+    heading_terms = {term for term in heading.split() if len(term) >= 4 and term not in STOP_WORDS}
     instruction_terms = set(instruction.split())
     return len(heading_terms & instruction_terms)
 

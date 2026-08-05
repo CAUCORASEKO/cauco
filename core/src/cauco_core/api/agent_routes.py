@@ -188,6 +188,7 @@ class AgentContextResponse(AgentApiModel):
     context_summary: str
     limitations: list[str]
     metadata: dict[str, JsonScalar]
+    learning_guidance: list[dict[str, Any]]
 
 
 class AgentPlanStepResponse(AgentApiModel):
@@ -662,6 +663,7 @@ def context_response(context: AgentContext) -> AgentContextResponse:
         context_summary=context.context_summary,
         limitations=list(context.limitations),
         metadata=dict(context.metadata),
+        learning_guidance=[dict(item) for item in context.learning_guidance],
     )
 
 
