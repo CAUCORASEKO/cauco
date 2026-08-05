@@ -6,6 +6,7 @@ import type { AIModel, CaucoStatus, ConnectionResult, StatusSection } from "../t
 import { CaucoMemoryPanel } from "./CaucoMemoryPanel";
 import { CaucoExecutionPanel } from "./CaucoExecutionPanel";
 import { CaucoPerceptionPanel } from "./CaucoPerceptionPanel";
+import type { CognitiveCycleSnapshot } from "../cognitive/types";
 
 const SECTION_LABELS: Array<[keyof CaucoStatus, string]> = [
   ["runtime", "Runtime"],
@@ -69,6 +70,7 @@ export class CaucoDashboardView extends ItemView {
     button.addEventListener("click", () => void this.refresh());
 
     this.renderConnection(container, result);
+    this.renderCognitiveSections(container, result.connected);
     const grid = container.createDiv({ cls: "cauco-grid" });
     for (const [key, label] of SECTION_LABELS) {
       this.renderCard(grid, label, result.status[key]);
@@ -83,6 +85,71 @@ export class CaucoDashboardView extends ItemView {
       result.memoryError,
     ).render(container);
   }
+
+  private renderCognitiveSections(container: HTMLElement, connected: boolean): void {
+    const section = container.createEl("section", { cls: "cauco-cognitive-dashboard" });
+    section.createEl("h2", { text: "Cognitive state" });
+    const tabs = section.createDiv({ cls: "cauco-dashboard-tabs" });
+    const panels = new Map<string, HTMLElement>();
+    for (const label of ["Overview", "Cognitive Cycle", "Learning", "Reflection", "Memory Candidates"]) {
+      const button = tabs.createEl("button", { text: label, cls: "cauco-dashboard-tab" });
+      const panel = section.createDiv({ cls: "cauco-dashboard-panel" });
+      panel.createEl("h3", { text: label });
+      panel.createEl("p", { text: connected ? "Loading…" : "Cauco Core is unavailable.", cls: "cauco-empty" });
+      panels.set(label, panel);
+      button.addEventListener("click", () => { for (const [name, item] of panels) item.toggleAttribute("hidden", name !== label); });
+      panel.toggleAttribute("hidden", label !== "Overview");
+    }
+    this.renderOverview(panels.get("Overview")!, connected);
+    if (connected) void this.loadCognitiveSections(panels);
+  }
+
+  private renderOverview(panel: HTMLElement, connected: boolean): void {
+    panel.empty();
+    panel.createEl("p", { text: connected ? "Core is reachable. Memory and runtime details are shown above." : "Start Cauco Core and use Check connection to retry.", cls: connected ? undefined : "cauco-empty" });
+  }
+
+  private async loadCognitiveSections(panels: Map<string, HTMLElement>): Promise<void> {
+    const client = new CaucoCoreClient(this.plugin.settings.coreUrl);
+    await Promise.all([
+      this.loadLearning(panels.get("Learning")!, client),
+      this.loadReflection(panels.get("Reflection")!, client),
+      this.loadCandidates(panels.get("Memory Candidates")!, client),
+      this.loadCycle(panels.get("Cognitive Cycle")!, client),
+    ]);
+  }
+
+  private renderSafeError(panel: HTMLElement, error: unknown): void {
+    panel.empty();
+    panel.createEl("p", { text: error instanceof Error ? error.message : "Could not load this section.", cls: "cauco-error" });
+  }
+
+  private async loadCycle(panel: HTMLElement, client: CaucoCoreClient): Promise<void> {
+    panel.empty();
+    const input = panel.createEl("input", { type: "text", placeholder: "Enter review_id", cls: "cauco-cycle-input" });
+    const button = panel.createEl("button", { text: "Load cycle", cls: "mod-cta" });
+    const output = panel.createDiv({ cls: "cauco-dashboard-output" });
+    output.createEl("p", { text: "Enter a review_id to observe its cycle.", cls: "cauco-empty" });
+    const load = async () => { const reviewId = input.value.trim(); if (!reviewId) return; output.empty(); output.createEl("p", { text: "Loading…", cls: "cauco-empty" }); try { this.renderCycle(output, await client.getCognitiveCycle(reviewId)); } catch (error) { this.renderSafeError(output, error); } };
+    button.addEventListener("click", () => void load());
+    input.addEventListener("keydown", (event) => { if (event.key === "Enter") void load(); });
+  }
+
+  private renderCycle(container: HTMLElement, value: CognitiveCycleSnapshot): void {
+    container.empty();
+    this.renderDefinitionList(container, [["Stage", value.currentStage], ["Overall status", value.overallStatus], ["Blocked", String(value.blocked)], ["Terminal", String(value.terminal)], ["Awaiting human action", String(value.awaitingHumanAction)], ["Next permitted action", value.nextPermittedAction ?? "None"]]);
+    this.renderObjectList(container, "Related records", value.relatedRecordIds); this.renderObjectList(container, "Candidate counts", value.candidateCounts); this.renderObjectList(container, "Proposal counts", value.proposalCounts); this.renderMessages(container, "Warnings", value.warnings); this.renderMessages(container, "Limitations", value.limitations);
+  }
+
+  private async loadLearning(panel: HTMLElement, client: CaucoCoreClient): Promise<void> { panel.empty(); const input = panel.createEl("input", { type: "text", placeholder: "Instruction used only to query guidance" }); const button = panel.createEl("button", { text: "Query guidance" }); const out = panel.createDiv(); const load = async () => { if (!input.value.trim()) return; out.empty(); out.createEl("p", { text: "Loading…", cls: "cauco-empty" }); try { const items = await client.getLearningGuidance(input.value.trim()); out.empty(); if (!items.length) { out.createEl("p", { text: "No applied guidance matched.", cls: "cauco-empty" }); return; } for (const item of items) { const card = out.createDiv({ cls: "cauco-data-card" }); card.createEl("strong", { text: item.lesson }); card.createEl("p", { text: `${item.category} · confidence ${item.confidence} · ${item.reasonSelected}` }); card.createEl("small", { text: `candidate ${item.candidateId} · experience ${item.experienceId} · proposal ${item.proposalId}` }); } } catch (error) { this.renderSafeError(out, error); } }; button.addEventListener("click", () => void load()); }
+
+  private async loadReflection(panel: HTMLElement, client: CaucoCoreClient): Promise<void> { try { const value = await client.getReflection(); panel.empty(); this.renderObjectList(panel, "Summary", value.summary); for (const pattern of value.patterns) panel.createEl("p", { text: `${pattern.category} · ${pattern.count}× · ${pattern.lesson}` }); this.renderMessages(panel, "Limitations", value.limitations); panel.createEl("small", { text: `Method: ${value.method}` }); } catch (error) { this.renderSafeError(panel, error); } }
+
+  private async loadCandidates(panel: HTMLElement, client: CaucoCoreClient): Promise<void> { try { const values = await client.getMemoryCandidates(); panel.empty(); if (!values.length) { panel.createEl("p", { text: "No memory candidates found.", cls: "cauco-empty" }); return; } for (const item of values) { const card = panel.createDiv({ cls: "cauco-data-card" }); card.createEl("strong", { text: `${item.status}: ${item.lesson.lesson}` }); card.createEl("p", { text: `${item.lesson.category} · confidence ${item.lesson.confidence} · ${item.disposition ?? "no disposition"}` }); card.createEl("small", { text: `candidate ${item.candidateId} · review ${item.reviewId} · experience ${item.experienceId}` }); card.createEl("p", { text: item.rationale }); } } catch (error) { this.renderSafeError(panel, error); } }
+
+  private renderDefinitionList(container: HTMLElement, values: Array<[string, string]>): void { const dl = container.createEl("dl", { cls: "cauco-control-details" }); for (const [key, value] of values) { dl.createEl("dt", { text: key }); dl.createEl("dd", { text: value }); } }
+  private renderObjectList(container: HTMLElement, title: string, values: Record<string, unknown>): void { container.createEl("h4", { text: title }); for (const key of Object.keys(values).sort()) container.createEl("p", { text: `${key}: ${String(values[key])}` }); }
+  private renderMessages(container: HTMLElement, title: string, values: string[]): void { if (!values.length) return; container.createEl("h4", { text: title }); const list = container.createEl("ul"); for (const value of values) list.createEl("li", { text: value }); }
 
   private renderConnection(container: HTMLElement, result: ConnectionResult): void {
     const connection = container.createDiv({ cls: "cauco-connection" });

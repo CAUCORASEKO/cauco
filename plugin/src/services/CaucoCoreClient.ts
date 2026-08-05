@@ -24,6 +24,8 @@ import type {
   MemoryWriteProposalRecord,
   StatusSection,
 } from "../types";
+import { parseCognitiveCycle, parseLearningGuidance, parseMemoryCandidates, parseReflection } from "../cognitive/api";
+import type { CognitiveCycleSnapshot, LearningGuidanceItem, MemoryCandidate, ReflectionReport } from "../cognitive/types";
 
 const OFFLINE_STATUS: CaucoStatus = {
   runtime: { status: "offline", version: "unavailable" },
@@ -413,6 +415,26 @@ export class CaucoCoreClient {
   async getMemoryFiles(): Promise<MemoryFileMetadata[]> {
     const response = await requestUrl({ url: `${this.coreUrl}/api/memory/files` });
     return parseMemoryFiles(response.json as unknown);
+  }
+
+  async getCognitiveCycle(reviewId: string): Promise<CognitiveCycleSnapshot> {
+    const value = await this.coreJsonRequest(`/api/cognitive-cycles/reviews/${encodeURIComponent(reviewId)}`, "GET", undefined, 10000);
+    return parseCognitiveCycle(value);
+  }
+
+  async getLearningGuidance(instruction: string): Promise<LearningGuidanceItem[]> {
+    const value = await this.coreJsonRequest(`/api/learning-guidance?instruction=${encodeURIComponent(instruction)}&limit=3`, "GET", undefined, 10000);
+    return parseLearningGuidance(value);
+  }
+
+  async getReflection(): Promise<ReflectionReport> {
+    const value = await this.coreJsonRequest("/api/reflection", "GET", undefined, 10000);
+    return parseReflection(value);
+  }
+
+  async getMemoryCandidates(): Promise<MemoryCandidate[]> {
+    const value = await this.coreJsonRequest("/api/memory-candidates?limit=100", "GET", undefined, 10000);
+    return parseMemoryCandidates(value);
   }
 
   async getMemoryFile(relativePath: string): Promise<MemoryFileContent> {
