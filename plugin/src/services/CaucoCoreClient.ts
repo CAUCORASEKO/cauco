@@ -24,7 +24,7 @@ import type {
   MemoryWriteProposalRecord,
   StatusSection,
 } from "../types";
-import { parseCognitiveCycle, parseLearningGuidance, parseMemoryCandidates, parseReflection } from "../cognitive/api";
+import { parseCognitiveCycle, parseLearningGuidance, parseMemoryCandidateRecord, parseMemoryCandidates, parseReflection } from "../cognitive/api";
 import type { CognitiveCycleSnapshot, LearningGuidanceItem, MemoryCandidate, ReflectionReport } from "../cognitive/types";
 
 const OFFLINE_STATUS: CaucoStatus = {
@@ -422,6 +422,26 @@ export class CaucoCoreClient {
     return parseCognitiveCycle(value);
   }
 
+  async approveCandidate(candidateId: string): Promise<MemoryCandidate> {
+    return this.mutationJson(`/api/memory-candidates/${encodeURIComponent(candidateId)}/approve`, { review_note: "" }, "candidate approval").then(parseMemoryCandidateRecord);
+  }
+
+  async rejectCandidate(candidateId: string, disposition: "retain_as_experience_only" | "discard"): Promise<MemoryCandidate> {
+    return this.mutationJson(`/api/memory-candidates/${encodeURIComponent(candidateId)}/reject`, { disposition }, "candidate rejection").then(parseMemoryCandidateRecord);
+  }
+
+  async promoteCandidate(candidateId: string): Promise<unknown> {
+    return this.mutationJson(`/api/memory-candidates/${encodeURIComponent(candidateId)}/promote`, undefined, "candidate promotion");
+  }
+
+  async createVerification(reviewId: string): Promise<unknown> {
+    return this.mutationJson(`/api/verifications/reviews/${encodeURIComponent(reviewId)}`, undefined, "verification");
+  }
+
+  async consolidateExperience(verificationId: string): Promise<unknown> {
+    return this.mutationJson(`/api/experiences/verifications/${encodeURIComponent(verificationId)}`, undefined, "experience consolidation");
+  }
+
   async getLearningGuidance(instruction: string): Promise<LearningGuidanceItem[]> {
     const value = await this.coreJsonRequest(`/api/learning-guidance?instruction=${encodeURIComponent(instruction)}&limit=3`, "GET", undefined, 10000);
     return parseLearningGuidance(value);
@@ -601,6 +621,17 @@ export class CaucoCoreClient {
     } catch (error) {
       if (error instanceof CaucoCoreApiError) throw error;
       throw new CaucoCoreApiError(undefined, "Could not reach the local Cauco Core.");
+    }
+  }
+
+  private async mutationJson(path: string, body: Record<string, unknown> | undefined, purpose: string): Promise<unknown> {
+    try {
+      const response = await requestUrl({ url: `${this.coreUrl}${path}`, method: "POST", contentType: "application/json", body: body ? JSON.stringify(body) : undefined, throw: false });
+      if (response.status >= 400) throw new CaucoCoreApiError(response.status, `${purpose} was not accepted.`, errorKind(response.status));
+      return response.json as unknown;
+    } catch (error) {
+      if (error instanceof CaucoCoreApiError) throw error;
+      throw new CaucoCoreApiError(undefined, "Could not reach the local Cauco Core.", "network");
     }
   }
 

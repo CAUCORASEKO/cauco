@@ -72,3 +72,8 @@ export function parseMemoryCandidates(value: unknown): MemoryCandidate[] {
   if (!Array.isArray(root.candidates)) throw new Error("Invalid memory candidates.");
   return root.candidates.map((raw) => { const item = record(raw, "memory candidate"); const lesson = record(item.lesson, "candidate lesson"); const status = item.status; if (status !== "pending_review" && status !== "approved" && status !== "rejected" && status !== "expired") throw new Error("Invalid candidate status."); if (typeof lesson.confidence !== "number") throw new Error("Invalid candidate confidence."); return { candidateId: string(item.candidate_id, "candidate ID"), experienceId: string(item.experience_id, "experience ID"), verificationId: string(item.verification_id, "verification ID"), executionId: string(item.execution_id, "execution ID"), reviewId: string(item.review_id, "review ID"), lesson: { category: string(lesson.category, "candidate category"), observation: string(lesson.observation, "observation"), lesson: string(lesson.lesson, "candidate lesson"), confidence: lesson.confidence }, target: string(item.target, "candidate target"), status, disposition: item.disposition === null ? null : string(item.disposition, "candidate disposition"), rationale: string(item.rationale, "candidate rationale") }; });
 }
+
+export function parseMemoryCandidateRecord(value: unknown): MemoryCandidate {
+  const root = record(value, "memory candidate");
+  return parseMemoryCandidates({ candidates: [root] })[0]!;
+}

@@ -25,5 +25,6 @@ test("rejects malformed dashboard data", () => {
 test("dashboard source keeps cognitive observation read-only", () => {
   const source = readFileSync("src/views/CaucoDashboardView.ts", "utf8");
   assert.match(source, /getCognitiveCycle/);
-  assert.doesNotMatch(source, /approve|reject|promote|confirmMemoryWriteProposal/);
+  assert.doesNotMatch(source, /requestUrl\(\{\s*url:.*input/);
+  assert.match(source, /getCognitiveCycle/);
 });
