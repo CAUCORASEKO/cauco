@@ -34,6 +34,7 @@ from cauco_core.api.memory_candidate_routes import router as memory_candidate_ro
 from cauco_core.api.memory_routes import router as memory_router
 from cauco_core.api.mutation_routes import router as mutation_router
 from cauco_core.api.perception_routes import router as perception_router
+from cauco_core.api.reflection_routes import router as reflection_router
 from cauco_core.api.routes import router
 from cauco_core.api.tool_routes import router as tool_router
 from cauco_core.api.verification_routes import router as verification_router
@@ -67,6 +68,7 @@ from cauco_core.perception import (
     PerceptionSourceRegistry,
 )
 from cauco_core.persistence import SQLiteDatabase
+from cauco_core.reflection.resolver import ReflectionResolver
 from cauco_core.verification import VerificationService
 from cauco_core.verification.sqlite_store import SQLiteVerificationStore
 
@@ -218,6 +220,10 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.memory_candidate_store,
         app.state.memory_write_proposal_store,
     )
+    app.state.reflection_resolver = ReflectionResolver(
+        app.state.memory_candidate_store,
+        app.state.memory_write_proposal_store,
+    )
     app.state.agent_context_resolver.learning_guidance_resolver = (
         app.state.learning_guidance_resolver
     )
@@ -288,6 +294,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(context_router)
     app.include_router(memory_router)
     app.include_router(learning_guidance_router)
+    app.include_router(reflection_router)
     app.include_router(perception_router)
     app.include_router(ai_router)
     return app
