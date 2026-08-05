@@ -287,6 +287,8 @@ function parseMemoryWriteProposal(value: unknown): MemoryWriteProposal {
     warnings: parseStringList(value.warnings, "proposal warnings"),
     requiresConfirmation: true,
     createdAt: parseTimestamp(value.created_at, "proposal timestamp"),
+    sourceType: value.source_type === undefined || value.source_type === null ? null : String(value.source_type),
+    sourceId: value.source_id === undefined || value.source_id === null ? null : String(value.source_id),
   };
 }
 

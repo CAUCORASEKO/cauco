@@ -66,6 +66,8 @@ The plugin and core remain separate and communicate through the documented HTTP 
 
 See [architecture](docs/architecture.md), [API contract](docs/api-contract.md), [security boundaries](docs/security.md), [development setup](docs/development.md), and the [roadmap](docs/roadmap.md).
 
+Release preparation is documented in the [release-candidate checklist](docs/release-checklist.md). The target release-candidate version is `0.1.0` for both Core and the Obsidian plugin.
+
 ## Quick start
 
 Build the plugin:

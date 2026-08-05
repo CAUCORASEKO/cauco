@@ -102,6 +102,10 @@ export interface MemoryWriteProposal {
   warnings: string[];
   requiresConfirmation: boolean;
   createdAt: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  source_type?: string | null;
+  source_id?: string | null;
 }
 
 export interface MemoryWriteProposalRecord {
