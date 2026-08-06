@@ -25,6 +25,9 @@ from cauco_core.ai.ollama import OllamaProvider
 from cauco_core.ai.service import AIService
 from cauco_core.api.agent_routes import router as agent_router_api
 from cauco_core.api.ai_routes import router as ai_router
+from cauco_core.api.application_connector_matching_routes import (
+    router as application_connector_matching_router,
+)
 from cauco_core.api.application_inventory_routes import router as application_inventory_router
 from cauco_core.api.cognitive_cycle_routes import router as cognitive_cycle_router
 from cauco_core.api.connector_routes import router as connector_router
@@ -41,6 +44,11 @@ from cauco_core.api.reflection_routes import router as reflection_router
 from cauco_core.api.routes import router
 from cauco_core.api.tool_routes import router as tool_router
 from cauco_core.api.verification_routes import router as verification_router
+from cauco_core.application_connector_matching import (
+    ApplicationConnectorMatchingService,
+    ApplicationConnectorResolver,
+    ProviderMappingRegistry,
+)
 from cauco_core.application_inventory import ApplicationInventoryService, ApplicationScanner
 from cauco_core.cognitive_cycle.resolver import CognitiveCycleResolver
 from cauco_core.config import Settings
@@ -102,6 +110,13 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.state.application_inventory_scanner = ApplicationScanner()
     app.state.application_inventory_service = ApplicationInventoryService(
         app.state.application_inventory_scanner
+    )
+    app.state.application_connector_mapping_registry = ProviderMappingRegistry()
+    app.state.application_connector_matching_resolver = ApplicationConnectorResolver(
+        app.state.application_connector_mapping_registry, app.state.connector_registry
+    )
+    app.state.application_connector_matching_service = ApplicationConnectorMatchingService(
+        app.state.application_inventory_service, app.state.application_connector_matching_resolver
     )
     app.state.tool_adapter_registry = ToolAdapterRegistry()
     app.state.workspace_policy = None
@@ -310,6 +325,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(tool_router)
     app.include_router(connector_router)
     app.include_router(application_inventory_router)
+    app.include_router(application_connector_matching_router)
     app.include_router(execution_router)
     app.include_router(executive_router)
     app.include_router(verification_router)
