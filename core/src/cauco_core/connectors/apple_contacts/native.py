@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import platform
+import threading
 from typing import Protocol
 
 from cauco_core.connectors.models import PermissionState
@@ -29,3 +31,126 @@ class UnavailableContactsGateway:
 
     def get(self, reference, keys):
         return None
+
+
+class PyObjCContactsGateway:
+    """Synchronous, bounded wrapper around CNContactStore."""
+
+    def __init__(self, contacts_module=None, timeout: float = 15.0) -> None:
+        if contacts_module is None:
+            import Contacts as contacts_module
+        self.contacts = contacts_module
+        self.timeout = timeout
+        self.store = contacts_module.CNContactStore.alloc().init()
+        self._lock = threading.RLock()
+
+    def authorization_state(self) -> PermissionState:
+        status = self.contacts.CNContactStore.authorizationStatusForEntityType_(
+            self.contacts.CNEntityTypeContacts
+        )
+        states = {
+            self.contacts.CNAuthorizationStatusNotDetermined: PermissionState.NOT_REQUESTED,
+            self.contacts.CNAuthorizationStatusRestricted: PermissionState.RESTRICTED,
+            self.contacts.CNAuthorizationStatusDenied: PermissionState.DENIED,
+            self.contacts.CNAuthorizationStatusAuthorized: PermissionState.GRANTED,
+        }
+        return states.get(status, PermissionState.UNKNOWN)
+
+    def request_permission(self) -> PermissionState:
+        event = threading.Event()
+        result = {"state": PermissionState.UNKNOWN}
+
+        def completion(granted, error):
+            result["state"] = PermissionState.GRANTED if granted else PermissionState.DENIED
+            event.set()
+
+        try:
+            self.store.requestAccessForEntityType_completion_(
+                self.contacts.CNEntityTypeContacts, completion
+            )
+        except (OSError, RuntimeError, TypeError):
+            return PermissionState.UNKNOWN
+        if not event.wait(self.timeout):
+            return PermissionState.UNKNOWN
+        return result["state"]
+
+    def search(self, query, keys: tuple[str, ...], limit: int):
+        if self.authorization_state() != PermissionState.GRANTED:
+            return ()
+        request = self.contacts.CNFetchRequest.alloc().initWithKeysToFetch_(self._native_keys(keys))
+        if query.name:
+            request.setPredicate_(
+                self.contacts.CNContact.predicateForContactsMatchingName_(query.name)
+            )
+        records = []
+        self._enumerate(request, records, limit)
+        return tuple(self._record(contact) for contact in records)
+
+    def get(self, reference: str, keys: tuple[str, ...]):
+        if self.authorization_state() != PermissionState.GRANTED:
+            return None
+        try:
+            native_id = base64.urlsafe_b64decode(
+                reference.removeprefix("contact_") + "==="
+            ).decode()
+        except (ValueError, UnicodeDecodeError):
+            return None
+        request = self.contacts.CNFetchRequest.alloc().initWithKeysToFetch_(self._native_keys(keys))
+        request.setPredicate_(
+            self.contacts.CNContact.predicateForContactsWithIdentifiers_([native_id])
+        )
+        records = []
+        self._enumerate(request, records, 1)
+        return self._record(records[0]) if records else None
+
+    def _enumerate(self, request, records: list, limit: int) -> None:
+        def block(contact, stop):
+            records.append(contact)
+            if len(records) >= limit:
+                stop[0] = True
+
+        self.store.enumerateContactsWithFetchRequest_error_usingBlock_(request, None, block)
+
+    def _record(self, contact) -> dict:
+        native_id = str(contact.identifier)
+        reference = "contact_" + base64.urlsafe_b64encode(native_id.encode()).decode().rstrip("=")
+        return {
+            "identifier": reference,
+            "display_name": " ".join(
+                part for part in (contact.givenName, contact.middleName, contact.familyName) if part
+            ),
+            "given_name": contact.givenName,
+            "middle_name": contact.middleName,
+            "family_name": contact.familyName,
+            "organization": contact.organizationName,
+            "emails": [
+                {"label": item.label or "", "address": item.value or ""}
+                for item in contact.emailAddresses
+            ],
+            "phones": [
+                {"label": item.label or "", "number": item.value.stringValue() or ""}
+                for item in contact.phoneNumbers
+            ],
+        }
+
+    @staticmethod
+    def _native_keys(keys: tuple[str, ...]):
+        names = {
+            "identifier": "identifier",
+            "given_name": "givenName",
+            "middle_name": "middleName",
+            "family_name": "familyName",
+            "organization": "organizationName",
+            "emails": "emailAddresses",
+            "phones": "phoneNumbers",
+        }
+        return [names[key] for key in keys if key in names]
+
+
+def create_default_contacts_gateway():
+    if platform.system() != "Darwin":
+        return UnavailableContactsGateway()
+    try:
+        return PyObjCContactsGateway()
+    except (ImportError, OSError, RuntimeError, TypeError):
+        return UnavailableContactsGateway()

@@ -11,26 +11,24 @@ from cauco_core.connectors.models import (
     ConnectorIdentity,
     ConnectorPlatform,
     ConnectorRiskLevel,
-    PermissionState,
 )
 
 from .models import ContactSearchResponse
-from .native import ContactsGateway, UnavailableContactsGateway
+from .native import ContactsGateway, PyObjCContactsGateway, create_default_contacts_gateway
 from .permissions import CONTACTS_PERMISSION_ID, permission_definition
 from .sanitizer import sanitize
 
 
 class AppleContactsConnector:
     def __init__(self, gateway: ContactsGateway | None = None) -> None:
-        self.gateway = gateway or UnavailableContactsGateway()
-        state = self.gateway.authorization_state()
+        self.gateway = gateway or create_default_contacts_gateway()
         self._metadata = ConnectorIdentity(
             "apple_contacts.local",
             "apple_contacts",
             "1.0",
-            ConnectorAvailability.UNAVAILABLE
-            if state == PermissionState.UNAVAILABLE or sys.platform != "darwin"
-            else ConnectorAvailability.AVAILABLE,
+            ConnectorAvailability.AVAILABLE
+            if isinstance(self.gateway, PyObjCContactsGateway) and sys.platform == "darwin"
+            else ConnectorAvailability.UNAVAILABLE,
             ConnectorHealth.UNKNOWN,
             ConnectorPlatform.MACOS,
             True,

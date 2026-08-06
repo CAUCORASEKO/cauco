@@ -1,5 +1,6 @@
 """Tests for the injected, read-only Apple Contacts connector boundary."""
 
+import platform
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 
@@ -7,6 +8,11 @@ import pytest
 
 from cauco_core.connectors.apple_contacts.connector import AppleContactsConnector
 from cauco_core.connectors.apple_contacts.models import ContactQuery, ContactSummary
+from cauco_core.connectors.apple_contacts.native import (
+    PyObjCContactsGateway,
+    UnavailableContactsGateway,
+    create_default_contacts_gateway,
+)
 from cauco_core.connectors.apple_contacts.permissions import CONTACTS_PERMISSION_ID
 from cauco_core.connectors.models import PermissionState
 
@@ -51,6 +57,11 @@ class FakeGateway:
         return None
 
 
+class NoAuthorizationGateway(FakeGateway):
+    def authorization_state(self):
+        raise AssertionError("startup must not inspect authorization")
+
+
 def test_contact_models_are_immutable_and_opaque():
     contact = ContactSummary("contact_opaque123", "Ándrés", emails=())
     with pytest.raises(FrozenInstanceError):
@@ -76,6 +87,11 @@ def test_metadata_declares_only_read_capabilities_and_permission():
         "contacts.list_limited",
     }
     assert connector.permissions()[0].permission_id == CONTACTS_PERMISSION_ID
+
+
+def test_connector_construction_does_not_inspect_authorization():
+    connector = AppleContactsConnector(NoAuthorizationGateway())
+    assert connector.metadata.connector_id == "apple_contacts.local"
 
 
 def test_permission_request_does_not_read_contacts():
@@ -110,3 +126,91 @@ def test_unavailable_permission_is_exposed_without_read():
 
 def test_missing_contact_is_safe():
     assert AppleContactsConnector(FakeGateway()).get("contact_opaque123", datetime.now(UTC)) is None
+
+
+def test_non_macos_factory_is_unavailable():
+    gateway = create_default_contacts_gateway()
+    if platform.system() == "Darwin":
+        assert isinstance(gateway, PyObjCContactsGateway)
+    else:
+        assert isinstance(gateway, UnavailableContactsGateway)
+
+
+def test_authorization_mapping_with_fake_contacts_module():
+    class Store:
+        def authorizationStatusForEntityType_(self, entity_type):
+            return 3
+
+    class Module:
+        CNEntityTypeContacts = 0
+        CNAuthorizationStatusNotDetermined = 0
+        CNAuthorizationStatusRestricted = 1
+        CNAuthorizationStatusDenied = 2
+        CNAuthorizationStatusAuthorized = 3
+
+        class CNContactStore:
+            @classmethod
+            def alloc(cls):
+                return cls()
+
+            def init(self):
+                return Store()
+
+            @classmethod
+            def authorizationStatusForEntityType_(cls, entity_type):
+                return 3
+
+    assert PyObjCContactsGateway(Module()).authorization_state() == PermissionState.GRANTED
+
+
+def test_authorization_uses_store_class_method_not_instance_method():
+    class Store:
+        def authorizationStatusForEntityType_(self, entity_type):
+            raise AssertionError("instance authorization method must not be used")
+
+    class Module:
+        CNEntityTypeContacts = 0
+        CNAuthorizationStatusNotDetermined = 0
+        CNAuthorizationStatusRestricted = 1
+        CNAuthorizationStatusDenied = 2
+        CNAuthorizationStatusAuthorized = 3
+
+        class CNContactStore:
+            @classmethod
+            def alloc(cls):
+                return cls()
+
+            def init(self):
+                return Store()
+
+            @classmethod
+            def authorizationStatusForEntityType_(cls, entity_type):
+                return 3
+
+    assert PyObjCContactsGateway(Module()).authorization_state() == PermissionState.GRANTED
+
+
+def test_permission_request_timeout_is_safe():
+    class Store:
+        def requestAccessForEntityType_completion_(self, entity_type, completion):
+            return None
+
+    class Module:
+        CNEntityTypeContacts = 0
+        CNAuthorizationStatusNotDetermined = 0
+        CNAuthorizationStatusRestricted = 1
+        CNAuthorizationStatusDenied = 2
+        CNAuthorizationStatusAuthorized = 3
+
+        class CNContactStore:
+            @classmethod
+            def alloc(cls):
+                return cls()
+
+            def init(self):
+                return Store()
+
+    assert (
+        PyObjCContactsGateway(Module(), timeout=0.001).request_permission()
+        == PermissionState.UNKNOWN
+    )

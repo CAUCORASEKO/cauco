@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+macos = ["pyobjc-framework-Contacts>=10.3; sys_platform == 'darwin'"]
 dev = [
   "pytest>=8.3,<9",
   "ruff>=0.9,<1",

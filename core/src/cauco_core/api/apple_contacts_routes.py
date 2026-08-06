@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from cauco_core.connectors.apple_contacts.models import ContactQuery
-from cauco_core.connectors.models import ConnectorRequest
+from cauco_core.connectors.models import ConnectorRequest, PermissionState
 
 router = APIRouter(prefix="/api/apple-contacts", tags=["apple-contacts"])
 
@@ -34,12 +34,16 @@ def _contact(value: Any) -> dict[str, Any]:
 @router.get("/status")
 def connector_status(request: Request) -> dict[str, Any]:
     connector = request.app.state.apple_contacts_connector
+    try:
+        permission_state = connector.permissions()[0].state
+    except (OSError, RuntimeError, TypeError):
+        permission_state = PermissionState.UNKNOWN
     return {
         "connector": connector.metadata.connector_id,
         "provider": connector.metadata.provider_id,
         "registered": True,
         "availability": connector.metadata.availability.value,
-        "permission_state": connector.permissions()[0].state.value,
+        "permission_state": permission_state.value,
         "capabilities": list(connector.metadata.capability_ids),
         "method": "apple-contacts-read-v1",
         "limitations": list(connector.metadata.limitations),
