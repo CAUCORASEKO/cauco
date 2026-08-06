@@ -25,6 +25,7 @@ from cauco_core.ai.ollama import OllamaProvider
 from cauco_core.ai.service import AIService
 from cauco_core.api.agent_routes import router as agent_router_api
 from cauco_core.api.ai_routes import router as ai_router
+from cauco_core.api.apple_contacts_routes import router as apple_contacts_router
 from cauco_core.api.application_connector_matching_routes import (
     router as application_connector_matching_router,
 )
@@ -53,6 +54,7 @@ from cauco_core.application_inventory import ApplicationInventoryService, Applic
 from cauco_core.cognitive_cycle.resolver import CognitiveCycleResolver
 from cauco_core.config import Settings
 from cauco_core.connectors import ConnectorRegistry, ConnectorRuntime, PermissionPolicy
+from cauco_core.connectors.apple_contacts import AppleContactsConnector
 from cauco_core.context.builder import ContextBuilder
 from cauco_core.execution.policy import WorkspacePolicy
 from cauco_core.execution.service import ExecutionService
@@ -107,6 +109,8 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.state.connector_runtime = ConnectorRuntime(
         app.state.connector_registry, app.state.connector_policy
     )
+    app.state.apple_contacts_connector = AppleContactsConnector()
+    app.state.connector_registry.register(app.state.apple_contacts_connector)
     app.state.application_inventory_scanner = ApplicationScanner()
     app.state.application_inventory_service = ApplicationInventoryService(
         app.state.application_inventory_scanner
@@ -326,6 +330,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(connector_router)
     app.include_router(application_inventory_router)
     app.include_router(application_connector_matching_router)
+    app.include_router(apple_contacts_router)
     app.include_router(execution_router)
     app.include_router(executive_router)
     app.include_router(verification_router)
