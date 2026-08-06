@@ -8,6 +8,7 @@ Cauco is a local-first AI work orchestration project built around Obsidian and p
 
 - A strict TypeScript Obsidian plugin with a Cauco dashboard, ribbon action, command, settings, health check, and offline states
 - A local FastAPI core exposing health, system status, and bounded Markdown file metadata
+- A minimal native macOS host for explicit Contacts permission ownership and safe local Core startup ([docs/macos-host.md](docs/macos-host.md))
 - A local Ollama provider with availability reporting, installed-model discovery, and non-streaming chat
 - Obsidian model selection and a minimal local chat interface
 - Recursive safe Markdown discovery, controlled UTF-8 reads, and deterministic text search

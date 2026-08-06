@@ -6,6 +6,8 @@ plugin/main.js
 
 # Python environments and caches
 .venv/
+macos-host/.build/
+macos-host/.artifacts/
 __pycache__/
 *.py[cod]
 .pytest_cache/
