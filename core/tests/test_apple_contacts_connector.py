@@ -7,6 +7,10 @@ from datetime import UTC, datetime
 import pytest
 
 from cauco_core.connectors.apple_contacts.connector import AppleContactsConnector
+from cauco_core.connectors.apple_contacts.exceptions import (
+    ContactsPermissionRequestError,
+    ContactsPermissionTimeoutError,
+)
 from cauco_core.connectors.apple_contacts.models import ContactQuery, ContactSummary
 from cauco_core.connectors.apple_contacts.native import (
     PyObjCContactsGateway,
@@ -192,7 +196,7 @@ def test_authorization_uses_store_class_method_not_instance_method():
 
 def test_permission_request_timeout_is_safe():
     class Store:
-        def requestAccessForEntityType_completion_(self, entity_type, completion):
+        def requestAccessForEntityType_completionHandler_(self, entity_type, completion):
             return None
 
     class Module:
@@ -210,7 +214,60 @@ def test_permission_request_timeout_is_safe():
             def init(self):
                 return Store()
 
-    assert (
+    with pytest.raises(ContactsPermissionTimeoutError):
         PyObjCContactsGateway(Module(), timeout=0.001).request_permission()
-        == PermissionState.UNKNOWN
-    )
+
+
+@pytest.mark.parametrize(
+    "granted, expected", [(True, PermissionState.GRANTED), (False, PermissionState.DENIED)]
+)
+def test_permission_request_uses_completion_handler_once(granted, expected):
+    calls = []
+
+    class Store:
+        def requestAccessForEntityType_completionHandler_(self, entity_type, completion):
+            calls.append("request")
+            completion(granted, None)
+
+    class Module:
+        CNEntityTypeContacts = 0
+        CNAuthorizationStatusNotDetermined = 0
+        CNAuthorizationStatusRestricted = 1
+        CNAuthorizationStatusDenied = 2
+        CNAuthorizationStatusAuthorized = 3
+
+        class CNContactStore:
+            @classmethod
+            def alloc(cls):
+                return cls()
+
+            def init(self):
+                return Store()
+
+    assert PyObjCContactsGateway(Module()).request_permission() == expected
+    assert calls == ["request"]
+
+
+def test_permission_request_native_error_is_safe():
+    class Store:
+        def requestAccessForEntityType_completionHandler_(self, entity_type, completion):
+            completion(False, object())
+
+    class Module:
+        CNEntityTypeContacts = 0
+        CNAuthorizationStatusNotDetermined = 0
+        CNAuthorizationStatusRestricted = 1
+        CNAuthorizationStatusDenied = 2
+        CNAuthorizationStatusAuthorized = 3
+
+        class CNContactStore:
+            @classmethod
+            def alloc(cls):
+                return cls()
+
+            def init(self):
+                return Store()
+
+    with pytest.raises(ContactsPermissionRequestError) as error:
+        PyObjCContactsGateway(Module()).request_permission()
+    assert "native" not in str(error.value).lower()

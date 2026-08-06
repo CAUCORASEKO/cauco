@@ -9,6 +9,8 @@ from typing import Protocol
 
 from cauco_core.connectors.models import PermissionState
 
+from .exceptions import ContactsPermissionRequestError, ContactsPermissionTimeoutError
+
 
 class ContactsGateway(Protocol):
     def authorization_state(self) -> PermissionState: ...
@@ -58,20 +60,25 @@ class PyObjCContactsGateway:
 
     def request_permission(self) -> PermissionState:
         event = threading.Event()
-        result = {"state": PermissionState.UNKNOWN}
+        result = {"state": PermissionState.UNKNOWN, "error": False}
 
         def completion(granted, error):
             result["state"] = PermissionState.GRANTED if granted else PermissionState.DENIED
+            result["error"] = error is not None
             event.set()
 
         try:
-            self.store.requestAccessForEntityType_completion_(
+            self.store.requestAccessForEntityType_completionHandler_(
                 self.contacts.CNEntityTypeContacts, completion
             )
-        except (OSError, RuntimeError, TypeError):
-            return PermissionState.UNKNOWN
+        except (AttributeError, OSError, RuntimeError, TypeError) as error:
+            raise ContactsPermissionRequestError(
+                "Contacts permission request was unavailable."
+            ) from error
         if not event.wait(self.timeout):
-            return PermissionState.UNKNOWN
+            raise ContactsPermissionTimeoutError("Contacts permission request timed out.")
+        if result["error"]:
+            raise ContactsPermissionRequestError("Contacts permission request failed.")
         return result["state"]
 
     def search(self, query, keys: tuple[str, ...], limit: int):

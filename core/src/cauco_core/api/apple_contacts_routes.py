@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from cauco_core.connectors.apple_contacts.exceptions import ContactsNativeError
 from cauco_core.connectors.apple_contacts.models import ContactQuery
 from cauco_core.connectors.models import ConnectorRequest, PermissionState
 
@@ -53,7 +54,13 @@ def connector_status(request: Request) -> dict[str, Any]:
 @router.post("/permissions/request")
 def request_permission(request: Request) -> dict[str, Any]:
     connector = request.app.state.apple_contacts_connector
-    state = connector.request_permission()
+    try:
+        state = connector.request_permission()
+    except ContactsNativeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Contacts permission request is unavailable.",
+        ) from error
     return {
         "permission_id": "macos.contacts.read",
         "state": state.value,

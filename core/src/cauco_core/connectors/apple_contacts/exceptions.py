@@ -23,3 +23,15 @@ class ContactsInvalidQueryError(AppleContactsError):
 
 class ContactNotFoundError(AppleContactsError):
     pass
+
+
+class ContactsNativeError(AppleContactsError):
+    """The native Contacts bridge failed safely."""
+
+
+class ContactsPermissionTimeoutError(ContactsNativeError):
+    """The native permission callback did not arrive in time."""
+
+
+class ContactsPermissionRequestError(ContactsNativeError):
+    """The native permission request failed."""
