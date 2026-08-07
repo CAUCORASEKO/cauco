@@ -39,6 +39,7 @@ from cauco_core.api.experience_routes import router as experience_router
 from cauco_core.api.learning_guidance_routes import router as learning_guidance_router
 from cauco_core.api.memory_candidate_routes import router as memory_candidate_router
 from cauco_core.api.memory_routes import router as memory_router
+from cauco_core.api.native_broker_routes import router as native_broker_router
 from cauco_core.api.mutation_routes import router as mutation_router
 from cauco_core.api.perception_routes import router as perception_router
 from cauco_core.api.reflection_routes import router as reflection_router
@@ -102,6 +103,8 @@ def build_ai_provider(settings: Settings) -> AIProvider:
 def create_app(settings: Settings | None = None, ai_provider: AIProvider | None = None) -> FastAPI:
     app = FastAPI(title="Cauco Core", version="0.1.0")
     app.state.settings = settings or Settings()
+    from cauco_core.native_broker import NativeBrokerClient
+    app.state.native_broker_client = NativeBrokerClient()
     app.state.agent_registry = create_default_registry()
     app.state.tool_registry = create_default_tool_registry()
     app.state.connector_registry = ConnectorRegistry()
@@ -340,6 +343,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(context_router)
     app.include_router(cognitive_cycle_router)
     app.include_router(memory_router)
+    app.include_router(native_broker_router)
     app.include_router(learning_guidance_router)
     app.include_router(reflection_router)
     app.include_router(perception_router)

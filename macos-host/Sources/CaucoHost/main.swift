@@ -20,12 +20,14 @@ import SwiftUI
   let coreURL = URL(string: "http://127.0.0.1:8765")!
   private let permission = NativeContactsPermissionGateway()
   private var process: Process?
+  private var brokerServer: NativeBrokerTransportServer?
   private let lifecycle = CoreLifecycleRules()
 
   init() {
     refreshContacts()
     refreshRepository()
   }
+  deinit { brokerServer?.stop() }
   func refreshContacts() { contacts = String(describing: permission.authorizationState()) }
   func requestContacts() {
     diagnostic = "Waiting for macOS Contacts decision…"
@@ -88,11 +90,17 @@ import SwiftUI
         workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
       let configuration = CoreLaunchConfiguration(
         executable: resolved.executable, repository: resolved.repository)
+      let brokerServer = try NativeBrokerTransportServer(broker: NativeCapabilityBroker(permission: permission))
+      try brokerServer.start()
+      self.brokerServer = brokerServer
       let p = Process()
       p.executableURL = configuration.executable
       p.arguments = configuration.arguments
       p.currentDirectoryURL = resolved.repository
-      p.environment = ProcessInfo.processInfo.environment
+      var environment = ProcessInfo.processInfo.environment
+      environment["CAUCO_NATIVE_BROKER_SOCKET"] = brokerServer.socketURL.path
+      environment["CAUCO_NATIVE_BROKER_TOKEN"] = brokerServer.token
+      p.environment = environment
       let stderr = Pipe()
       let stdout = Pipe()
       p.standardError = stderr
@@ -113,6 +121,8 @@ import SwiftUI
           self.launchDiagnostics?.stdoutTail = boundedDiagnosticTail(outputText, maxLines: 10)
           self.hasOwnedProcess = false
           self.process = nil
+          self.brokerServer?.stop()
+          self.brokerServer = nil
           if self.coreStatus == "starting" {
             self.coreStatus = "unavailable"
             self.launchDiagnostics?.lifecycleState = .unavailable
@@ -130,10 +140,14 @@ import SwiftUI
       diagnostic = "Core starting; waiting for localhost health."
       Task { await waitForHealth(configuration.url, process: p) }
     } catch RepositoryResolutionError.unconfigured {
+      brokerServer?.stop()
+      brokerServer = nil
       process = nil
       coreStatus = "stopped"
       diagnostic = "Select the Cauco repository before starting Core."
     } catch {
+      brokerServer?.stop()
+      brokerServer = nil
       process = nil
       hasOwnedProcess = false
       coreStatus = "unavailable"
@@ -164,7 +178,7 @@ import SwiftUI
         processRunning: process.isRunning, elapsedMilliseconds: elapsed, probeHealthy: healthy)
       {
       case .healthy:
-        if self.process === process {
+        if self.process === process, process.isRunning {
           coreStatus = "online"
           launchDiagnostics?.lifecycleState = .online
           diagnostic = "Core is online on localhost."
@@ -192,6 +206,8 @@ import SwiftUI
   func stopCore() {
     guard let p = process, lifecycle.canStop(ownedProcessExists: true) else { return }
     p.terminate()
+    brokerServer?.stop()
+    brokerServer = nil
     process = nil
     hasOwnedProcess = false
     coreStatus = "stopped"

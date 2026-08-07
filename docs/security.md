@@ -4,6 +4,8 @@ The current release keeps data and inference local. Deterministic foundations re
 
 ## Current boundaries
 
+The macOS Host exposes the Native Capability Broker only to its owned Core child through a private owner-only Unix domain socket. The socket path and cryptographically random bearer token are ephemeral, passed only through the child environment, never persisted or exposed in diagnostics/API responses, and each connection accepts one bounded JSON request. The Host validates the token before dispatching the typed allowlist; `contacts.status` is the only implemented native operation and no contact records are transported.
+
 - Cauco Core binds to `127.0.0.1` by default. Its AI routes add model discovery and one validated chat POST endpoint.
 - CORS permits a small explicit set of local Obsidian/development origins and only GET and POST methods.
 - Memory access is limited to visible Markdown under one configured directory. Paths are relative, traversal is rejected, hidden directories are pruned, and symlinks are not followed.

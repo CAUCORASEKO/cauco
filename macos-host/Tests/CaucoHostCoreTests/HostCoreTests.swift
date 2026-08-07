@@ -1,4 +1,5 @@
 import Contacts
+import Darwin
 import XCTest
 
 @testable import CaucoHostCore
@@ -260,6 +261,42 @@ final class HostCoreTests: XCTestCase {
         explicitUserRequest: false, requestLocale: "en", responseLocale: "en",
         arguments: ["nested": deep]))
   }
+  func testNativeBrokerSocketIsPrivateEphemeralAndCleansUp() throws {
+    let server = try NativeBrokerTransportServer(broker: NativeCapabilityBroker(permission: FakePermission(.granted)))
+    XCTAssertFalse(server.token.isEmpty)
+    try server.start()
+    let mode = try FileManager.default.attributesOfItem(atPath: server.socketURL.path)[.posixPermissions] as? NSNumber
+    XCTAssertEqual((mode?.intValue ?? 0) & 0o777, 0o600)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: server.socketURL.path))
+    server.stop()
+    XCTAssertFalse(FileManager.default.fileExists(atPath: server.socketURL.path))
+  }
+  func testNativeBrokerServesAuthenticatedSequentialConnections() throws {
+    let server = try NativeBrokerTransportServer(
+      broker: NativeCapabilityBroker(permission: FakePermission(.granted)))
+    try server.start()
+    defer { server.stop() }
+    for _ in 0..<2 {
+      let request = try request(.contactsStatus)
+      let envelope = NativeBrokerTransportEnvelope(token: server.token, request: request)
+      let payload = try JSONEncoder().encode(envelope) + Data("\n".utf8)
+      let client = try connectToBroker(server.socketURL)
+      defer { close(client) }
+      XCTAssertEqual(payload.withUnsafeBytes { send(client, $0.baseAddress, payload.count, 0) }, payload.count)
+      var response = Data()
+      var buffer = [UInt8](repeating: 0, count: 2048)
+      while !response.contains(10) {
+        let count = recv(client, &buffer, buffer.count, 0)
+        XCTAssertGreaterThan(count, 0)
+        response.append(buffer, count: count)
+      }
+      let decoded = try JSONDecoder().decode(
+        NativeCapabilityResponse.self,
+        from: response.prefix { $0 != 10 })
+      XCTAssertEqual(decoded.outcome, .success)
+      XCTAssertEqual(decoded.capability, .contactsStatus)
+    }
+  }
   private func request(_ capability: NativeCapability, args: [String: BrokerJSONValue] = [:]) throws
     -> NativeCapabilityRequest
   {
@@ -322,6 +359,27 @@ final class HostCoreTests: XCTestCase {
     XCTAssertEqual(snapshot.arguments, process.arguments)
     XCTAssertEqual(snapshot.lifecycleState, .starting)
   }
+}
+
+private func connectToBroker(_ url: URL) throws -> Int32 {
+  let client = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+  guard client >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+  var address = sockaddr_un()
+  address.sun_family = sa_family_t(AF_UNIX)
+  let capacity = MemoryLayout<sockaddr_un>.size - MemoryLayout<sa_family_t>.size
+  withUnsafeMutablePointer(to: &address.sun_path) { pointer in
+    pointer.withMemoryRebound(to: CChar.self, capacity: capacity) { cPath in
+      url.path.withCString { path in strncpy(cPath, path, capacity - 1) }
+    }
+  }
+  let length = socklen_t(MemoryLayout<sa_family_t>.size + url.path.utf8.count + 1)
+  let result = withUnsafePointer(to: &address) { pointer in
+    pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+      Darwin.connect(client, $0, length)
+    }
+  }
+  guard result == 0 else { close(client); throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+  return client
 }
 
 private final class FakePermission: ContactsPermissionGateway {
