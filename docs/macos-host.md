@@ -4,7 +4,13 @@ The host is a small native SwiftUI `.app` whose stable identity (`com.cauco.host
 
 It never requests permission or reads private data at startup. The Contacts button performs one explicit `CNContactStore.requestAccess` call; the host does not enumerate, search, display, persist, or modify contacts. Only the host's native authorization state is shown. The Python connector's ability to use that authorization is intentionally unverified and must not be assumed. If macOS continues to deny Python access, a future capability broker (XPC, authenticated localhost IPC, or a Unix socket) should expose only allowlisted, bounded operations.
 
-Core launch is development-only: the host uses the repository's `.venv/bin/python`, fixed `-m uvicorn cauco_core.main:app --host 127.0.0.1 --port 8765` arguments, and owns only the resulting child `Process`. It does not accept shell text, use a shell, kill unrelated processes, expose Core externally, or persist raw logs. The current UI provides start/stop and safe status scaffolding; health polling and an existing-Core connection mode are future work.
+Core launch is development-only: the host resolves `<repository>/.venv/bin/python` from the bounded `CAUCO_REPOSITORY` setting or its configured repository directory, validates existence and executability, and passes fixed `Process.executableURL` arguments: `-m uvicorn cauco_core.main:app --host 127.0.0.1 --port 8765`. It never searches PATH, accepts shell text, uses a shell, kills unrelated processes, exposes Core externally, or persists raw logs. Health is checked only at `http://127.0.0.1:8765/health` with bounded retries and sanitized diagnostics. Failed launches clear ownership and return the UI to **Start Core**; **Stop Core** appears only for an owned child.
+
+## Verified TCC boundary and broker decision
+
+The real Mac smoke test verified that Contacts permission granted to `com.cauco.host` is not visible to a separately launched Python Core: the Host reports `granted`, while Python reports `permission_state=not_requested`. Child-process inheritance must not be claimed. Direct Python `CNContactStore` access is therefore not the production architecture; future native capabilities must be brokered by the Host.
+
+The future Native Capability Broker contract is intentionally only a typed/documentation scaffold. Core sends structured requests with explicit request provenance; the Host owns TCC, executes native calls, and returns bounded, sanitized, ephemeral responses. The initial allowlist is `contacts.status`, `contacts.search`, `contacts.get`, and `contacts.list_limited`. There are no arbitrary method names, raw Objective-C objects, unrestricted shell/native execution, or persistence of contact payloads without separate approval. No generic insecure IPC endpoint is implemented yet.
 
 ## Build and sign
 

@@ -95,3 +95,8 @@ Phase 7D distinguishes local history from remote publication: `local commit → 
 Phase 6C/7A presents the Core lifecycle as `instruction → generated plan and provenance → review decision → readiness → inert execution record → explicit read or preview/confirmation → real result → audit trail`. The plugin keeps transient UI state separate from Core records, defensively validates essential response shapes, ignores stale manual GET responses, and never polls.
 
 Approval, execution-record creation, and step execution are separate controls. Before a step call, the plugin refreshes authoritative readiness and requires a second click attached to that exact step. It sends only bounded timeout and output controls. Results and workspace file content are rendered as inert text through Obsidian element APIs and are not persisted into settings or the vault.
+# macOS Native Capability Broker decision
+
+The macOS Host owns TCC permissions. Verified smoke testing shows that permission granted to `com.cauco.host` is not inherited by a separately launched Python Core: Host `granted`, Python `permission_state=not_requested`. Production native capabilities must therefore be brokered by the Host; direct Python `CNContactStore` access is not the production architecture.
+
+The future broker accepts only typed, structured requests with explicit provenance and an allowlist beginning with `contacts.status`, `contacts.search`, `contacts.get`, and `contacts.list_limited`. The Host performs native calls and returns bounded sanitized responses. It must not accept arbitrary methods, raw Objective-C objects, unrestricted shell/native execution, or persist contact payloads unless separately approved. This is a contract scaffold only; no generic IPC endpoint is implemented.
