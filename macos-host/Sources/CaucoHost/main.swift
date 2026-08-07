@@ -13,34 +13,75 @@ import CaucoHostCore
     @Published var coreStatus = "stopped"
     @Published var contacts = "not requested"
     @Published var diagnostic = "Ready. No private data has been accessed."
+    @Published var repositoryPath = "Not configured"
+    @Published var repositoryValidation = "Repository path is not configured."
+    @Published private(set) var hasOwnedProcess = false
     let coreURL = URL(string: "http://127.0.0.1:8765")!
     private let permission = NativeContactsPermissionGateway()
     private var process: Process?
     private let lifecycle = CoreLifecycleRules()
 
-    init() { refreshContacts() }
+    init() { refreshContacts(); refreshRepository() }
     func refreshContacts() { contacts = String(describing: permission.authorizationState()) }
     func requestContacts() {
         diagnostic = "Waiting for macOS Contacts decision…"
         permission.requestAccess { [weak self] state in self?.contacts = String(describing: state); self?.diagnostic = "Contacts state updated; no contacts were read." }
     }
+    func refreshRepository() {
+        do {
+            let value = try RepositoryConfiguration.resolve(workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+            repositoryPath = value.repository.path
+            repositoryValidation = "\(value.source.rawValue): \(value.repository.path)"
+        } catch {
+            let configuredPath = UserDefaults.standard.string(forKey: repositoryPathDefaultsKey)
+            if let configuredPath, !configuredPath.isEmpty { repositoryPath = configuredPath; repositoryValidation = "Invalid: \(boundedDiagnostic(error.localizedDescription))" }
+            else if let environmentPath = ProcessInfo.processInfo.environment[repositoryPathEnvironmentKey], !environmentPath.isEmpty { repositoryPath = environmentPath; repositoryValidation = "Invalid: \(boundedDiagnostic(error.localizedDescription))" }
+            else { repositoryPath = "Not configured"; repositoryValidation = "Repository path is not configured." }
+        }
+    }
+    func chooseRepository() {
+        let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false; panel.prompt = "Choose Repository"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { let config = try RepositoryConfiguration.validate(url); UserDefaults.standard.set(config.repository.path, forKey: repositoryPathDefaultsKey); refreshRepository(); diagnostic = "Repository configured. Core was not started." }
+        catch { diagnostic = boundedDiagnostic(error.localizedDescription); refreshRepository() }
+    }
+    func clearRepository() { UserDefaults.standard.removeObject(forKey: repositoryPathDefaultsKey); refreshRepository(); diagnostic = "Repository configuration cleared." }
     func startCore() {
         guard lifecycle.canStart(ownedProcessExists: process != nil) else { diagnostic = "Core is already owned by this host."; return }
         do {
-            let resolved = try resolveCorePython(repository: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+            let resolved = try RepositoryConfiguration.resolve(workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
             let configuration = CoreLaunchConfiguration(executable: resolved.executable, repository: resolved.repository)
-            let p = Process(); p.executableURL = configuration.executable; p.arguments = configuration.arguments; p.currentDirectoryURL = resolved.repository
-            try p.run(); process = p; coreStatus = "starting"; diagnostic = "Core starting; waiting for localhost health."; Task { await waitForHealth(configuration.url, process: p) }
-        } catch { process = nil; coreStatus = "unavailable"; diagnostic = boundedDiagnostic("Unable to start Core: \(error.localizedDescription)") }
+            let p = Process(); p.executableURL = configuration.executable; p.arguments = configuration.arguments; p.currentDirectoryURL = resolved.repository; p.environment = ProcessInfo.processInfo.environment
+            let stderr = Pipe(); let stdout = Pipe(); p.standardError = stderr; p.standardOutput = stdout
+            p.terminationHandler = { [weak self, weak p] terminated in
+                let errorText = boundedDiagnostic(String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "")
+                Task { @MainActor [weak self, weak p] in
+                    guard let self, let p, self.process === p else { return }
+                    self.hasOwnedProcess = false; self.process = nil
+                    if self.coreStatus == "starting" { self.coreStatus = "unavailable"; let suffix = errorText.isEmpty ? "" : " Last diagnostic: \(errorText)"; self.diagnostic = boundedDiagnostic("Core process exited before becoming healthy (exit code \(terminated.terminationStatus)).\(suffix)") }
+                }
+            }
+            try p.run(); process = p; hasOwnedProcess = true; coreStatus = "starting"; diagnostic = "Core starting; waiting for localhost health."; Task { await waitForHealth(configuration.url, process: p) }
+        } catch RepositoryResolutionError.unconfigured { process = nil; coreStatus = "stopped"; diagnostic = "Select the Cauco repository before starting Core." }
+        catch { process = nil; hasOwnedProcess = false; coreStatus = "unavailable"; diagnostic = boundedDiagnostic("Unable to start Core: \(error.localizedDescription)") }
     }
     private func waitForHealth(_ url: URL, process: Process) async {
-        for _ in 0..<20 {
-            if let (_, response) = try? await URLSession.shared.data(from: url.appendingPathComponent("health")), let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) { coreStatus = "online"; diagnostic = "Core is online on localhost."; return }
-            try? await Task.sleep(for: .milliseconds(250))
+        let policy = CoreHealthPolicy(); let started = Date()
+        while process.isRunning {
+            var request = URLRequest(url: url.appendingPathComponent("health")); request.timeoutInterval = 1.0
+            var healthy = false
+            if let (data, response) = try? await URLSession.shared.data(for: request), let http = response as? HTTPURLResponse, http.statusCode == 200, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["status"] as? String == "ok" { healthy = true }
+            let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+            switch policy.nextResult(processRunning: process.isRunning, elapsedMilliseconds: elapsed, probeHealthy: healthy) {
+            case .healthy: if self.process === process { coreStatus = "online"; diagnostic = "Core is online on localhost." }; return
+            case .processExited: return
+            case .timedOut: if self.process === process, process.isRunning { coreStatus = "unavailable"; diagnostic = "Core did not become healthy within the bounded startup timeout. The owned process is still running." }; return
+            case .retry: try? await Task.sleep(for: .milliseconds(policy.retryMilliseconds))
+            }
         }
-        if coreStatus == "starting" { coreStatus = "unavailable"; diagnostic = "Core did not become healthy within the bounded startup timeout."; if self.process === process { process.terminate(); self.process = nil } }
+        if self.process === process, coreStatus == "starting" { coreStatus = "unavailable"; hasOwnedProcess = false; self.process = nil; diagnostic = "Core process exited before becoming healthy." }
     }
-    func stopCore() { guard let p = process, lifecycle.canStop(ownedProcessExists: true) else { return }; p.terminate(); process = nil; coreStatus = "stopped"; diagnostic = "Owned Core process stopped." }
+    func stopCore() { guard let p = process, lifecycle.canStop(ownedProcessExists: true) else { return }; p.terminate(); process = nil; hasOwnedProcess = false; coreStatus = "stopped"; diagnostic = "Owned Core process stopped." }
     func openDashboard() { NSWorkspace.shared.open(coreURL) }
 }
 
@@ -49,7 +90,8 @@ struct ContentView: View {
     var body: some View { VStack(alignment: .leading, spacing: 16) {
         Text("Cauco Host").font(.largeTitle.bold()); Text("Native permission owner and local Core companion").foregroundStyle(.secondary)
         GroupBox("Status") { VStack(alignment: .leading, spacing: 8) { Label("Host: online", systemImage: "desktopcomputer"); Label("Core: \(model.coreStatus)", systemImage: "circle.fill"); Text("Core URL: \(model.coreURL.absoluteString)"); Text("Apple Contacts: \(model.contacts)") }.frame(maxWidth: .infinity, alignment: .leading).padding(4) }
-        HStack { Button("Request Contacts Access", action: model.requestContacts); Button(model.coreStatus == "starting" || model.coreStatus == "online" ? "Stop Core" : "Start Core", action: model.coreStatus == "starting" || model.coreStatus == "online" ? model.stopCore : model.startCore); Button("Open Core", action: model.openDashboard).disabled(model.coreStatus != "online") }
+        GroupBox("Development Core") { VStack(alignment: .leading, spacing: 8) { Text("Repository: \(model.repositoryPath)").lineLimit(1); Text(model.repositoryValidation).font(.callout).foregroundStyle(.secondary); HStack { Button("Choose Repository…", action: model.chooseRepository); Button("Clear", action: model.clearRepository).disabled(model.repositoryPath == "Not configured") } }.frame(maxWidth: .infinity, alignment: .leading).padding(4) }
+        HStack { Button("Request Contacts Access", action: model.requestContacts); Button(model.hasOwnedProcess ? "Stop Core" : "Start Core", action: model.hasOwnedProcess ? model.stopCore : model.startCore); Button("Open Core", action: model.openDashboard).disabled(model.coreStatus != "online") }
         Text(model.diagnostic).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
         Spacer(); Text("No contact records are displayed or accessed by this host.").font(.footnote).foregroundStyle(.secondary)
     }.padding(24) }

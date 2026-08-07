@@ -41,28 +41,73 @@ public struct CoreLaunchConfiguration: Equatable, Sendable {
     }
 }
 
-public enum CoreExecutableResolutionError: LocalizedError, Equatable {
-    case repositoryUnavailable
-    case missing(URL)
-    case notExecutable(URL)
+public let repositoryPathDefaultsKey = "cauco.developmentRepositoryPath"
+public let repositoryPathEnvironmentKey = "CAUCO_REPOSITORY_PATH"
+public enum RepositorySource: String, Equatable, Sendable { case configured = "Configured", environment = "Environment", developmentFallback = "Development fallback" }
+
+public enum RepositoryResolutionError: LocalizedError, Equatable {
+    case unconfigured
+    case rootRejected
+    case missingDirectory(URL)
+    case symlinkedRoot(URL)
+    case missingCoreManifest(URL)
+    case missingPython(URL)
+    case pythonNotRegular(URL)
+    case pythonNotExecutable(URL)
 
     public var errorDescription: String? {
         switch self {
-        case .repositoryUnavailable: return "Cauco repository could not be determined. Set CAUCO_REPOSITORY to the repository directory."
-        case .missing(let url): return "Python virtual environment executable is missing: \(url.path)"
-        case .notExecutable(let url): return "Python virtual environment executable is not executable: \(url.path)"
+        case .unconfigured: return "Repository path is not configured."
+        case .rootRejected: return "The filesystem root is not a valid Cauco repository."
+        case .missingDirectory(let url): return "Repository directory is missing: \(url.path)"
+        case .symlinkedRoot(let url): return "Repository path must not be a symlink: \(url.path)"
+        case .missingCoreManifest(let url): return "Cauco Core manifest is missing: \(url.path)"
+        case .missingPython(let url): return "Python virtual environment executable is missing: \(url.path)"
+        case .pythonNotRegular(let url): return "Python virtual environment executable is not a regular file: \(url.path)"
+        case .pythonNotExecutable(let url): return "Python virtual environment executable is not executable: \(url.path)"
         }
     }
 }
 
-/// Development-only deterministic resolution. It never searches PATH or accepts command text.
+public struct RepositoryConfiguration: Equatable, Sendable {
+    public let repository: URL
+    public let executable: URL
+    public let source: RepositorySource
+
+    public static func resolve(userDefaults: UserDefaults = .standard, environment: [String: String] = ProcessInfo.processInfo.environment, workingDirectory: URL? = URL(fileURLWithPath: FileManager.default.currentDirectoryPath), fileManager: FileManager = .default) throws -> RepositoryConfiguration {
+        let configured = userDefaults.string(forKey: repositoryPathDefaultsKey).flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        let candidate = configured ?? environment[repositoryPathEnvironmentKey].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        if let candidate { var value = try validate(candidate, fileManager: fileManager); value = RepositoryConfiguration(repository: value.repository, executable: value.executable, source: configured == nil ? .environment : .configured); return value }
+        if let workingDirectory, isRepositoryBuildTree(workingDirectory, fileManager: fileManager) { let value = try validate(workingDirectory, fileManager: fileManager); return RepositoryConfiguration(repository: value.repository, executable: value.executable, source: .developmentFallback) }
+        throw RepositoryResolutionError.unconfigured
+    }
+
+    public static func validate(_ candidate: URL, fileManager: FileManager = .default) throws -> RepositoryConfiguration {
+        let root = candidate.standardizedFileURL
+        guard root.path != "/" else { throw RepositoryResolutionError.rootRejected }
+        guard fileManager.fileExists(atPath: root.path), (try? root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { throw RepositoryResolutionError.missingDirectory(root) }
+        guard root == root.resolvingSymlinksInPath().standardizedFileURL else { throw RepositoryResolutionError.symlinkedRoot(root) }
+        let manifest = root.appendingPathComponent("core").appendingPathComponent("pyproject.toml")
+        guard fileManager.fileExists(atPath: manifest.path) else { throw RepositoryResolutionError.missingCoreManifest(manifest) }
+        let python = root.appendingPathComponent(".venv").appendingPathComponent("bin").appendingPathComponent("python")
+        guard fileManager.fileExists(atPath: python.path) else { throw RepositoryResolutionError.missingPython(python) }
+        let resolvedPython = python.resolvingSymlinksInPath().standardizedFileURL
+        guard fileManager.fileExists(atPath: resolvedPython.path) else { throw RepositoryResolutionError.missingPython(python) }
+        guard (try? resolvedPython.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { throw RepositoryResolutionError.pythonNotRegular(python) }
+        guard fileManager.isExecutableFile(atPath: resolvedPython.path) else { throw RepositoryResolutionError.pythonNotExecutable(python) }
+        return RepositoryConfiguration(repository: root, executable: resolvedPython, source: .configured)
+    }
+
+    private static func isRepositoryBuildTree(_ url: URL, fileManager: FileManager) -> Bool {
+        let root = url.standardizedFileURL
+        return root.path != "/" && fileManager.fileExists(atPath: root.appendingPathComponent("core").appendingPathComponent("pyproject.toml").path) && fileManager.fileExists(atPath: root.appendingPathComponent(".venv").appendingPathComponent("bin").appendingPathComponent("python").path)
+    }
+}
+
 public func resolveCorePython(repository: URL?, environment: [String: String] = ProcessInfo.processInfo.environment, fileManager: FileManager = .default) throws -> (repository: URL, executable: URL) {
-    let configured = environment["CAUCO_REPOSITORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
-    guard let root = configured ?? repository else { throw CoreExecutableResolutionError.repositoryUnavailable }
-    let executable = root.standardizedFileURL.appendingPathComponent(".venv/bin/python")
-    guard fileManager.fileExists(atPath: executable.path) else { throw CoreExecutableResolutionError.missing(executable) }
-    guard fileManager.isExecutableFile(atPath: executable.path) else { throw CoreExecutableResolutionError.notExecutable(executable) }
-    return (root.standardizedFileURL, executable)
+    let config = try RepositoryConfiguration.validate(repository ?? URL(fileURLWithPath: "/"), fileManager: fileManager)
+    _ = environment
+    return (config.repository, config.executable)
 }
 
 public enum CoreLifecycleState: Equatable, Sendable { case stopped, starting, online, unavailable }
@@ -80,3 +125,16 @@ public func isLocalCoreURL(_ url: URL) -> Bool {
 }
 
 public func boundedDiagnostic(_ text: String, limit: Int = 1_000) -> String { String(text.suffix(limit)) }
+
+public enum HealthProbeResult: Equatable, Sendable { case retry, healthy, processExited, timedOut }
+
+public struct CoreHealthPolicy: Sendable {
+    public let timeoutMilliseconds: Int
+    public let retryMilliseconds: Int
+    public init(timeoutMilliseconds: Int = 15_000, retryMilliseconds: Int = 350) { self.timeoutMilliseconds = timeoutMilliseconds; self.retryMilliseconds = retryMilliseconds }
+    public func nextResult(processRunning: Bool, elapsedMilliseconds: Int, probeHealthy: Bool) -> HealthProbeResult {
+        if probeHealthy { return .healthy }
+        if !processRunning { return .processExited }
+        return elapsedMilliseconds >= timeoutMilliseconds ? .timedOut : .retry
+    }
+}
