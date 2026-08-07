@@ -16,6 +16,7 @@ import CaucoHostCore
     @Published var repositoryPath = "Not configured"
     @Published var repositoryValidation = "Repository path is not configured."
     @Published private(set) var hasOwnedProcess = false
+    @Published var launchDiagnostics: CoreLaunchDiagnosticSnapshot?
     let coreURL = URL(string: "http://127.0.0.1:8765")!
     private let permission = NativeContactsPermissionGateway()
     private var process: Process?
@@ -54,14 +55,16 @@ import CaucoHostCore
             let p = Process(); p.executableURL = configuration.executable; p.arguments = configuration.arguments; p.currentDirectoryURL = resolved.repository; p.environment = ProcessInfo.processInfo.environment
             let stderr = Pipe(); let stdout = Pipe(); p.standardError = stderr; p.standardOutput = stdout
             p.terminationHandler = { [weak self, weak p] terminated in
-                let errorText = boundedDiagnostic(String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "")
+                let errorText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                let outputText = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
                 Task { @MainActor [weak self, weak p] in
                     guard let self, let p, self.process === p else { return }
+                    self.launchDiagnostics?.running = false; self.launchDiagnostics?.terminationReason = terminated.terminationReason == .exit ? "exit" : "uncaughtSignal"; self.launchDiagnostics?.terminationStatus = terminated.terminationStatus; self.launchDiagnostics?.exitedBeforeHealth = self.coreStatus != "online"; self.launchDiagnostics?.stderrTail = boundedDiagnosticTail(errorText, maxLines: 30); self.launchDiagnostics?.stdoutTail = boundedDiagnosticTail(outputText, maxLines: 10)
                     self.hasOwnedProcess = false; self.process = nil
-                    if self.coreStatus == "starting" { self.coreStatus = "unavailable"; let suffix = errorText.isEmpty ? "" : " Last diagnostic: \(errorText)"; self.diagnostic = boundedDiagnostic("Core process exited before becoming healthy (exit code \(terminated.terminationStatus)).\(suffix)") }
+                    if self.coreStatus == "starting" { self.coreStatus = "unavailable"; self.launchDiagnostics?.lifecycleState = .unavailable; self.diagnostic = "Core process exited before becoming healthy (exit code \(terminated.terminationStatus))." }
                 }
             }
-            try p.run(); process = p; hasOwnedProcess = true; coreStatus = "starting"; diagnostic = "Core starting; waiting for localhost health."; Task { await waitForHealth(configuration.url, process: p) }
+            try p.run(); process = p; hasOwnedProcess = true; coreStatus = "starting"; launchDiagnostics = CoreLaunchDiagnosticSnapshot(process: p, configuration: configuration, state: .starting); diagnostic = "Core starting; waiting for localhost health."; Task { await waitForHealth(configuration.url, process: p) }
         } catch RepositoryResolutionError.unconfigured { process = nil; coreStatus = "stopped"; diagnostic = "Select the Cauco repository before starting Core." }
         catch { process = nil; hasOwnedProcess = false; coreStatus = "unavailable"; diagnostic = boundedDiagnostic("Unable to start Core: \(error.localizedDescription)") }
     }
@@ -71,17 +74,18 @@ import CaucoHostCore
             var request = URLRequest(url: url.appendingPathComponent("health")); request.timeoutInterval = 1.0
             var healthy = false
             if let (data, response) = try? await URLSession.shared.data(for: request), let http = response as? HTTPURLResponse, http.statusCode == 200, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["status"] as? String == "ok" { healthy = true }
+            if self.process === process { launchDiagnostics?.running = process.isRunning; launchDiagnostics?.latestHealthCheck = healthy ? "HTTP 200 status=ok" : "retry: endpoint not ready" }
             let elapsed = Int(Date().timeIntervalSince(started) * 1000)
             switch policy.nextResult(processRunning: process.isRunning, elapsedMilliseconds: elapsed, probeHealthy: healthy) {
-            case .healthy: if self.process === process { coreStatus = "online"; diagnostic = "Core is online on localhost." }; return
+            case .healthy: if self.process === process { coreStatus = "online"; launchDiagnostics?.lifecycleState = .online; diagnostic = "Core is online on localhost." }; return
             case .processExited: return
-            case .timedOut: if self.process === process, process.isRunning { coreStatus = "unavailable"; diagnostic = "Core did not become healthy within the bounded startup timeout. The owned process is still running." }; return
+            case .timedOut: if self.process === process, process.isRunning { coreStatus = "unavailable"; launchDiagnostics?.lifecycleState = .unavailable; diagnostic = "Process is still running but the health endpoint never became ready." }; return
             case .retry: try? await Task.sleep(for: .milliseconds(policy.retryMilliseconds))
             }
         }
-        if self.process === process, coreStatus == "starting" { coreStatus = "unavailable"; hasOwnedProcess = false; self.process = nil; diagnostic = "Core process exited before becoming healthy." }
+        if self.process === process, coreStatus == "starting" { coreStatus = "unavailable"; launchDiagnostics?.lifecycleState = .unavailable; hasOwnedProcess = false; self.process = nil; diagnostic = "Core process exited before becoming healthy." }
     }
-    func stopCore() { guard let p = process, lifecycle.canStop(ownedProcessExists: true) else { return }; p.terminate(); process = nil; hasOwnedProcess = false; coreStatus = "stopped"; diagnostic = "Owned Core process stopped." }
+    func stopCore() { guard let p = process, lifecycle.canStop(ownedProcessExists: true) else { return }; p.terminate(); process = nil; hasOwnedProcess = false; coreStatus = "stopped"; launchDiagnostics?.lifecycleState = .stopped; diagnostic = "Owned Core process stopped." }
     func openDashboard() { NSWorkspace.shared.open(coreURL) }
 }
 
@@ -91,6 +95,7 @@ struct ContentView: View {
         Text("Cauco Host").font(.largeTitle.bold()); Text("Native permission owner and local Core companion").foregroundStyle(.secondary)
         GroupBox("Status") { VStack(alignment: .leading, spacing: 8) { Label("Host: online", systemImage: "desktopcomputer"); Label("Core: \(model.coreStatus)", systemImage: "circle.fill"); Text("Core URL: \(model.coreURL.absoluteString)"); Text("Apple Contacts: \(model.contacts)") }.frame(maxWidth: .infinity, alignment: .leading).padding(4) }
         GroupBox("Development Core") { VStack(alignment: .leading, spacing: 8) { Text("Repository: \(model.repositoryPath)").lineLimit(1); Text(model.repositoryValidation).font(.callout).foregroundStyle(.secondary); HStack { Button("Choose Repository…", action: model.chooseRepository); Button("Clear", action: model.clearRepository).disabled(model.repositoryPath == "Not configured") } }.frame(maxWidth: .infinity, alignment: .leading).padding(4) }
+        if let snapshot = model.launchDiagnostics { DisclosureGroup("Core Launch Diagnostics") { VStack(alignment: .leading, spacing: 4) { Text("PID: \(snapshot.pid) • running: \(snapshot.running ? "yes" : "no")"); Text("Executable: \(snapshot.executable.path)"); Text("Working directory: \(snapshot.workingDirectory.path)"); Text("Arguments: \(snapshot.arguments.joined(separator: " "))"); Text("Lifecycle: \(String(describing: snapshot.lifecycleState))"); Text("Health: \(snapshot.latestHealthCheck)"); if let reason = snapshot.terminationReason { Text("Termination: \(reason), status \(snapshot.terminationStatus ?? -1)") }; if !snapshot.stderrTail.isEmpty { Text("stderr tail:\n\(snapshot.stderrTail.joined(separator: "\n"))") }; if !snapshot.stdoutTail.isEmpty { Text("stdout tail:\n\(snapshot.stdoutTail.joined(separator: "\n"))") } }.font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(4) } }
         HStack { Button("Request Contacts Access", action: model.requestContacts); Button(model.hasOwnedProcess ? "Stop Core" : "Start Core", action: model.hasOwnedProcess ? model.stopCore : model.startCore); Button("Open Core", action: model.openDashboard).disabled(model.coreStatus != "online") }
         Text(model.diagnostic).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
         Spacer(); Text("No contact records are displayed or accessed by this host.").font(.footnote).foregroundStyle(.secondary)

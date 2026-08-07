@@ -95,7 +95,10 @@ public struct RepositoryConfiguration: Equatable, Sendable {
         guard fileManager.fileExists(atPath: resolvedPython.path) else { throw RepositoryResolutionError.missingPython(python) }
         guard (try? resolvedPython.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { throw RepositoryResolutionError.pythonNotRegular(python) }
         guard fileManager.isExecutableFile(atPath: resolvedPython.path) else { throw RepositoryResolutionError.pythonNotExecutable(python) }
-        return RepositoryConfiguration(repository: root, executable: resolvedPython, source: .configured)
+        // Keep the virtualenv entrypoint as the launch URL. The resolved destination is
+        // used only to validate that the entrypoint ultimately targets an executable file;
+        // launching the destination would bypass virtualenv context (and can select Homebrew).
+        return RepositoryConfiguration(repository: root, executable: python, source: .configured)
     }
 
     private static func isRepositoryBuildTree(_ url: URL, fileManager: FileManager) -> Bool {
@@ -125,6 +128,35 @@ public func isLocalCoreURL(_ url: URL) -> Bool {
 }
 
 public func boundedDiagnostic(_ text: String, limit: Int = 1_000) -> String { String(text.suffix(limit)) }
+
+public func sanitizedDiagnosticLine(_ line: String, limit: Int = 240) -> String {
+    let clean = line.unicodeScalars.map { $0.value < 0x20 || $0.value == 0x7f ? " " : String($0) }.joined()
+    return String(clean.prefix(limit))
+}
+
+public func boundedDiagnosticTail(_ text: String, maxLines: Int) -> [String] {
+    Array(text.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\n" || $0 == "\r" }).suffix(maxLines)).map { sanitizedDiagnosticLine(String($0)) }
+}
+
+public struct CoreLaunchDiagnosticSnapshot: Equatable, Sendable {
+    public let pid: Int32
+    public var running: Bool
+    public let executable: URL
+    public let workingDirectory: URL
+    public let arguments: [String]
+    public let launchedAt: Date
+    public var lifecycleState: CoreLifecycleState
+    public var terminationReason: String?
+    public var terminationStatus: Int32?
+    public var exitedBeforeHealth: Bool
+    public var stderrTail: [String]
+    public var stdoutTail: [String]
+    public var latestHealthCheck: String
+
+    public init(process: Process, configuration: CoreLaunchConfiguration, state: CoreLifecycleState, launchedAt: Date = Date()) {
+        self.pid = process.processIdentifier; self.running = process.isRunning; self.executable = configuration.executable; self.workingDirectory = process.currentDirectoryURL ?? URL(fileURLWithPath: ""); self.arguments = configuration.arguments; self.launchedAt = launchedAt; self.lifecycleState = state; self.terminationReason = nil; self.terminationStatus = nil; self.exitedBeforeHealth = false; self.stderrTail = []; self.stdoutTail = []; self.latestHealthCheck = "not started"
+    }
+}
 
 public enum HealthProbeResult: Equatable, Sendable { case retry, healthy, processExited, timedOut }
 
