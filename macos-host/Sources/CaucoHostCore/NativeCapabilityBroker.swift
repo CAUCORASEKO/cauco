@@ -41,7 +41,18 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
         return response(request, .success, try contacts.search(query: query, limit: limit), nil, definition.limitations)
       } catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
       catch { return response(request, .failed, nil, .internalFailure, definition.limitations) }
-    case .contactsGet, .contactsListLimited:
+    case .contactsGet:
+      guard case let .string(reference)? = request.arguments["contactRef"] else {
+        return response(request, .rejected, nil, .invalidArguments, definition.limitations)
+      }
+      do {
+        return response(request, .success, try contacts.get(contactReference: reference), nil, definition.limitations)
+      } catch let error as BrokerError {
+        return response(request, .rejected, nil, error, definition.limitations)
+      } catch {
+        return response(request, .failed, nil, .internalFailure, definition.limitations)
+      }
+    case .contactsListLimited:
       return response(request, .notImplemented, nil, .notImplemented, definition.limitations)
     }
   }

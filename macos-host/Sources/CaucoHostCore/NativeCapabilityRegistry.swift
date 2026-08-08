@@ -27,7 +27,7 @@ public struct NativeCapabilityRegistry: Sendable {
       .init(
         capability: .contactsGet, permissionId: "macos.contacts.read", accessMode: "read",
         exposesPersonalData: true, confirmationRequired: true,
-        implementationState: "notImplemented", limitations: ["bounded opaque reference"],
+        implementationState: "implemented", limitations: ["bounded opaque reference"],
         method: "contacts.get.v1"),
       .init(
         capability: .contactsListLimited, permissionId: "macos.contacts.read", accessMode: "read",

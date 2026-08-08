@@ -412,4 +412,5 @@ private struct InertContactsDataGateway: ContactsDataGateway {
   func search(query: String, limit: Int) throws -> [String: BrokerJSONValue] {
     ["results": .array([]), "result_count": .number(0), "truncated": .boolean(false)]
   }
+  func get(contactReference: String) throws -> [String: BrokerJSONValue] { [:] }
 }

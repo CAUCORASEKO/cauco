@@ -99,4 +99,9 @@ class AppleContactsConnector:
         )
         if record is None:
             return None
+        if isinstance(self.gateway, BrokerContactsGateway):
+            try:
+                return validate_broker_contact(record)
+            except (TypeError, ValueError):
+                return None
         return sanitize(record)

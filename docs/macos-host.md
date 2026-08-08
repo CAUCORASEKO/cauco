@@ -35,3 +35,4 @@ To revoke access, use System Settings. If a reset is necessary, execute manually
 The usage description is localized-ready in the app boundary; future localization should provide English, Spanish, Finnish, and Swedish strings. v1 does not request Accessibility, microphone, speech recognition, Full Disk Access, or any other capability, and has no voice, UI automation, background agent, arbitrary shell, or unrestricted IPC.
 
 The host implements read-only `contacts.search` only. It requires already-granted Contacts authorization and never requests permission or reads Contacts at startup.
+The host also implements `contacts.get` using a bounded ephemeral reference registry. It performs an exact identifier fetch and rejects unknown or stale references; `contacts.list_limited` remains unimplemented.

@@ -50,7 +50,8 @@ class BrokerContactsGateway:
         return response["result"]["results"]
 
     def get(self, reference, keys):
-        return None
+        response = self.client.contacts_get(reference)
+        return response["result"]
 
 
 class UnavailableContactsGateway:

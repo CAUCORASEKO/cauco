@@ -62,6 +62,22 @@ class NativeBrokerClient:
                     raise NativeBrokerUnavailable("native contacts response invalid")
         return response
 
+    def contacts_get(self, contact_reference: str) -> dict[str, Any]:
+        if not isinstance(contact_reference, str) or not re.fullmatch(r"contact_[A-Za-z0-9_-]{8,80}", contact_reference):
+            raise ValueError("Invalid contact reference")
+        request = {"protocolVersion": "native-capability-broker-v1", "requestId": "core-native-get",
+            "capability": "contacts.get", "requesterId": "core", "origin": "localCore",
+            "explicitUserRequest": True, "requestLocale": "en", "responseLocale": "en",
+            "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "arguments": {"contactRef": contact_reference}}
+        response = self.request(request)
+        if response["outcome"] != "success" or not isinstance(response.get("result"), dict):
+            raise NativeBrokerUnavailable("native contacts get rejected")
+        result = response["result"]
+        if result.get("contact_reference") != contact_reference or "identifier" in result or "native_identifier" in result:
+            raise NativeBrokerUnavailable("native contacts get response invalid")
+        return response
+
     def request(self, request: dict[str, Any]) -> dict[str, Any]:
         if not self.configured:
             raise NativeBrokerUnavailable("native broker unavailable")

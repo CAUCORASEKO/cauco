@@ -47,3 +47,4 @@ Mutation confirmations are single-use and compare the immutable preview digest p
 - Returned file content, Git output, and audit data are bounded and inserted as text, never HTML or executable Markdown. Client error and display sanitizers redact host-style absolute paths.
 
 Contacts search is an explicit, read-only native capability. Responses contain sanitized bounded fields and opaque ephemeral references; native contact identifiers are not exposed.
+`contacts.get` accepts only those opaque references during the Host lifetime. The internal mapping is bounded, in-memory-only, never logged or persisted, and unknown references fail closed.

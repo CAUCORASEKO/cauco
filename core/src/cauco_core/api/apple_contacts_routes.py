@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from cauco_core.connectors.apple_contacts.exceptions import ContactsNativeError
@@ -116,3 +116,32 @@ def search_contacts(payload: SearchRequest, request: Request) -> dict[str, Any]:
         "method": response.method,
         "limitations": list(response.limitations),
     }
+
+
+@router.get("/contacts/{contact_reference}")
+def get_contact(
+    contact_reference: str,
+    request: Request,
+    request_id: str = Query(..., min_length=1, max_length=100),
+    requester_id: str = Query(..., min_length=1, max_length=100),
+    explicit_user_request: bool = True,
+    confirmation_request_id: str | None = None,
+) -> dict[str, Any]:
+    runtime_request = ConnectorRequest(
+        request_id, "contacts.get", None, requester_id, "en", "en", "en",
+        explicit_user_request=explicit_user_request,
+        confirmation_request_id=confirmation_request_id,
+        created_at=datetime.now().astimezone(),
+    )
+    routing = request.app.state.connector_runtime.resolve(runtime_request)
+    if not routing.executable:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Contacts get is not eligible.")
+    try:
+        contact = request.app.state.apple_contacts_connector.get(
+            contact_reference, datetime.now().astimezone()
+        )
+    except NativeBrokerUnavailable as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact reference is unavailable.") from error
+    if contact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact reference is unavailable.")
+    return {"contact": _contact(contact), "method": "apple-contacts-read-v1", "limitations": list(contact.limitations)}
