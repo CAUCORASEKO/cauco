@@ -13,10 +13,12 @@ from cauco_core.connectors.apple_contacts.exceptions import (
 )
 from cauco_core.connectors.apple_contacts.models import ContactQuery, ContactSummary
 from cauco_core.connectors.apple_contacts.native import (
+    BrokerContactsGateway,
     PyObjCContactsGateway,
     UnavailableContactsGateway,
     create_default_contacts_gateway,
 )
+from cauco_core.connectors.apple_contacts.sanitizer import sanitize, validate_broker_contact
 from cauco_core.connectors.apple_contacts.permissions import CONTACTS_PERMISSION_ID
 from cauco_core.connectors.models import PermissionState
 
@@ -64,6 +66,108 @@ class FakeGateway:
 class NoAuthorizationGateway(FakeGateway):
     def authorization_state(self):
         raise AssertionError("startup must not inspect authorization")
+
+
+class FakeBroker:
+    configured = True
+
+    def __init__(self, state="granted"):
+        self.state = state
+        self.status_reads = 0
+        self.search_reads = 0
+        self.payload = {
+            "contact_reference": "contact_hostref01",
+            "display_name": "Ada Lovelace",
+            "given_name": "Ada",
+            "family_name": "Lovelace",
+            "organization": "Analytical Engines",
+            "emails": [{"label": "work", "address": "ada@example.test"}],
+            "phones": [{"label": "mobile", "number": "+1 2", "normalized_number": "+12"}],
+        }
+
+    def contacts_status(self):
+        self.status_reads += 1
+        return {"outcome": "success", "result": {"state": self.state}}
+
+    def contacts_search(self, query, limit):
+        self.search_reads += 1
+        return {"outcome": "success", "result": {"results": [self.payload], "result_count": 1, "truncated": False}}
+
+
+def test_broker_reference_survives_without_legacy_hashing():
+    broker = FakeBroker()
+    result = AppleContactsConnector(broker_client=broker).search(
+        ContactQuery(name="Ada"), datetime.now(UTC)
+    )
+    assert result.results[0].contact_reference == "contact_hostref01"
+    assert result.results[0].contact_reference != "contact_e3b0c44298fc1c149afbf4c8"
+    assert result.results[0].phones[0].normalized_number == "+12"
+
+
+@pytest.mark.parametrize("reference", [None, "", "contact_e3b0c44298fc1c149afbf4c8!", "native-id"])
+def test_broker_missing_or_malformed_reference_fails_closed(reference):
+    broker = FakeBroker()
+    if reference is None:
+        broker.payload.pop("contact_reference")
+    else:
+        broker.payload["contact_reference"] = reference
+    connector = AppleContactsConnector(broker_client=broker)
+    assert connector.search(ContactQuery(name="Ada"), datetime.now(UTC)).results == ()
+
+
+def test_broker_native_identifier_is_rejected_and_legacy_identity_stays_separate():
+    broker = FakeBroker()
+    broker.payload["identifier"] = "native-secret"
+    assert AppleContactsConnector(broker_client=broker).search(
+        ContactQuery(name="Ada"), datetime.now(UTC)
+    ).results == ()
+    assert sanitize({"identifier": "native-secret", "display_name": "Ada"}).contact_reference != "contact_e3b0c44298fc1c149afbf4c8"
+    with pytest.raises(ValueError):
+        sanitize({"display_name": "missing identity"})
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("granted", PermissionState.GRANTED),
+        ("notRequested", PermissionState.NOT_REQUESTED),
+        ("denied", PermissionState.DENIED),
+        ("restricted", PermissionState.RESTRICTED),
+        ("unavailable", PermissionState.UNAVAILABLE),
+    ],
+)
+def test_configured_broker_is_authoritative_for_permission(state, expected):
+    broker = FakeBroker(state)
+    connector = AppleContactsConnector(FakeGateway(PermissionState.DENIED), broker_client=broker)
+    assert connector.permissions()[0].state == expected
+    assert broker.status_reads == 1
+
+
+def test_malformed_broker_permission_fails_closed_without_fallback():
+    class MalformedBroker(FakeBroker):
+        def contacts_status(self):
+            self.status_reads += 1
+            return {"outcome": "success", "result": {"unexpected": True}}
+
+    broker = MalformedBroker()
+    connector = AppleContactsConnector(FakeGateway(PermissionState.GRANTED), broker_client=broker)
+    assert connector.permissions()[0].state == PermissionState.UNAVAILABLE
+
+
+def test_broker_transport_failure_fails_closed_without_pyobjc_fallback():
+    class FailedBroker(FakeBroker):
+        def contacts_status(self):
+            raise RuntimeError("transport failure")
+
+    connector = AppleContactsConnector(FakeGateway(PermissionState.GRANTED), broker_client=FailedBroker())
+    assert connector.permissions()[0].state == PermissionState.UNAVAILABLE
+
+
+def test_absent_broker_preserves_injected_gateway_and_permission_check_is_read_free():
+    gateway = FakeGateway(PermissionState.GRANTED)
+    connector = AppleContactsConnector(gateway, broker_client=None)
+    assert connector.permissions()[0].state == PermissionState.GRANTED
+    assert gateway.reads == 0
 
 
 def test_contact_models_are_immutable_and_opaque():

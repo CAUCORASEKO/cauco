@@ -45,3 +45,5 @@ Mutation confirmations are single-use and compare the immutable preview digest p
 - Every accepted execution record and step transition is audited. Denied step attempts are recorded without claiming execution.
 - The Obsidian plugin is only a control surface. It uses the configured Core URL, has no subprocess or direct host-filesystem access, never replaces stored step fields, never approves or executes automatically, and never writes execution output into settings or the vault.
 - Returned file content, Git output, and audit data are bounded and inserted as text, never HTML or executable Markdown. Client error and display sanitizers redact host-style absolute paths.
+
+Contacts search is an explicit, read-only native capability. Responses contain sanitized bounded fields and opaque ephemeral references; native contact identifiers are not exposed.

@@ -22,7 +22,7 @@ public struct NativeCapabilityRegistry: Sendable {
       .init(
         capability: .contactsSearch, permissionId: "macos.contacts.read", accessMode: "read",
         exposesPersonalData: true, confirmationRequired: true,
-        implementationState: "notImplemented", limitations: ["bounded query", "limit 1..20"],
+        implementationState: "implemented", limitations: ["name predicate only", "limit 1..20"],
         method: "contacts.search.v1"),
       .init(
         capability: .contactsGet, permissionId: "macos.contacts.read", accessMode: "read",

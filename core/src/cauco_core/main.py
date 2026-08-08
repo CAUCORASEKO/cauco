@@ -112,7 +112,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.state.connector_runtime = ConnectorRuntime(
         app.state.connector_registry, app.state.connector_policy
     )
-    app.state.apple_contacts_connector = AppleContactsConnector()
+    app.state.apple_contacts_connector = AppleContactsConnector(broker_client=app.state.native_broker_client)
     app.state.connector_registry.register(app.state.apple_contacts_connector)
     app.state.application_inventory_scanner = ApplicationScanner()
     app.state.application_inventory_service = ApplicationInventoryService(

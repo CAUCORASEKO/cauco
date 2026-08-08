@@ -2,12 +2,15 @@ import Foundation
 
 public final class NativeCapabilityBroker: @unchecked Sendable {
   private let permission: ContactsPermissionGateway
+  private let contacts: ContactsDataGateway
   public let registry: NativeCapabilityRegistry
   public init(
     permission: ContactsPermissionGateway,
+    contacts: ContactsDataGateway? = nil,
     registry: NativeCapabilityRegistry = NativeCapabilityRegistry()
   ) {
     self.permission = permission
+    self.contacts = contacts ?? NativeContactsDataGateway(permission: permission)
     self.registry = registry
   }
   public func handle(_ request: NativeCapabilityRequest) -> NativeCapabilityResponse {
@@ -22,7 +25,23 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     }
     switch request.capability {
     case .contactsStatus: return status(request, definition)
-    case .contactsSearch, .contactsGet, .contactsListLimited:
+    case .contactsSearch:
+      guard
+        case let .string(query)? = request.arguments["query"],
+        !query.isEmpty,
+        case let .number(rawLimit)? = request.arguments["limit"],
+        rawLimit.isFinite,
+        rawLimit.rounded() == rawLimit,
+        (1...20).contains(rawLimit)
+      else {
+        return response(request, .rejected, nil, .invalidArguments, definition.limitations)
+      }
+      do {
+        let limit = Swift.Int(rawLimit)
+        return response(request, .success, try contacts.search(query: query, limit: limit), nil, definition.limitations)
+      } catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
+      catch { return response(request, .failed, nil, .internalFailure, definition.limitations) }
+    case .contactsGet, .contactsListLimited:
       return response(request, .notImplemented, nil, .notImplemented, definition.limitations)
     }
   }

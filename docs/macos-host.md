@@ -33,3 +33,5 @@ Copy the app to a stable test location and launch it. Verify that startup shows 
 To revoke access, use System Settings. If a reset is necessary, execute manually and only for this identity: `tccutil reset Contacts com.cauco.host`. The host never runs this command automatically and never edits the TCC database.
 
 The usage description is localized-ready in the app boundary; future localization should provide English, Spanish, Finnish, and Swedish strings. v1 does not request Accessibility, microphone, speech recognition, Full Disk Access, or any other capability, and has no voice, UI automation, background agent, arbitrary shell, or unrestricted IPC.
+
+The host implements read-only `contacts.search` only. It requires already-granted Contacts authorization and never requests permission or reads Contacts at startup.

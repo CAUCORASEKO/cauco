@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 from datetime import datetime, timezone
 from typing import Any
 
 MAX_REQUEST = 16 * 1024
 MAX_RESPONSE = 32 * 1024
+BROKER_REF = re.compile(r"^contact_[A-Za-z0-9_-]{8,80}$")
 
 
 class NativeBrokerUnavailable(Exception):
@@ -32,6 +34,33 @@ class NativeBrokerClient:
             "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "arguments": {},
         }
         return self.request(request)
+
+    def contacts_search(self, query: str, limit: int = 20) -> dict[str, Any]:
+        if not isinstance(query, str) or not query.strip() or len(query) > 200 or not 1 <= limit <= 20:
+            raise ValueError("Invalid contacts search arguments")
+        request = {"protocolVersion": "native-capability-broker-v1", "requestId": "core-native-search",
+            "capability": "contacts.search", "requesterId": "core", "origin": "localCore",
+            "explicitUserRequest": True, "requestLocale": "en", "responseLocale": "en",
+            "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "arguments": {"query": query, "limit": limit}}
+        response = self.request(request)
+        if response["outcome"] != "success" or not isinstance(response.get("result"), dict):
+            raise NativeBrokerUnavailable("native contacts search rejected")
+        result = response["result"]
+        if not isinstance(result.get("results"), list) or not isinstance(result.get("result_count"), (int, float)) or not isinstance(result.get("truncated"), bool) or len(result["results"]) > 20:
+            raise NativeBrokerUnavailable("native contacts response invalid")
+        for item in result["results"]:
+            if not isinstance(item, dict) or any(key in item for key in ("identifier", "native_identifier")):
+                raise NativeBrokerUnavailable("native contacts response invalid")
+            if not isinstance(item.get("contact_reference"), str) or not BROKER_REF.fullmatch(item["contact_reference"]):
+                raise NativeBrokerUnavailable("native contacts response invalid")
+            for field in ("display_name", "given_name", "family_name", "organization"):
+                if not isinstance(item.get(field, ""), str) or len(item[field]) > 200:
+                    raise NativeBrokerUnavailable("native contacts response invalid")
+            for field, max_items in (("emails", 10), ("phones", 10)):
+                if not isinstance(item.get(field), list) or len(item[field]) > max_items:
+                    raise NativeBrokerUnavailable("native contacts response invalid")
+        return response
 
     def request(self, request: dict[str, Any]) -> dict[str, Any]:
         if not self.configured:

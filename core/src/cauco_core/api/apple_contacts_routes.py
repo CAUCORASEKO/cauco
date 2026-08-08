@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cauco_core.connectors.apple_contacts.exceptions import ContactsNativeError
 from cauco_core.connectors.apple_contacts.models import ContactQuery
+from cauco_core.native_broker import NativeBrokerUnavailable
 from cauco_core.connectors.models import ConnectorRequest, PermissionState
 
 router = APIRouter(prefix="/api/apple-contacts", tags=["apple-contacts"])
@@ -98,7 +99,10 @@ def search_contacts(payload: SearchRequest, request: Request) -> dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Contacts search is not eligible."
         )
-    response = request.app.state.apple_contacts_connector.search(query, datetime.now().astimezone())
+    try:
+        response = request.app.state.apple_contacts_connector.search(query, datetime.now().astimezone())
+    except NativeBrokerUnavailable as error:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Contacts search is unavailable.") from error
     return {
         "query": {
             field: getattr(response.query, field) for field in response.query.__dataclass_fields__

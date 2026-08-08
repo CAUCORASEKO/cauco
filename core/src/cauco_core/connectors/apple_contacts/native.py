@@ -10,6 +10,7 @@ from typing import Protocol
 from cauco_core.connectors.models import PermissionState
 
 from .exceptions import ContactsPermissionRequestError, ContactsPermissionTimeoutError
+from cauco_core.native_broker import NativeBrokerClient, NativeBrokerUnavailable
 
 
 class ContactsGateway(Protocol):
@@ -17,6 +18,39 @@ class ContactsGateway(Protocol):
     def request_permission(self) -> PermissionState: ...
     def search(self, query, keys: tuple[str, ...], limit: int): ...
     def get(self, reference: str, keys: tuple[str, ...]): ...
+
+class BrokerContactsGateway:
+    """Production gateway whose permission authority is the authenticated Host."""
+    def __init__(self, client: NativeBrokerClient):
+        self.client = client
+
+    def authorization_state(self) -> PermissionState:
+        try:
+            response = self.client.contacts_status()
+            result = response.get("result")
+            state = result.get("state") if isinstance(result, dict) else None
+            states = {
+                "granted": PermissionState.GRANTED,
+                "notRequested": PermissionState.NOT_REQUESTED,
+                "denied": PermissionState.DENIED,
+                "restricted": PermissionState.RESTRICTED,
+                "unavailable": PermissionState.UNAVAILABLE,
+            }
+            return states.get(state, PermissionState.UNAVAILABLE)
+        except (NativeBrokerUnavailable, AttributeError, TypeError, ValueError, RuntimeError):
+            return PermissionState.UNAVAILABLE
+
+    def request_permission(self):
+        return self.authorization_state()
+
+    def search(self, query, keys, limit):
+        response = self.client.contacts_search(
+            query.name or query.organization or query.email or query.phone, min(limit, 20)
+        )
+        return response["result"]["results"]
+
+    def get(self, reference, keys):
+        return None
 
 
 class UnavailableContactsGateway:

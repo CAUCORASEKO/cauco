@@ -233,11 +233,12 @@ final class HostCoreTests: XCTestCase {
     XCTAssertThrowsError(try JSONDecoder().decode(NativeCapabilityRequest.self, from: data))
   }
   func testBrokerRecognizesNotImplementedAndValidatesArguments() throws {
-    let broker = NativeCapabilityBroker(permission: FakePermission(.granted))
+    let broker = NativeCapabilityBroker(
+      permission: FakePermission(.granted), contacts: InertContactsDataGateway())
     let search = broker.handle(
       try request(.contactsSearch, args: ["query": .string("Ada"), "limit": .number(2)]))
-    XCTAssertEqual(search.outcome, .notImplemented)
-    XCTAssertEqual(search.error?.code, "not_implemented")
+    XCTAssertEqual(search.outcome, .success)
+    XCTAssertEqual(search.result?["result_count"], .number(0))
     XCTAssertEqual(
       broker.handle(
         try request(
@@ -341,6 +342,20 @@ final class HostCoreTests: XCTestCase {
       boundedDiagnosticTail((0..<20).map { "out\($0)" }.joined(separator: "\n"), maxLines: 10)
         .count, 10)
   }
+  func testContactLabelNormalizationRemovesAppleTokens() {
+    let gateway = NativeContactsDataGateway(permission: FakePermission(.granted))
+    XCTAssertEqual(gateway.normalizeContactLabel(CNLabelPhoneNumberMobile as NSString), "mobile")
+    XCTAssertEqual(gateway.normalizeContactLabel("*$!<Mobile>!$*" as NSString), "Mobile")
+    XCTAssertEqual(gateway.normalizeContactLabel("custom" as NSString), "custom")
+  }
+  func testContactReferencesAreStableDistinctAndNeverEmpty() {
+    let gateway = NativeContactsDataGateway(permission: FakePermission(.granted))
+    let first = try! XCTUnwrap(gateway.opaqueReference(for: "native-contact-1"))
+    XCTAssertEqual(first, gateway.opaqueReference(for: "native-contact-1"))
+    XCTAssertNotEqual(first, gateway.opaqueReference(for: "native-contact-2"))
+    XCTAssertTrue(first.hasPrefix("contact_"))
+    XCTAssertNil(gateway.opaqueReference(for: ""))
+  }
   func testLaunchSnapshotCapturesProcessConfiguration() throws {
     let root = try repository()
     let config = try RepositoryConfiguration.validate(root)
@@ -390,5 +405,11 @@ private final class FakePermission: ContactsPermissionGateway {
   func requestAccess(completion: @escaping (ContactsAuthorization) -> Void) {
     requests += 1
     completion(state)
+  }
+}
+
+private struct InertContactsDataGateway: ContactsDataGateway {
+  func search(query: String, limit: Int) throws -> [String: BrokerJSONValue] {
+    ["results": .array([]), "result_count": .number(0), "truncated": .boolean(false)]
   }
 }
