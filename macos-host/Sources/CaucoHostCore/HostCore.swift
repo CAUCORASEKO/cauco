@@ -1,4 +1,5 @@
 import Contacts
+import EventKit
 import Foundation
 
 public enum ContactsAuthorization: Equatable, Sendable {
@@ -28,6 +29,52 @@ public final class NativeContactsPermissionGateway: ContactsPermissionGateway {
     switch status {
     case .notDetermined: return .notRequested
     case .authorized: return .granted
+    case .denied: return .denied
+    case .restricted: return .restricted
+    @unknown default: return .unavailable
+    }
+  }
+}
+
+public enum CalendarAuthorization: Equatable, Sendable { case notRequested, granted, denied, restricted, unavailable }
+public protocol CalendarPermissionGateway {
+  func authorizationState() -> CalendarAuthorization
+  func requestAccess(completion: @escaping (CalendarAuthorization) -> Void)
+}
+public final class NativeCalendarPermissionGateway: CalendarPermissionGateway {
+  private let store = EKEventStore()
+  public init() {}
+  public func authorizationState() -> CalendarAuthorization {
+    if #available(macOS 14.0, *) {
+      return Self.map(EKEventStore.authorizationStatus(for: .event))
+    }
+    return Self.mapLegacy(EKEventStore.authorizationStatus(for: .event))
+  }
+  public func requestAccess(completion: @escaping (CalendarAuthorization) -> Void) {
+    let finish: () -> Void = { DispatchQueue.main.async { completion(self.authorizationState()) } }
+    if #available(macOS 14.0, *) {
+      store.requestFullAccessToEvents { _, _ in finish() }
+    } else {
+      store.requestAccess(to: .event) { _, _ in finish() }
+    }
+  }
+  @available(macOS 14.0, *)
+  public static func map(_ status: EKAuthorizationStatus) -> CalendarAuthorization {
+    switch status {
+    case .fullAccess: return .granted
+    case .writeOnly: return .unavailable
+    case .notDetermined: return .notRequested
+    case .denied: return .denied
+    case .restricted: return .restricted
+    @unknown default: return .unavailable
+    }
+  }
+  public static func mapLegacy(_ status: EKAuthorizationStatus) -> CalendarAuthorization {
+    switch status {
+    case .fullAccess: return .granted
+    case .writeOnly: return .unavailable
+    case .authorized: return .granted
+    case .notDetermined: return .notRequested
     case .denied: return .denied
     case .restricted: return .restricted
     @unknown default: return .unavailable

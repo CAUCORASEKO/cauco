@@ -3,14 +3,17 @@ import Foundation
 public final class NativeCapabilityBroker: @unchecked Sendable {
   private let permission: ContactsPermissionGateway
   private let contacts: ContactsDataGateway
+  private let calendarPermission: CalendarPermissionGateway
   public let registry: NativeCapabilityRegistry
   public init(
     permission: ContactsPermissionGateway,
+    calendarPermission: CalendarPermissionGateway = NativeCalendarPermissionGateway(),
     contacts: ContactsDataGateway? = nil,
     registry: NativeCapabilityRegistry = NativeCapabilityRegistry()
   ) {
     self.permission = permission
     self.contacts = contacts ?? NativeContactsDataGateway(permission: permission)
+    self.calendarPermission = calendarPermission
     self.registry = registry
   }
   public func handle(_ request: NativeCapabilityRequest) -> NativeCapabilityResponse {
@@ -25,6 +28,9 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     }
     switch request.capability {
     case .contactsStatus: return status(request, definition)
+    case .calendarStatus: return calendarStatus(request, definition)
+    case .calendarCalendarsList, .calendarEventsRange, .calendarEventsGet:
+      return response(request, .notImplemented, nil, .notImplemented, definition.limitations)
     case .contactsSearch:
       guard
         case let .string(query)? = request.arguments["query"],
@@ -101,7 +107,7 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     _ args: [String: BrokerJSONValue], for capability: NativeCapability
   ) throws {
     switch capability {
-    case .contactsStatus: guard args.isEmpty else { throw BrokerError.invalidArguments }
+    case .contactsStatus, .calendarStatus: guard args.isEmpty else { throw BrokerError.invalidArguments }
     case .contactsSearch:
       guard Set(args.keys) == Set(["query", "limit"]), caseString(args["query"])?.isEmpty == false,
         caseInt(args["limit"]) != nil
@@ -113,7 +119,23 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       guard Set(args.keys) == Set(["limit"]), caseInt(args["limit"]) != nil else {
         throw BrokerError.invalidArguments
       }
+    case .calendarCalendarsList, .calendarEventsRange, .calendarEventsGet:
+      // These capabilities have no implemented argument contract yet. Reject
+      // all arguments deterministically until their read shapes are defined.
+      guard args.isEmpty else { throw BrokerError.invalidArguments }
     }
+  }
+  private func calendarStatus(_ request: NativeCapabilityRequest, _ definition: NativeCapabilityDefinition) -> NativeCapabilityResponse {
+    let state: (String, Bool) = {
+      switch calendarPermission.authorizationState() {
+      case .notRequested: return ("notRequested", false)
+      case .granted: return ("granted", true)
+      case .denied: return ("denied", false)
+      case .restricted: return ("restricted", false)
+      case .unavailable: return ("unavailable", false)
+      }
+    }()
+    return response(request, .success, ["permissionId": .string(definition.permissionId), "state": .string(state.0), "available": .boolean(state.1)], nil, definition.limitations)
   }
   private func caseString(_ value: BrokerJSONValue?) -> String? {
     if case .string(let value) = value { return value.count <= 256 ? value : nil }

@@ -1,5 +1,6 @@
 import Contacts
 import Darwin
+import EventKit
 import XCTest
 
 @testable import CaucoHostCore
@@ -34,6 +35,24 @@ final class HostCoreTests: XCTestCase {
     XCTAssertEqual(NativeContactsPermissionGateway.map(.notDetermined), .notRequested)
     XCTAssertEqual(NativeContactsPermissionGateway.map(.denied), .denied)
     XCTAssertEqual(NativeContactsPermissionGateway.map(.restricted), .restricted)
+  }
+  func testCalendarAuthorizationMappingIsReadSafe() {
+    if #available(macOS 14.0, *) {
+      XCTAssertEqual(NativeCalendarPermissionGateway.map(.fullAccess), .granted)
+      XCTAssertEqual(NativeCalendarPermissionGateway.map(.writeOnly), .unavailable)
+      XCTAssertNotEqual(NativeCalendarPermissionGateway.map(.writeOnly), .granted)
+      XCTAssertEqual(NativeCalendarPermissionGateway.map(.notDetermined), .notRequested)
+    }
+    XCTAssertEqual(NativeCalendarPermissionGateway.mapLegacy(.authorized), .granted)
+  }
+  func testCalendarPermissionRequestIsExplicitAndDoesNotReadData() {
+    let fake = FakeCalendarPermission(.notRequested)
+    XCTAssertEqual(fake.authorizationState(), .notRequested)
+    XCTAssertEqual(fake.requests, 0)
+    XCTAssertEqual(fake.dataReads, 0)
+    fake.requestAccess { state in XCTAssertEqual(state, .granted) }
+    XCTAssertEqual(fake.requests, 1)
+    XCTAssertEqual(fake.dataReads, 0)
   }
   func testNoConfiguredRepository() {
     let d = UserDefaults(suiteName: UUID().uuidString)!
@@ -416,6 +435,18 @@ private final class FakePermission: ContactsPermissionGateway {
   func requestAccess(completion: @escaping (ContactsAuthorization) -> Void) {
     requests += 1
     completion(state)
+  }
+}
+
+private final class FakeCalendarPermission: CalendarPermissionGateway {
+  let state: CalendarAuthorization
+  var requests = 0
+  var dataReads = 0
+  init(_ state: CalendarAuthorization) { self.state = state }
+  func authorizationState() -> CalendarAuthorization { state }
+  func requestAccess(completion: @escaping (CalendarAuthorization) -> Void) {
+    requests += 1
+    completion(.granted)
   }
 }
 

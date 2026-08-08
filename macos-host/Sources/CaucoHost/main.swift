@@ -12,6 +12,7 @@ import SwiftUI
 @MainActor final class HostModel: ObservableObject {
   @Published var coreStatus = "stopped"
   @Published var contacts = "not requested"
+  @Published var calendar = "not requested"
   @Published var diagnostic = "Ready. No private data has been accessed."
   @Published var repositoryPath = "Not configured"
   @Published var repositoryValidation = "Repository path is not configured."
@@ -19,12 +20,14 @@ import SwiftUI
   @Published var launchDiagnostics: CoreLaunchDiagnosticSnapshot?
   let coreURL = URL(string: "http://127.0.0.1:8765")!
   private let permission = NativeContactsPermissionGateway()
+  private let calendarPermission = NativeCalendarPermissionGateway()
   private var process: Process?
   private var brokerServer: NativeBrokerTransportServer?
   private let lifecycle = CoreLifecycleRules()
 
   init() {
     refreshContacts()
+    refreshCalendar()
     refreshRepository()
   }
   deinit { brokerServer?.stop() }
@@ -34,6 +37,14 @@ import SwiftUI
     permission.requestAccess { [weak self] state in
       self?.contacts = String(describing: state)
       self?.diagnostic = "Contacts state updated; no contacts were read."
+    }
+  }
+  func refreshCalendar() { calendar = String(describing: calendarPermission.authorizationState()) }
+  func requestCalendar() {
+    diagnostic = "Waiting for macOS Calendar decision…"
+    calendarPermission.requestAccess { [weak self] state in
+      self?.calendar = String(describing: state)
+      self?.diagnostic = "Calendar state updated; no calendars or events were read."
     }
   }
   func refreshRepository() {
@@ -229,6 +240,7 @@ struct ContentView: View {
           Label("Core: \(model.coreStatus)", systemImage: "circle.fill")
           Text("Core URL: \(model.coreURL.absoluteString)")
           Text("Apple Contacts: \(model.contacts)")
+          Text("Apple Calendar: \(model.calendar)")
         }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
       }
       GroupBox("Development Core") {
@@ -266,6 +278,7 @@ struct ContentView: View {
       }
       HStack {
         Button("Request Contacts Access", action: model.requestContacts)
+        Button("Request Calendar Access", action: model.requestCalendar)
         Button(
           model.hasOwnedProcess ? "Stop Core" : "Start Core",
           action: model.hasOwnedProcess ? model.stopCore : model.startCore)

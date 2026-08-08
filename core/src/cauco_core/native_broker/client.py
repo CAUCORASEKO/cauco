@@ -35,6 +35,23 @@ class NativeBrokerClient:
         }
         return self.request(request)
 
+    def calendar_status(self) -> dict[str, Any]:
+        request = {
+            "protocolVersion": "native-capability-broker-v1", "requestId": "core-native-calendar-status",
+            "capability": "calendar.status", "requesterId": "core", "origin": "localCore",
+            "explicitUserRequest": False, "requestLocale": "en", "responseLocale": "en",
+            "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "arguments": {},
+        }
+        response = self.request(request)
+        result = response.get("result")
+        valid_states = {"notRequested", "restricted", "denied", "granted", "unavailable"}
+        if (response.get("outcome") != "success" or not isinstance(result, dict)
+                or result.get("permissionId") != "macos.calendar.read"
+                or result.get("state") not in valid_states
+                or not isinstance(result.get("available"), bool)):
+            raise NativeBrokerUnavailable("native calendar status invalid")
+        return response
+
     def contacts_search(self, query: str, limit: int = 20) -> dict[str, Any]:
         if not isinstance(query, str) or not query.strip() or len(query) > 200 or not 1 <= limit <= 20:
             raise ValueError("Invalid contacts search arguments")

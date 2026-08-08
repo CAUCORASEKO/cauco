@@ -5,6 +5,10 @@ public enum NativeCapability: String, Codable, CaseIterable, Sendable {
   case contactsSearch = "contacts.search"
   case contactsGet = "contacts.get"
   case contactsListLimited = "contacts.list_limited"
+  case calendarStatus = "calendar.status"
+  case calendarCalendarsList = "calendar.calendars.list"
+  case calendarEventsRange = "calendar.events.range"
+  case calendarEventsGet = "calendar.events.get"
 }
 
 public enum NativeCapabilityOrigin: String, Codable, Sendable { case localCore }
