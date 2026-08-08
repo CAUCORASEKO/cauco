@@ -32,7 +32,7 @@ public struct NativeCapabilityRegistry: Sendable {
       .init(
         capability: .contactsListLimited, permissionId: "macos.contacts.read", accessMode: "read",
         exposesPersonalData: true, confirmationRequired: true,
-        implementationState: "notImplemented", limitations: ["limit 1..20"],
+        implementationState: "implemented", limitations: ["bounded enumeration", "limit 1..20"],
         method: "contacts.list_limited.v1"),
     ]
   }

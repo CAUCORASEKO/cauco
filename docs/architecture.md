@@ -103,3 +103,4 @@ Native Capability Broker v1 is a typed, fail-closed contract in `CaucoHostCore`,
 
 Apple Contacts search is broker-backed when configured: Core → authenticated Unix socket → Swift `CNContactStore`. It is bounded to 20 results and performs no startup reads.
 Apple Contacts get uses the same broker and resolves only Host-issued opaque references through a bounded in-memory registry; native identifiers never cross IPC and the mapping ends with the Host lifetime.
+Apple Contacts list-limited uses bounded native enumeration (maximum 20), registers the same opaque references, and performs no persistence or permission request.

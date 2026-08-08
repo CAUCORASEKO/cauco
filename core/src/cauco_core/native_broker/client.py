@@ -78,6 +78,28 @@ class NativeBrokerClient:
             raise NativeBrokerUnavailable("native contacts get response invalid")
         return response
 
+    def contacts_list_limited(self, limit: int = 20) -> dict[str, Any]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 20:
+            raise ValueError("Invalid contacts list limit")
+        request = {"protocolVersion": "native-capability-broker-v1", "requestId": "core-native-list",
+            "capability": "contacts.list_limited", "requesterId": "core", "origin": "localCore",
+            "explicitUserRequest": True, "requestLocale": "en", "responseLocale": "en",
+            "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "arguments": {"limit": limit}}
+        response = self.request(request)
+        result = response.get("result")
+        if response["outcome"] != "success" or not isinstance(result, dict):
+            raise NativeBrokerUnavailable("native contacts list rejected")
+        results = result.get("results")
+        if not isinstance(results, list) or len(results) > 20 or result.get("result_count") != len(results) or not isinstance(result.get("truncated"), bool):
+            raise NativeBrokerUnavailable("native contacts list response invalid")
+        for item in results:
+            if not isinstance(item, dict) or "identifier" in item or "native_identifier" in item:
+                raise NativeBrokerUnavailable("native contacts list response invalid")
+            if not isinstance(item.get("contact_reference"), str) or not BROKER_REF.fullmatch(item["contact_reference"]):
+                raise NativeBrokerUnavailable("native contacts list response invalid")
+        return response
+
     def request(self, request: dict[str, Any]) -> dict[str, Any]:
         if not self.configured:
             raise NativeBrokerUnavailable("native broker unavailable")

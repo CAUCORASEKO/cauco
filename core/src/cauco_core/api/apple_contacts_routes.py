@@ -118,6 +118,28 @@ def search_contacts(payload: SearchRequest, request: Request) -> dict[str, Any]:
     }
 
 
+@router.get("/contacts")
+def list_contacts(
+    request: Request,
+    limit: int = Query(20, ge=1, le=20),
+    request_id: str = Query(..., min_length=1, max_length=100),
+    requester_id: str = Query(..., min_length=1, max_length=100),
+    explicit_user_request: bool = True,
+) -> dict[str, Any]:
+    runtime_request = ConnectorRequest(
+        request_id, "contacts.list_limited", None, requester_id, "en", "en", "en",
+        explicit_user_request=explicit_user_request, created_at=datetime.now().astimezone(),
+    )
+    if not request.app.state.connector_runtime.resolve(runtime_request).executable:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Contacts list is not eligible.")
+    try:
+        results = request.app.state.apple_contacts_connector.list_limited(limit)
+    except NativeBrokerUnavailable as error:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Contacts list is unavailable.") from error
+    return {"results": [_contact(item) for item in results], "result_count": len(results),
+            "truncated": len(results) == limit, "method": "contacts.list_limited.v1"}
+
+
 @router.get("/contacts/{contact_reference}")
 def get_contact(
     contact_reference: str,

@@ -48,3 +48,4 @@ Mutation confirmations are single-use and compare the immutable preview digest p
 
 Contacts search is an explicit, read-only native capability. Responses contain sanitized bounded fields and opaque ephemeral references; native contact identifiers are not exposed.
 `contacts.get` accepts only those opaque references during the Host lifetime. The internal mapping is bounded, in-memory-only, never logged or persisted, and unknown references fail closed.
+`contacts.list_limited` is explicit and bounded to 20; it does not load the complete address book, expose native identifiers, or request permission automatically.

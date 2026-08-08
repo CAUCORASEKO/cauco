@@ -5,6 +5,7 @@ import Foundation
 public protocol ContactsDataGateway: Sendable {
   func search(query: String, limit: Int) throws -> [String: BrokerJSONValue]
   func get(contactReference: String) throws -> [String: BrokerJSONValue]
+  func listLimited(limit: Int) throws -> [String: BrokerJSONValue]
 }
 
 public final class ContactsReferenceRegistry: @unchecked Sendable {
@@ -166,6 +167,52 @@ public final class NativeContactsDataGateway: ContactsDataGateway, @unchecked Se
         "phones": .array(phones)]
     } catch let error as BrokerError { throw error }
     catch { throw BrokerError.contactReferenceUnknown }
+  }
+
+  public func listLimited(limit: Int) throws -> [String: BrokerJSONValue] {
+    guard (1...20).contains(limit) else { throw BrokerError.invalidArguments }
+    try requireGranted()
+    let keys: [CNKeyDescriptor] = [CNContactIdentifierKey as CNKeyDescriptor,
+      CNContactGivenNameKey as CNKeyDescriptor, CNContactFamilyNameKey as CNKeyDescriptor,
+      CNContactOrganizationNameKey as CNKeyDescriptor,
+      CNContactEmailAddressesKey as CNKeyDescriptor, CNContactPhoneNumbersKey as CNKeyDescriptor]
+    let request = CNContactFetchRequest(keysToFetch: keys)
+    var contacts: [CNContact] = []
+    try store.enumerateContacts(with: request) { contact, stop in
+      guard !contact.identifier.isEmpty else { return }
+      contacts.append(contact)
+      if contacts.count >= limit { stop.pointee = true }
+    }
+    let values = contacts.compactMap { contact -> (String, BrokerJSONValue)? in
+      guard let reference = opaqueReference(for: contact.identifier) else { return nil }
+      references.register(reference: reference, identifier: contact.identifier)
+      let given = contact.givenName, family = contact.familyName, organization = contact.organizationName
+      let display = [given, family].filter { !$0.isEmpty }.joined(separator: " ")
+      let emails = contact.emailAddresses.prefix(10).map { BrokerJSONValue.object([
+        "label": sanitized(normalizeContactLabel($0.label), limit: 50), "address": sanitized(String($0.value), limit: 254)]) }
+      let phones = contact.phoneNumbers.prefix(10).map { item -> BrokerJSONValue in
+        let number = item.value.stringValue
+        return .object(["label": sanitized(normalizeContactLabel(item.label), limit: 50),
+          "number": sanitized(number, limit: 80), "normalized_number": sanitized(number.filter { $0.isNumber || $0 == "+" }, limit: 80)])
+      }
+      return (reference, .object(["contact_reference": .string(reference),
+        "display_name": sanitized(display.isEmpty ? organization : display, limit: 200),
+        "given_name": sanitized(given, limit: 200), "family_name": sanitized(family, limit: 200),
+        "organization": sanitized(organization, limit: 200), "emails": .array(emails), "phones": .array(phones)]))
+    }.sorted { $0.0 < $1.0 }
+    let results = values.map { $0.1 }
+    return ["results": .array(results), "result_count": .number(Double(results.count)),
+      "truncated": .boolean(results.count == limit)]
+  }
+
+  private func requireGranted() throws {
+    switch permission.authorizationState() {
+    case .granted: return
+    case .notRequested: throw BrokerError.permissionNotRequested
+    case .denied: throw BrokerError.permissionDenied
+    case .restricted: throw BrokerError.permissionRestricted
+    case .unavailable: throw BrokerError.capabilityUnavailable
+    }
   }
 
   func opaqueReference(for identifier: String) -> String? {

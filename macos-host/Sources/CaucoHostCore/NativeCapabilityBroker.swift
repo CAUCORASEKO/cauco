@@ -53,7 +53,18 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
         return response(request, .failed, nil, .internalFailure, definition.limitations)
       }
     case .contactsListLimited:
-      return response(request, .notImplemented, nil, .notImplemented, definition.limitations)
+      guard case let .number(rawLimit)? = request.arguments["limit"], rawLimit.isFinite,
+        rawLimit.rounded() == rawLimit, (1...20).contains(rawLimit) else {
+        return response(request, .rejected, nil, .invalidArguments, definition.limitations)
+      }
+      do {
+        return response(request, .success,
+          try contacts.listLimited(limit: Swift.Int(rawLimit)), nil, definition.limitations)
+      } catch let error as BrokerError {
+        return response(request, .rejected, nil, error, definition.limitations)
+      } catch {
+        return response(request, .failed, nil, .internalFailure, definition.limitations)
+      }
     }
   }
   private func status(_ request: NativeCapabilityRequest, _ definition: NativeCapabilityDefinition)

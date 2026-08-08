@@ -251,6 +251,17 @@ final class HostCoreTests: XCTestCase {
       broker.handle(try request(.contactsGet, args: ["contactRef": .string("")])).error?.code,
       "invalid_arguments")
   }
+  func testBrokerListLimitedIsImplementedAndBounded() throws {
+    let broker = NativeCapabilityBroker(
+      permission: FakePermission(.granted), contacts: InertContactsDataGateway())
+    let response = broker.handle(
+      try request(.contactsListLimited, args: ["limit": .number(1)]))
+    XCTAssertEqual(response.outcome, .success)
+    XCTAssertEqual(response.method, "contacts.list_limited.v1")
+    XCTAssertEqual(
+      broker.handle(try request(.contactsListLimited, args: ["limit": .number(21)])).error?.code,
+      "invalid_arguments")
+  }
   func testBrokerBoundsArgumentsAndRegistryOrder() throws {
     let registry = NativeCapabilityRegistry()
     XCTAssertEqual(registry.definitions.map(\.capability), NativeCapability.allCases)
@@ -413,4 +424,5 @@ private struct InertContactsDataGateway: ContactsDataGateway {
     ["results": .array([]), "result_count": .number(0), "truncated": .boolean(false)]
   }
   func get(contactReference: String) throws -> [String: BrokerJSONValue] { [:] }
+  func listLimited(limit: Int) throws -> [String: BrokerJSONValue] { ["results": .array([]), "result_count": .number(0), "truncated": .boolean(false)] }
 }

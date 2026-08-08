@@ -53,6 +53,9 @@ class BrokerContactsGateway:
         response = self.client.contacts_get(reference)
         return response["result"]
 
+    def list_limited(self, limit):
+        return self.client.contacts_list_limited(limit)["result"]["results"]
+
 
 class UnavailableContactsGateway:
     def authorization_state(self) -> PermissionState:

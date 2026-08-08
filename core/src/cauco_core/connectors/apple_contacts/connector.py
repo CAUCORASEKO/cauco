@@ -105,3 +105,15 @@ class AppleContactsConnector:
             except (TypeError, ValueError):
                 return None
         return sanitize(record)
+
+    def list_limited(self, limit):
+        records = self.gateway.list_limited(limit)
+        if isinstance(self.gateway, BrokerContactsGateway):
+            results = tuple(
+                converted
+                for record in records
+                for converted in self._broker_contact_or_empty(record)
+            )
+        else:
+            results = tuple(sanitize(record) for record in records)
+        return results
