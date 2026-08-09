@@ -35,7 +35,7 @@ public struct NativeCapabilityRegistry: Sendable {
         implementationState: "implemented", limitations: ["bounded enumeration", "limit 1..20"],
         method: "contacts.list_limited.v1"),
       .init(capability: .calendarStatus, permissionId: "macos.calendar.read", accessMode: "status", exposesPersonalData: false, confirmationRequired: false, implementationState: "implemented", limitations: ["authorization metadata only"], method: "calendar.status.v1"),
-      .init(capability: .calendarCalendarsList, permissionId: "macos.calendar.read", accessMode: "read", exposesPersonalData: true, confirmationRequired: true, implementationState: "notImplemented", limitations: ["calendar enumeration is not implemented"], method: "calendar.calendars.list.v1"),
+      .init(capability: .calendarCalendarsList, permissionId: "macos.calendar.read", accessMode: "read", exposesPersonalData: true, confirmationRequired: true, implementationState: "implemented", limitations: ["bounded enumeration", "limit 1..50"], method: "calendar.calendars.list.v1"),
       .init(capability: .calendarEventsRange, permissionId: "macos.calendar.read", accessMode: "read", exposesPersonalData: true, confirmationRequired: true, implementationState: "notImplemented", limitations: ["event range reads are not implemented"], method: "calendar.events.range.v1"),
       .init(capability: .calendarEventsGet, permissionId: "macos.calendar.read", accessMode: "read", exposesPersonalData: true, confirmationRequired: true, implementationState: "notImplemented", limitations: ["event reads are not implemented"], method: "calendar.events.get.v1"),
     ]

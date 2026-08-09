@@ -404,6 +404,11 @@ final class HostCoreTests: XCTestCase {
     XCTAssertEqual(snapshot.arguments, process.arguments)
     XCTAssertEqual(snapshot.lifecycleState, .starting)
   }
+
+  func testCalendarSanitizerRemovesControlsPreservesUnicodeAndBounds() {
+    XCTAssertEqual(calendarSanitized("A\u{0000}B\u{001F}C\u{007F}D\u{0085}é ☕", limit: 100), "ABCDé ☕")
+    XCTAssertEqual(calendarSanitized("abcdef", limit: 3), "abc")
+  }
 }
 
 private func connectToBroker(_ url: URL) throws -> Int32 {

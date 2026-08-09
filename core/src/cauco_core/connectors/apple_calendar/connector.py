@@ -23,3 +23,5 @@ class AppleCalendarConnector:
             required_permission_ids=(CALENDAR_PERMISSION_ID,), name_message_key=f"{item}.name",
             description_message_key=f"{item}.description") for item in self.metadata.capability_ids)
     def permissions(self): return (permission_definition(self.gateway.authorization_state()),)
+    def list_calendars(self, limit=50):
+        return self.gateway.list(limit)

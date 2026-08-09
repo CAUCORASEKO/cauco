@@ -10,6 +10,7 @@ from typing import Any
 MAX_REQUEST = 16 * 1024
 MAX_RESPONSE = 32 * 1024
 BROKER_REF = re.compile(r"^contact_[A-Za-z0-9_-]{8,80}$")
+CALENDAR_REF = re.compile(r"^calendar_[A-Za-z0-9_-]{8,80}$")
 
 
 class NativeBrokerUnavailable(Exception):
@@ -50,6 +51,27 @@ class NativeBrokerClient:
                 or result.get("state") not in valid_states
                 or not isinstance(result.get("available"), bool)):
             raise NativeBrokerUnavailable("native calendar status invalid")
+        return response
+
+    def calendar_list(self, limit: int = 50) -> dict[str, Any]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 50:
+            raise ValueError("Invalid calendar list limit")
+        request = {"protocolVersion": "native-capability-broker-v1", "requestId": "core-native-calendar-list",
+            "capability": "calendar.calendars.list", "requesterId": "core", "origin": "localCore",
+            "explicitUserRequest": True, "requestLocale": "en", "responseLocale": "en",
+            "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "arguments": {"limit": limit}}
+        response = self.request(request); result = response.get("result")
+        if response.get("outcome") != "success" or not isinstance(result, dict): raise NativeBrokerUnavailable("native calendar list rejected")
+        rows = result.get("results")
+        if not isinstance(rows, list) or len(rows) > 50 or result.get("result_count") != len(rows) or not isinstance(result.get("truncated"), bool):
+            raise NativeBrokerUnavailable("native calendar list response invalid")
+        allowed = {"calendar_reference", "title", "source_title", "type", "allows_content_modifications"}
+        for row in rows:
+            if not isinstance(row, dict) or set(row) != allowed or any(k in row for k in ("calendarIdentifier", "sourceIdentifier", "identifier", "native_identifier")):
+                raise NativeBrokerUnavailable("native calendar list response invalid")
+            if not isinstance(row["calendar_reference"], str) or not CALENDAR_REF.fullmatch(row["calendar_reference"]): raise NativeBrokerUnavailable("native calendar list response invalid")
+            if any(not isinstance(row[k], str) or len(row[k]) > 200 or any(ord(c) < 32 for c in row[k]) for k in ("title", "source_title", "type")) or not isinstance(row["allows_content_modifications"], bool):
+                raise NativeBrokerUnavailable("native calendar list response invalid")
         return response
 
     def contacts_search(self, query: str, limit: int = 20) -> dict[str, Any]:
