@@ -1,12 +1,19 @@
 from typing import Any
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 from cauco_core.connectors.models import ConnectorRequest
 from cauco_core.native_broker import NativeBrokerUnavailable
 from cauco_core.connectors.apple_calendar.native import CalendarEventNotFound
 from cauco_core.connectors.models import PermissionState
 
 router = APIRouter(prefix="/api/apple-calendar", tags=["apple-calendar"])
+class CreateEventRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=300); start: str; end: str; all_day: bool
+    calendar_reference: str | None = None; location: str | None = Field(None, max_length=300); notes: str | None = Field(None, max_length=1000)
+    request_id: str = Field(min_length=1, max_length=100); requester_id: str = Field(min_length=1, max_length=100)
+    request_locale: str = "en"; response_locale: str = "en"; interface_locale: str = "en"; explicit_user_request: bool = False; confirmation_request_id: str | None = None
 
 @router.get("/status")
 def connector_status(request: Request) -> dict[str, Any]:
@@ -45,3 +52,13 @@ def get_event(event_reference: str, request: Request, request_id: str = Query(..
     except ValueError as error: raise HTTPException(status_code=422, detail="Invalid calendar event reference.") from error
     except NativeBrokerUnavailable as error: raise HTTPException(status_code=503, detail="Calendar event is unavailable.") from error
     return {"event": {field: getattr(event, field) for field in event.__dataclass_fields__}, "method": "calendar.events.get.v1"}
+
+@router.post("/events")
+def create_event(payload: CreateEventRequest, request: Request):
+    runtime_request = ConnectorRequest(payload.request_id, "calendar.events.create", None, payload.requester_id, payload.request_locale, payload.response_locale, payload.interface_locale, explicit_user_request=payload.explicit_user_request, confirmation_request_id=payload.confirmation_request_id, created_at=datetime.now().astimezone())
+    routing = request.app.state.connector_runtime.resolve(runtime_request)
+    if not routing.executable: raise HTTPException(status_code=403, detail="Calendar event creation requires an explicit confirmed request.")
+    try: event = request.app.state.apple_calendar_connector.create_event(payload.request_id, title=payload.title, start=payload.start, end=payload.end, all_day=payload.all_day, calendar_reference=payload.calendar_reference, location=payload.location, notes=payload.notes)
+    except ValueError as error: raise HTTPException(status_code=422, detail="Invalid calendar event request.") from error
+    except NativeBrokerUnavailable as error: raise HTTPException(status_code=503, detail="Calendar event creation is unavailable.") from error
+    return {"event": {field: getattr(event, field) for field in event.__dataclass_fields__}, "method": "calendar.events.create.v1"}

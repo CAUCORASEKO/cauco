@@ -106,3 +106,5 @@ Apple Contacts get uses the same broker and resolves only Host-issued opaque ref
 Apple Contacts list-limited uses bounded native enumeration (maximum 20), registers the same opaque references, and performs no persistence or permission request.
 
 Apple Calendar read v1 is broker-backed for status, calendar listing, event ranges, and exact `calendar.events.get` lookups. Event references are Host-issued, opaque, bounded, ephemeral, and never persisted; `events.get` does not enumerate events. Calendar writes remain unavailable.
+
+Calendar event creation is the sole enabled write capability. It requires explicit runtime confirmation and is executed only by the Swift Host through EventKit; a bounded request-id guard prevents duplicate retries.

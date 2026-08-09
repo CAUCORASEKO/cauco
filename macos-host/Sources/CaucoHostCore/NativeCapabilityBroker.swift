@@ -36,6 +36,10 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       do { return response(request, .success, try calendars.eventGet(reference: request.arguments["event_reference"]!.stringValue!), nil, definition.limitations) }
       catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
       catch { return response(request, .failed, nil, .internalFailure, definition.limitations) }
+    case .calendarEventsCreate:
+      do { let a = request.arguments; return response(request, .success, try calendars.eventCreate(title: a["title"]!.stringValue!, start: a["start"]!.stringValue!, end: a["end"]!.stringValue!, allDay: a["all_day"]!.boolValue!, calendarReference: a["calendar_reference"]?.stringValue, location: a["location"]?.stringValue, notes: a["notes"]?.stringValue), nil, definition.limitations) }
+      catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
+      catch { return response(request, .failed, nil, .internalFailure, definition.limitations) }
     case .calendarCalendarsList:
       do { return response(request, .success, try calendars.list(limit: Int(request.arguments["limit"]!.numberValue!)), nil, definition.limitations) }
       catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
@@ -139,6 +143,10 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       if let reference = args["calendar_reference"], caseString(reference) == nil { throw BrokerError.invalidArguments }
     case .calendarEventsGet:
       guard Set(args.keys) == Set(["event_reference"]), caseString(args["event_reference"]) != nil, args["event_reference"]!.stringValue!.range(of: #"^event_[A-Za-z0-9_-]{8,80}$"#, options: .regularExpression) != nil else { throw BrokerError.invalidArguments }
+    case .calendarEventsCreate:
+      let allowed = Set(["title", "start", "end", "all_day", "calendar_reference", "location", "notes"])
+      guard Set(args.keys).isSubset(of: allowed), Set(["title", "start", "end", "all_day"]).isSubset(of: Set(args.keys)), caseString(args["title"])?.isEmpty == false, caseString(args["start"]) != nil, caseString(args["end"]) != nil, args["all_day"]!.boolValue != nil else { throw BrokerError.invalidArguments }
+      for key in ["location", "notes", "calendar_reference"] { if let value = args[key], caseString(value) == nil { throw BrokerError.invalidArguments } }
     }
   }
   private func calendarStatus(_ request: NativeCapabilityRequest, _ definition: NativeCapabilityDefinition) -> NativeCapabilityResponse {
@@ -167,3 +175,4 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
 
 private extension BrokerJSONValue { var numberValue: Double? { if case .number(let value) = self { return value }; return nil } }
 private extension BrokerJSONValue { var stringValue: String? { if case .string(let value) = self { return value }; return nil } }
+private extension BrokerJSONValue { var boolValue: Bool? { if case .boolean(let value) = self { return value }; return nil } }

@@ -67,6 +67,8 @@ class ConnectorPermissionPolicy:
                 "permission_pending",
                 missing_permission_ids=pending,
             )
+        if capability.mutates_external_state and not request.explicit_user_request:
+            return PolicyEvaluation(PermissionDecision.AWAITING_CONFIRMATION, "explicit_user_request_required", confirmation_required=True)
         confirmation = (
             capability.confirmation_required
             or capability.mutates_external_state

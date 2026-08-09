@@ -51,3 +51,5 @@ Contacts search is an explicit, read-only native capability. Responses contain s
 `contacts.list_limited` is explicit and bounded to 20; it does not load the complete address book, expose native identifiers, or request permission automatically.
 
 Calendar event reads are explicit and bounded. `calendar.events.get` accepts only current-Host opaque event references, uses exact EventKit lookup without full enumeration, and fails closed for stale references. References are never persisted or sent with native identifiers; Calendar writes remain disabled.
+
+Calendar creation requires an explicit user request, connector eligibility, and matching confirmation. Payloads are closed and bounded; a Core-lifetime request guard prevents duplicate creation on retry. No background or automatic Calendar writes are permitted.

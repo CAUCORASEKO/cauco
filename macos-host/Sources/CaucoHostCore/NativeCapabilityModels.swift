@@ -9,6 +9,7 @@ public enum NativeCapability: String, Codable, CaseIterable, Sendable {
   case calendarCalendarsList = "calendar.calendars.list"
   case calendarEventsRange = "calendar.events.range"
   case calendarEventsGet = "calendar.events.get"
+  case calendarEventsCreate = "calendar.events.create"
 }
 
 public enum NativeCapabilityOrigin: String, Codable, Sendable { case localCore }
@@ -180,6 +181,8 @@ public struct BrokerError: Error, Codable, Equatable, Sendable {
   public static let internalFailure = BrokerError("internal_failure")
   public static let contactReferenceUnknown = BrokerError("contact_reference_unknown")
   public static let eventReferenceUnknown = BrokerError("event_reference_unknown")
+  public static let calendarReferenceUnknown = BrokerError("calendar_reference_unknown")
+  public static let calendarNotModifiable = BrokerError("calendar_not_modifiable")
 }
 public struct NativeCapabilityResponse: Codable, Equatable, Sendable {
   public let protocolVersion: String

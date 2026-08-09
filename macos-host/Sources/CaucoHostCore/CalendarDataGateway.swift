@@ -5,6 +5,7 @@ public protocol CalendarDataGateway: Sendable {
   func list(limit: Int) throws -> [String: BrokerJSONValue]
   func eventsRange(start: String, end: String, limit: Int, calendarReference: String?) throws -> [String: BrokerJSONValue]
   func eventGet(reference: String) throws -> [String: BrokerJSONValue]
+  func eventCreate(title: String, start: String, end: String, allDay: Bool, calendarReference: String?, location: String?, notes: String?) throws -> [String: BrokerJSONValue]
 }
 
 public final class CalendarReferenceRegistry: @unchecked Sendable {
@@ -86,6 +87,19 @@ public final class NativeCalendarDataGateway: CalendarDataGateway, @unchecked Se
     let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let calendarReference = references.reference(for: calendar.calendarIdentifier)
     return ["event_reference": .string(reference), "calendar_reference": .string(calendarReference), "title": .string(calendarSanitized(event.title ?? "", limit: 300)), "start": .string(formatter.string(from: event.startDate)), "end": .string(formatter.string(from: event.endDate)), "all_day": .boolean(event.isAllDay), "location": .string(calendarSanitized(event.location ?? "", limit: 300)), "notes": .string(calendarSanitized(event.notes ?? "", limit: 1000))]
+  }
+  public func eventCreate(title: String, start: String, end: String, allDay: Bool, calendarReference: String?, location: String?, notes: String?) throws -> [String: BrokerJSONValue] {
+    guard !title.isEmpty, title.count <= 300, location?.count ?? 0 <= 300, notes?.count ?? 0 <= 1000, let startDate = calendarISO8601Date(start), let endDate = calendarISO8601Date(end), startDate < endDate else { throw BrokerError.invalidArguments }
+    switch permission.authorizationState() { case .granted: break; case .notRequested: throw BrokerError.permissionNotRequested; case .denied: throw BrokerError.permissionDenied; case .restricted: throw BrokerError.permissionRestricted; case .unavailable: throw BrokerError.capabilityUnavailable }
+    let calendar: EKCalendar?
+    if let calendarReference { guard let identifier = references.identifier(for: calendarReference) else { throw BrokerError.calendarReferenceUnknown }; calendar = store.calendar(withIdentifier: identifier) } else { calendar = store.defaultCalendarForNewEvents }
+    guard let calendar, calendar.allowsContentModifications else { throw BrokerError.calendarNotModifiable }
+    let event = EKEvent(eventStore: store); event.title = title; event.startDate = startDate; event.endDate = endDate; event.isAllDay = allDay; event.calendar = calendar; event.location = location; event.notes = notes
+    do { try store.save(event, span: .thisEvent, commit: true) } catch { throw BrokerError.internalFailure }
+    let eventReference = eventReferences.reference(for: event.eventIdentifier)
+    let calendarReference = references.reference(for: calendar.calendarIdentifier)
+    let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return ["event_reference": .string(eventReference), "calendar_reference": .string(calendarReference), "title": .string(calendarSanitized(title, limit: 300)), "start": .string(formatter.string(from: startDate)), "end": .string(formatter.string(from: endDate)), "all_day": .boolean(allDay), "location": .string(calendarSanitized(location ?? "", limit: 300)), "notes": .string(calendarSanitized(notes ?? "", limit: 1000))]
   }
 }
 

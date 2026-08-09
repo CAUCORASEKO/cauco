@@ -37,6 +37,10 @@ class BrokerCalendarGateway:
         except NativeBrokerReferenceNotFound as error: raise CalendarEventNotFound from error
         try: return CalendarEventSummary(**result)
         except (TypeError, ValueError) as error: raise NativeBrokerUnavailable("native calendar event invalid") from error
+    def event_create(self, **kwargs):
+        result = self.client.calendar_event_create(**kwargs)["result"]
+        try: return CalendarEventSummary(**result)
+        except (TypeError, ValueError) as error: raise NativeBrokerUnavailable("native calendar event invalid") from error
 
 class UnavailableCalendarGateway:
     def authorization_state(self): return PermissionState.UNAVAILABLE

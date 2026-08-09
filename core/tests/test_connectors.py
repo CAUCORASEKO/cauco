@@ -21,6 +21,7 @@ from cauco_core.connectors import (
     PermissionState,
 )
 from cauco_core.connectors.exceptions import ConnectorNotFoundError, DuplicateConnectorError
+from cauco_core.connectors.apple_calendar import AppleCalendarConnector
 
 
 class InertConnector:
@@ -153,6 +154,14 @@ def test_policy_requires_permission_and_confirmation():
         connector.metadata, delete, granted, request(capability_id="mail.delete")
     )
     assert result.reason_code == "confirmation_required"
+
+def test_apple_calendar_create_is_registered_as_confirmed_write():
+    connector = AppleCalendarConnector()
+    assert "calendar.events.create" in connector.metadata.capability_ids
+    capability = next(item for item in connector.capabilities() if item.capability_id == "calendar.events.create")
+    assert capability.access_mode == ConnectorAccessMode.WRITE
+    assert capability.mutates_external_state is True
+    assert capability.confirmation_required is True
 
 
 def test_runtime_prefers_priority_and_never_executes():
