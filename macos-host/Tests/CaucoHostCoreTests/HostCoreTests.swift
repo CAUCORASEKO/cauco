@@ -409,6 +409,22 @@ final class HostCoreTests: XCTestCase {
     XCTAssertEqual(calendarSanitized("A\u{0000}B\u{001F}C\u{007F}D\u{0085}é ☕", limit: 100), "ABCDé ☕")
     XCTAssertEqual(calendarSanitized("abcdef", limit: 3), "abc")
   }
+
+  func testCalendarISO8601DateAcceptsSupportedFormsAndRejectsInvalidForms() {
+    XCTAssertNotNil(calendarISO8601Date("2026-08-09T00:00:00+03:00"))
+    XCTAssertNotNil(calendarISO8601Date("2026-08-09T00:00:00.123+03:00"))
+    XCTAssertNotNil(calendarISO8601Date("2026-08-09T00:00:00Z"))
+    XCTAssertNil(calendarISO8601Date("2026-08-09T00:00:00"))
+    XCTAssertNil(calendarISO8601Date("not-a-date"))
+  }
+
+  func testCalendarISO8601RangeInvariants() {
+    let start = calendarISO8601Date("2026-08-09T00:00:00+03:00")!
+    XCTAssertEqual(start, calendarISO8601Date("2026-08-09T00:00:00+03:00"))
+    XCTAssertGreaterThan(start.addingTimeInterval(1), start)
+    XCTAssertLessThan(start, start.addingTimeInterval(31 * 86400))
+    XCTAssertGreaterThan(start.addingTimeInterval(31 * 86400 + 1), start)
+  }
 }
 
 private func connectToBroker(_ url: URL) throws -> Int32 {

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import socket
+from datetime import timedelta
 from datetime import datetime, timezone
 from typing import Any
 
@@ -72,6 +73,28 @@ class NativeBrokerClient:
             if not isinstance(row["calendar_reference"], str) or not CALENDAR_REF.fullmatch(row["calendar_reference"]): raise NativeBrokerUnavailable("native calendar list response invalid")
             if any(not isinstance(row[k], str) or len(row[k]) > 200 or any(ord(c) < 32 for c in row[k]) for k in ("title", "source_title", "type")) or not isinstance(row["allows_content_modifications"], bool):
                 raise NativeBrokerUnavailable("native calendar list response invalid")
+        return response
+
+    def calendar_events_range(self, start: str, end: str, limit: int = 100, calendar_reference: str | None = None) -> dict[str, Any]:
+        if not isinstance(start, str) or not isinstance(end, str) or not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100 or (calendar_reference is not None and not isinstance(calendar_reference, str)):
+            raise ValueError("Invalid calendar event range arguments")
+        try:
+            start_date = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            end_date = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        except (TypeError, ValueError) as error:
+            raise ValueError("Invalid calendar event range dates") from error
+        if start_date.tzinfo is None or end_date.tzinfo is None or start_date >= end_date or end_date - start_date > timedelta(days=31):
+            raise ValueError("Invalid calendar event range dates")
+        args = {"start": start, "end": end, "limit": limit};
+        if calendar_reference is not None: args["calendar_reference"] = calendar_reference
+        request = {"protocolVersion":"native-capability-broker-v1","requestId":"core-native-calendar-events-range","capability":"calendar.events.range","requesterId":"core","origin":"localCore","explicitUserRequest":True,"requestLocale":"en","responseLocale":"en","createdAt":datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),"arguments":args}
+        response = self.request(request); result = response.get("result")
+        if response.get("outcome") != "success" or not isinstance(result, dict) or not isinstance(result.get("results"), list) or len(result["results"]) > 100 or result.get("result_count") != len(result["results"]) or not isinstance(result.get("truncated"), bool) or not isinstance(result.get("range_start"), str) or not isinstance(result.get("range_end"), str): raise NativeBrokerUnavailable("native calendar event range invalid")
+        allowed = {"event_reference","calendar_reference","title","start","end","all_day","location","notes"}
+        for row in result["results"]:
+            if not isinstance(row, dict) or set(row) != allowed or any(k in row for k in ("eventIdentifier","event_identifier","calendarIdentifier","native_identifier")): raise NativeBrokerUnavailable("native calendar event range invalid")
+            if not re.fullmatch(r"^event_[A-Za-z0-9_-]{8,80}$", row["event_reference"]) or not re.fullmatch(r"^calendar_[A-Za-z0-9_-]{8,80}$", row["calendar_reference"]): raise NativeBrokerUnavailable("native calendar event range invalid")
+            if any(not isinstance(row[k], str) or len(row[k]) > n for k,n in (("title",300),("location",300),("notes",1000),("start",100),("end",100))) or not isinstance(row["all_day"], bool): raise NativeBrokerUnavailable("native calendar event range invalid")
         return response
 
     def contacts_search(self, query: str, limit: int = 20) -> dict[str, Any]:

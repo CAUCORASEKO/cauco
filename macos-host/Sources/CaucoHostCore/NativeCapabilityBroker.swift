@@ -32,10 +32,14 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     switch request.capability {
     case .contactsStatus: return status(request, definition)
     case .calendarStatus: return calendarStatus(request, definition)
-    case .calendarEventsRange, .calendarEventsGet:
+    case .calendarEventsGet:
       return response(request, .notImplemented, nil, .notImplemented, definition.limitations)
     case .calendarCalendarsList:
       do { return response(request, .success, try calendars.list(limit: Int(request.arguments["limit"]!.numberValue!)), nil, definition.limitations) }
+      catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
+      catch { return response(request, .failed, nil, .internalFailure, definition.limitations) }
+    case .calendarEventsRange:
+      do { let start = request.arguments["start"]!.stringValue!, end = request.arguments["end"]!.stringValue!, limit = Int(request.arguments["limit"]!.numberValue!), ref = request.arguments["calendar_reference"]?.stringValue; return response(request, .success, try calendars.eventsRange(start: start, end: end, limit: limit, calendarReference: ref), nil, definition.limitations) }
       catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
       catch { return response(request, .failed, nil, .internalFailure, definition.limitations) }
     case .contactsSearch:
@@ -128,7 +132,10 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       }
     case .calendarCalendarsList:
       guard Set(args.keys) == Set(["limit"]), caseInt(args["limit"], max: 50) != nil else { throw BrokerError.invalidArguments }
-    case .calendarEventsRange, .calendarEventsGet:
+    case .calendarEventsRange:
+      guard Set(args.keys).isSubset(of: ["start", "end", "limit", "calendar_reference"]), caseString(args["start"]) != nil, caseString(args["end"]) != nil, caseInt(args["limit"], max: 100) != nil, args.keys.contains("start"), args.keys.contains("end"), args.keys.contains("limit") else { throw BrokerError.invalidArguments }
+      if let reference = args["calendar_reference"], caseString(reference) == nil { throw BrokerError.invalidArguments }
+    case .calendarEventsGet:
       guard args.isEmpty else { throw BrokerError.invalidArguments }
     }
   }
@@ -157,3 +164,4 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
 }
 
 private extension BrokerJSONValue { var numberValue: Double? { if case .number(let value) = self { return value }; return nil } }
+private extension BrokerJSONValue { var stringValue: String? { if case .string(let value) = self { return value }; return nil } }

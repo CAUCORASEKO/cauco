@@ -25,3 +25,5 @@ class AppleCalendarConnector:
     def permissions(self): return (permission_definition(self.gateway.authorization_state()),)
     def list_calendars(self, limit=50):
         return self.gateway.list(limit)
+    def events_range(self, start, end, limit=100, calendar_reference=None):
+        return self.gateway.events_range(start, end, limit, calendar_reference)
