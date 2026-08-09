@@ -2,7 +2,7 @@ from __future__ import annotations
 import platform
 from typing import Protocol
 from cauco_core.connectors.models import PermissionState
-from cauco_core.native_broker import NativeBrokerUnavailable
+from cauco_core.native_broker import NativeBrokerUnavailable, NativeBrokerReferenceNotFound
 from .models import CalendarSummary, CalendarEventSummary
 
 class CalendarGateway(Protocol):
@@ -32,6 +32,15 @@ class BrokerCalendarGateway:
         try: result["results"] = [CalendarEventSummary(**item) for item in result["results"]]
         except (TypeError, ValueError) as error: raise NativeBrokerUnavailable("native calendar events invalid") from error
         return result
+    def event_get(self, reference):
+        try: result = self.client.calendar_event_get(reference)["result"]
+        except NativeBrokerReferenceNotFound as error: raise CalendarEventNotFound from error
+        try: return CalendarEventSummary(**result)
+        except (TypeError, ValueError) as error: raise NativeBrokerUnavailable("native calendar event invalid") from error
 
 class UnavailableCalendarGateway:
     def authorization_state(self): return PermissionState.UNAVAILABLE
+    def event_get(self, reference): raise NativeBrokerUnavailable("native calendar unavailable")
+
+class CalendarEventNotFound(Exception):
+    pass

@@ -37,3 +37,5 @@ The usage description is localized-ready in the app boundary; future localizatio
 The host implements read-only `contacts.search` only. It requires already-granted Contacts authorization and never requests permission or reads Contacts at startup.
 The host also implements `contacts.get` using a bounded ephemeral reference registry. It performs an exact identifier fetch and rejects unknown or stale references.
 The complete Apple Contacts v1 read capability set also includes `contacts.list_limited`, capped at 20 and stopped during native enumeration as soon as the bound is met.
+
+The Host implements the complete read-only Apple Calendar v1 set, including exact `calendar.events.get` lookup by an ephemeral Host-issued event reference. Native EventKit identifiers never cross the broker, and no Calendar write capability is enabled.

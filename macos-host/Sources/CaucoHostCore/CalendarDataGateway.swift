@@ -4,6 +4,7 @@ import Foundation
 public protocol CalendarDataGateway: Sendable {
   func list(limit: Int) throws -> [String: BrokerJSONValue]
   func eventsRange(start: String, end: String, limit: Int, calendarReference: String?) throws -> [String: BrokerJSONValue]
+  func eventGet(reference: String) throws -> [String: BrokerJSONValue]
 }
 
 public final class CalendarReferenceRegistry: @unchecked Sendable {
@@ -23,16 +24,17 @@ public final class CalendarReferenceRegistry: @unchecked Sendable {
 
 public final class EventReferenceRegistry: @unchecked Sendable {
   private let lock = NSLock(); private let capacity: Int
-  private var byIdentifier: [String: String] = [:]; private var order: [String] = []
+  private var byIdentifier: [String: String] = [:]; private var byReference: [String: String] = [:]; private var order: [String] = []
   public init(capacity: Int = 1000) { self.capacity = max(1, capacity) }
   public func reference(for identifier: String) -> String {
     lock.lock(); defer { lock.unlock() }
     if let value = byIdentifier[identifier] { return value }
     let value = "event_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-    byIdentifier[identifier] = value; order.append(identifier)
-    while order.count > capacity { byIdentifier.removeValue(forKey: order.removeFirst()) }
+    byIdentifier[identifier] = value; byReference[value] = identifier; order.append(identifier)
+    while order.count > capacity { let old = order.removeFirst(); if let ref = byIdentifier.removeValue(forKey: old) { byReference.removeValue(forKey: ref) } }
     return value
   }
+  public func identifier(for reference: String) -> String? { lock.lock(); defer { lock.unlock() }; return byReference[reference] }
 }
 
 public final class NativeCalendarDataGateway: CalendarDataGateway, @unchecked Sendable {
@@ -76,6 +78,14 @@ public final class NativeCalendarDataGateway: CalendarDataGateway, @unchecked Se
     }.sorted { $0.0 < $1.0 }
     let results = values.prefix(limit).map { $0.1 }
     return ["results": .array(results), "result_count": .number(Double(results.count)), "truncated": .boolean(values.count > limit), "range_start": .string(start), "range_end": .string(end)]
+  }
+  public func eventGet(reference: String) throws -> [String: BrokerJSONValue] {
+    guard let identifier = eventReferences.identifier(for: reference) else { throw BrokerError.eventReferenceUnknown }
+    switch permission.authorizationState() { case .granted: break; case .notRequested: throw BrokerError.permissionNotRequested; case .denied: throw BrokerError.permissionDenied; case .restricted: throw BrokerError.permissionRestricted; case .unavailable: throw BrokerError.capabilityUnavailable }
+    guard let event = store.event(withIdentifier: identifier), let calendar = event.calendar else { throw BrokerError.eventReferenceUnknown }
+    let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let calendarReference = references.reference(for: calendar.calendarIdentifier)
+    return ["event_reference": .string(reference), "calendar_reference": .string(calendarReference), "title": .string(calendarSanitized(event.title ?? "", limit: 300)), "start": .string(formatter.string(from: event.startDate)), "end": .string(formatter.string(from: event.endDate)), "all_day": .boolean(event.isAllDay), "location": .string(calendarSanitized(event.location ?? "", limit: 300)), "notes": .string(calendarSanitized(event.notes ?? "", limit: 1000))]
   }
 }
 

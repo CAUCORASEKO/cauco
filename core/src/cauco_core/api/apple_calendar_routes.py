@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Request
 from cauco_core.connectors.models import ConnectorRequest
 from cauco_core.native_broker import NativeBrokerUnavailable
+from cauco_core.connectors.apple_calendar.native import CalendarEventNotFound
 from cauco_core.connectors.models import PermissionState
 
 router = APIRouter(prefix="/api/apple-calendar", tags=["apple-calendar"])
@@ -34,3 +35,13 @@ def list_events(request: Request, start: str = Query(...), end: str = Query(...)
     try: result = request.app.state.apple_calendar_connector.events_range(start, end, limit, calendar_reference)
     except (NativeBrokerUnavailable, ValueError) as error: raise HTTPException(status_code=503, detail="Calendar event range is unavailable.") from error
     return {**result, "method": "calendar.events.range.v1"}
+
+@router.get("/events/{event_reference}")
+def get_event(event_reference: str, request: Request, request_id: str = Query(...), requester_id: str = Query(...), explicit_user_request: bool = True):
+    runtime_request = ConnectorRequest(request_id, "calendar.events.get", None, requester_id, "en", "en", "en", explicit_user_request=explicit_user_request, created_at=datetime.now().astimezone())
+    if not request.app.state.connector_runtime.resolve(runtime_request).executable: raise HTTPException(status_code=403, detail="Calendar event get is not eligible.")
+    try: event = request.app.state.apple_calendar_connector.get_event(event_reference)
+    except CalendarEventNotFound as error: raise HTTPException(status_code=404, detail="Calendar event is unavailable.") from error
+    except ValueError as error: raise HTTPException(status_code=422, detail="Invalid calendar event reference.") from error
+    except NativeBrokerUnavailable as error: raise HTTPException(status_code=503, detail="Calendar event is unavailable.") from error
+    return {"event": {field: getattr(event, field) for field in event.__dataclass_fields__}, "method": "calendar.events.get.v1"}

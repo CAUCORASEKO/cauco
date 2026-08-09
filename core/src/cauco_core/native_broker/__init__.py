@@ -1,3 +1,3 @@
-from .client import NativeBrokerClient, NativeBrokerUnavailable
+from .client import NativeBrokerClient, NativeBrokerUnavailable, NativeBrokerReferenceNotFound
 
-__all__ = ["NativeBrokerClient", "NativeBrokerUnavailable"]
+__all__ = ["NativeBrokerClient", "NativeBrokerUnavailable", "NativeBrokerReferenceNotFound"]

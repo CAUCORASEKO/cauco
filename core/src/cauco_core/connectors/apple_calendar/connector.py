@@ -27,3 +27,5 @@ class AppleCalendarConnector:
         return self.gateway.list(limit)
     def events_range(self, start, end, limit=100, calendar_reference=None):
         return self.gateway.events_range(start, end, limit, calendar_reference)
+    def get_event(self, reference):
+        return self.gateway.event_get(reference)

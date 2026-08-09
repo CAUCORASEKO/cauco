@@ -17,6 +17,9 @@ CALENDAR_REF = re.compile(r"^calendar_[A-Za-z0-9_-]{8,80}$")
 class NativeBrokerUnavailable(Exception):
     pass
 
+class NativeBrokerReferenceNotFound(Exception):
+    pass
+
 
 class NativeBrokerClient:
     def __init__(self, socket_path: str | None = None, token: str | None = None, timeout: float = 1.0) -> None:
@@ -95,6 +98,22 @@ class NativeBrokerClient:
             if not isinstance(row, dict) or set(row) != allowed or any(k in row for k in ("eventIdentifier","event_identifier","calendarIdentifier","native_identifier")): raise NativeBrokerUnavailable("native calendar event range invalid")
             if not re.fullmatch(r"^event_[A-Za-z0-9_-]{8,80}$", row["event_reference"]) or not re.fullmatch(r"^calendar_[A-Za-z0-9_-]{8,80}$", row["calendar_reference"]): raise NativeBrokerUnavailable("native calendar event range invalid")
             if any(not isinstance(row[k], str) or len(row[k]) > n for k,n in (("title",300),("location",300),("notes",1000),("start",100),("end",100))) or not isinstance(row["all_day"], bool): raise NativeBrokerUnavailable("native calendar event range invalid")
+        return response
+
+    def calendar_event_get(self, event_reference: str) -> dict[str, Any]:
+        if not isinstance(event_reference, str) or not re.fullmatch(r"^event_[A-Za-z0-9_-]{8,80}$", event_reference): raise ValueError("Invalid event reference")
+        request = {"protocolVersion":"native-capability-broker-v1","requestId":"core-native-calendar-event-get","capability":"calendar.events.get","requesterId":"core","origin":"localCore","explicitUserRequest":True,"requestLocale":"en","responseLocale":"en","createdAt":datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),"arguments":{"event_reference":event_reference}}
+        response = self.request(request); result = response.get("result")
+        allowed = {"event_reference","calendar_reference","title","start","end","all_day","location","notes"}
+        if response.get("outcome") != "success":
+            if isinstance(response.get("error"), dict) and response["error"].get("code") == "event_reference_unknown": raise NativeBrokerReferenceNotFound("calendar event reference not found")
+            raise NativeBrokerUnavailable("native calendar event get rejected")
+        if not isinstance(result, dict) or set(result) != allowed or result.get("event_reference") != event_reference or any(k in result for k in ("eventIdentifier","event_identifier","calendarIdentifier","native_identifier")): raise NativeBrokerUnavailable("native calendar event get invalid")
+        if not isinstance(result.get("calendar_reference"), str) or not CALENDAR_REF.fullmatch(result["calendar_reference"]): raise NativeBrokerUnavailable("native calendar event get invalid")
+        if any(not isinstance(result[k], str) or len(result[k]) > n for k,n in (("title",300),("location",300),("notes",1000),("start",100),("end",100))) or not isinstance(result.get("all_day"), bool): raise NativeBrokerUnavailable("native calendar event get invalid")
+        try: starts = datetime.fromisoformat(result["start"].replace("Z", "+00:00")); ends = datetime.fromisoformat(result["end"].replace("Z", "+00:00"))
+        except ValueError as error: raise NativeBrokerUnavailable("native calendar event get invalid") from error
+        if starts.tzinfo is None or ends.tzinfo is None or ends < starts: raise NativeBrokerUnavailable("native calendar event get invalid")
         return response
 
     def contacts_search(self, query: str, limit: int = 20) -> dict[str, Any]:

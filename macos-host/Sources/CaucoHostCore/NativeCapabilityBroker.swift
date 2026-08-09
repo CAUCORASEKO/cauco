@@ -33,7 +33,9 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     case .contactsStatus: return status(request, definition)
     case .calendarStatus: return calendarStatus(request, definition)
     case .calendarEventsGet:
-      return response(request, .notImplemented, nil, .notImplemented, definition.limitations)
+      do { return response(request, .success, try calendars.eventGet(reference: request.arguments["event_reference"]!.stringValue!), nil, definition.limitations) }
+      catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
+      catch { return response(request, .failed, nil, .internalFailure, definition.limitations) }
     case .calendarCalendarsList:
       do { return response(request, .success, try calendars.list(limit: Int(request.arguments["limit"]!.numberValue!)), nil, definition.limitations) }
       catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
@@ -136,7 +138,7 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       guard Set(args.keys).isSubset(of: ["start", "end", "limit", "calendar_reference"]), caseString(args["start"]) != nil, caseString(args["end"]) != nil, caseInt(args["limit"], max: 100) != nil, args.keys.contains("start"), args.keys.contains("end"), args.keys.contains("limit") else { throw BrokerError.invalidArguments }
       if let reference = args["calendar_reference"], caseString(reference) == nil { throw BrokerError.invalidArguments }
     case .calendarEventsGet:
-      guard args.isEmpty else { throw BrokerError.invalidArguments }
+      guard Set(args.keys) == Set(["event_reference"]), caseString(args["event_reference"]) != nil, args["event_reference"]!.stringValue!.range(of: #"^event_[A-Za-z0-9_-]{8,80}$"#, options: .regularExpression) != nil else { throw BrokerError.invalidArguments }
     }
   }
   private func calendarStatus(_ request: NativeCapabilityRequest, _ definition: NativeCapabilityDefinition) -> NativeCapabilityResponse {
