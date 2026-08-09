@@ -179,6 +179,7 @@ public struct BrokerError: Error, Codable, Equatable, Sendable {
   public static let notImplemented = BrokerError("not_implemented")
   public static let internalFailure = BrokerError("internal_failure")
   public static let contactReferenceUnknown = BrokerError("contact_reference_unknown")
+  public static let eventReferenceUnknown = BrokerError("event_reference_unknown")
 }
 public struct NativeCapabilityResponse: Codable, Equatable, Sendable {
   public let protocolVersion: String
