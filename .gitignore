@@ -34,3 +34,6 @@ htmlcov/
 
 # Cauco operational data
 data/
+
+# Local donor/reference repositories
+JARVIS-OS-V.2-main/
