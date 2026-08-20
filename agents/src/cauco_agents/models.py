@@ -116,6 +116,9 @@ class AgentContextRequest:
     max_context_items: int = DEFAULT_MAX_CONTEXT_ITEMS
     max_excerpt_chars: int = DEFAULT_MAX_EXCERPT_CHARS
     allow_execution: bool = False
+    timezone: str | None = None
+    calendar_reference: str | None = None
+    default_event_duration_minutes: int | None = None
 
     def __post_init__(self) -> None:
         normalized = AgentRequest(
@@ -127,6 +130,21 @@ class AgentContextRequest:
         object.__setattr__(self, "instruction", normalized.instruction)
         object.__setattr__(self, "intent", normalized.intent)
         object.__setattr__(self, "preferred_agent_id", normalized.preferred_agent_id)
+        if self.timezone is not None and (
+            not self.timezone.strip()
+            or len(self.timezone) > 100
+            or "\x00" in self.timezone
+        ):
+            raise ValueError("Planning timezone is invalid.")
+        if self.calendar_reference is not None:
+            _calendar_reference(self.calendar_reference)
+        if self.default_event_duration_minutes is not None and (
+            isinstance(self.default_event_duration_minutes, bool)
+            or not 1 <= self.default_event_duration_minutes <= 1440
+        ):
+            raise ValueError(
+                "Default event duration must be between 1 and 1440 minutes."
+            )
         if not 1 <= self.max_context_items <= MAX_CONTEXT_ITEMS:
             raise ValueError(
                 f"max_context_items must be between 1 and {MAX_CONTEXT_ITEMS}."
@@ -261,7 +279,9 @@ def _calendar_datetime(value: str, field_name: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as error:
-        raise ValueError(f"Calendar {field_name} must be a valid ISO-8601 timestamp.") from error
+        raise ValueError(
+            f"Calendar {field_name} must be a valid ISO-8601 timestamp."
+        ) from error
     if parsed.tzinfo is None:
         raise ValueError(f"Calendar {field_name} must include a timezone offset.")
     return parsed
@@ -284,10 +304,14 @@ class CalendarListEventsInput:
         starts = _calendar_datetime(self.start, "start")
         ends = _calendar_datetime(self.end, "end")
         if starts >= ends or ends - starts > timedelta(days=31):
-            raise ValueError("Calendar event range must be positive and at most 31 days.")
+            raise ValueError(
+                "Calendar event range must be positive and at most 31 days."
+            )
         if isinstance(self.limit, bool) or not 1 <= self.limit <= 100:
             raise ValueError("Calendar event range limit must be between 1 and 100.")
-        object.__setattr__(self, "calendar_reference", _calendar_reference(self.calendar_reference))
+        object.__setattr__(
+            self, "calendar_reference", _calendar_reference(self.calendar_reference)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,12 +326,20 @@ class CalendarCreateEventInput:
 
     def __post_init__(self) -> None:
         title = normalize_whitespace(self.title)
-        if not title or len(title) > 300 or any(ord(character) < 32 for character in title):
-            raise ValueError("Calendar event title must contain 1 to 300 safe characters.")
+        if (
+            not title
+            or len(title) > 300
+            or any(ord(character) < 32 for character in title)
+        ):
+            raise ValueError(
+                "Calendar event title must contain 1 to 300 safe characters."
+            )
         starts = _calendar_datetime(self.start, "start")
         ends = _calendar_datetime(self.end, "end")
         if starts >= ends or ends - starts > timedelta(days=31):
-            raise ValueError("Calendar event duration must be positive and at most 31 days.")
+            raise ValueError(
+                "Calendar event duration must be positive and at most 31 days."
+            )
         if not isinstance(self.all_day, bool):
             raise ValueError("Calendar all-day flag must be boolean.")
         for field_name, value, maximum in (
@@ -315,11 +347,15 @@ class CalendarCreateEventInput:
             ("notes", self.notes, 1000),
         ):
             if value is not None and (
-                len(value) > maximum or "\x00" in value or any(ord(character) < 9 for character in value)
+                len(value) > maximum
+                or "\x00" in value
+                or any(ord(character) < 9 for character in value)
             ):
                 raise ValueError(f"Calendar event {field_name} is invalid.")
         object.__setattr__(self, "title", title)
-        object.__setattr__(self, "calendar_reference", _calendar_reference(self.calendar_reference))
+        object.__setattr__(
+            self, "calendar_reference", _calendar_reference(self.calendar_reference)
+        )
 
 
 AgentOperationInput: TypeAlias = (

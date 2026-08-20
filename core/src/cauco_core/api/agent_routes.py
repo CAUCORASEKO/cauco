@@ -71,6 +71,9 @@ class AgentPlanRequest(AgentApiModel):
         le=MAX_EXCERPT_CHARS,
     )
     allow_execution: StrictBool = False
+    timezone: str | None = Field(default=None, min_length=1, max_length=100)
+    calendar_reference: str | None = Field(default=None, min_length=17, max_length=89)
+    default_event_duration_minutes: int | None = Field(default=None, ge=1, le=1440)
 
 
 class AgentPlanReviewCreateRequest(AgentPlanRequest):
@@ -578,6 +581,9 @@ def perform_plan(
             max_context_items=payload.max_context_items,
             max_excerpt_chars=payload.max_excerpt_chars,
             allow_execution=payload.allow_execution,
+            timezone=payload.timezone,
+            calendar_reference=payload.calendar_reference,
+            default_event_duration_minutes=payload.default_event_duration_minutes,
         )
         outcome = request.app.state.agent_planning_service.plan(
             context_request,
@@ -719,6 +725,9 @@ def context_request_from_payload(payload: AgentPlanRequest) -> AgentContextReque
         max_context_items=payload.max_context_items,
         max_excerpt_chars=payload.max_excerpt_chars,
         allow_execution=payload.allow_execution,
+        timezone=payload.timezone,
+        calendar_reference=payload.calendar_reference,
+        default_event_duration_minutes=payload.default_event_duration_minutes,
     )
 
 

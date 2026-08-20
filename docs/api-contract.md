@@ -110,7 +110,7 @@ The response includes the normalized request, all match reasoning, selected agen
 
 `POST /api/agents/plan` preserves Phase 5A routing and, when an agent matches, returns bounded registered-memory context plus a deterministic template plan. `POST /api/agents/{agent_id}/plan` provides explicit inspection but returns `400` if that agent does not meet the unchanged routing threshold; unknown agents return `404`.
 
-Planning requests accept `instruction`, optional `intent` and `preferred_agent_id`, `include_context` (default `true`), `max_context_items` (default 4, maximum 8), `max_excerpt_chars` (default 2,000; range 100–4,000), and non-operative `allow_execution`. No path or memory ID input is accepted. Total returned excerpt text is independently capped at 7,000 characters.
+Planning requests accept `instruction`, optional `intent` and `preferred_agent_id`, `include_context` (default `true`), `max_context_items` (default 4, maximum 8), `max_excerpt_chars` (default 2,000; range 100–4,000), and non-operative `allow_execution`. Calendar planning additionally accepts an optional IANA/UTC-offset `timezone`, opaque `calendar_reference`, and bounded `default_event_duration_minutes`. No path or memory ID input is accepted. Total returned excerpt text is independently capped at 7,000 characters.
 
 Context contains relative memory provenance, deterministic selection reasons, truncation status, limitations, and the exact excerpts used. With `include_context: false`, no memory read occurs and the plan uses the instruction only. Plan steps cite source memory IDs and always report `execution_available: false`; the overall plan always reports `execution_performed: false`. Markdown instructions remain inert data. Git plans explicitly report that repository state is unknown, while Research plans report that no external sources were accessed. Neither routing nor planning calls Ollama.
 
@@ -189,11 +189,19 @@ and preparation recipe without enabling `git.diff` or fabricating missing mutati
 Skill registration is static and process-local in v1; duplicate IDs fail closed and there is
 no dynamic loading or plugin mechanism.
 
-No Calendar skill exists in Skill Adapter v1 yet. Calendar runtime access instead begins at the
-typed ExecutionPlan boundary: `calendar.list_events` is an allowlisted read operation and
-`calendar.create_event` is a preview-first mutation. Both use `CalendarToolRuntimeAdapter`,
-which checks native permission and delegates to the Apple Calendar connector/Native Broker.
-Skills still cannot call that connector or adapter directly.
+`calendar.inspect_schedule` and `calendar.prepare_event` compile bounded Calendar planning
+recipes. CalendarAgent resolves only explicit ISO dates, `today`/`hoy`, `tomorrow`/`mañana`,
+explicit clock times, bounded durations, explicit titles, and caller-supplied timezone and
+opaque calendar references. Missing or invalid semantic inputs remain open questions. The
+creation step is omitted until timezone, date, time, duration, title, and destination calendar
+are all known; no default calendar, duration, or title is fabricated. Relative dates are
+resolved against the planning-time timezone snapshot.
+
+The resulting `calendar.list_events` read and preview-first `calendar.create_event` mutation
+remain subject to PlanValidator and every existing review/runtime boundary. At runtime both
+use `CalendarToolRuntimeAdapter`, which checks native permission and delegates to the Apple
+Calendar connector/Native Broker. Skills and CalendarAgent never call that connector or
+adapter directly.
 
 ## Tool registry inspection
 

@@ -115,10 +115,17 @@ def test_git_agent_preserves_bounded_recipe_after_skill_refactor(
 ) -> None:
     plan = GitAgent(create_default_skill_registry()).plan(git_context(instruction))
 
-    assert tuple(
-        (step.tool_reference.tool_id, step.tool_reference.operation_id, step.tool_reference.target)
-        for step in plan.steps
-    ) == expected_references
+    assert (
+        tuple(
+            (
+                step.tool_reference.tool_id,
+                step.tool_reference.operation_id,
+                step.tool_reference.target,
+            )
+            for step in plan.steps
+        )
+        == expected_references
+    )
     assert tuple(step.order for step in plan.steps) == (1, 2, 3, 4)
     assert all(step.execution_available is False for step in plan.steps)
 
@@ -148,13 +155,15 @@ def test_git_skill_preserves_typed_mutation_input_without_fabrication() -> None:
     assert missing.open_questions
 
 
-def test_default_registry_contains_no_calendar_execution_bridge() -> None:
+def test_default_registry_contains_calendar_planning_skills_only() -> None:
     registry = create_default_skill_registry()
 
     assert [item.skill_id for item in registry.list_definitions()] == [
-        "git.inspect_repository"
+        "calendar.inspect_schedule",
+        "calendar.prepare_event",
+        "git.inspect_repository",
     ]
-    assert registry.exists("calendar.create_event") is False
+    assert registry.exists("calendar.delete_event") is False
 
 
 def test_git_agent_uses_injected_skill_registry() -> None:

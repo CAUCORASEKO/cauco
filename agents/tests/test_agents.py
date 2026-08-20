@@ -12,6 +12,7 @@ from cauco_agents import (
     AgentResult,
     AgentRouter,
     BaseAgent,
+    CalendarAgent,
     GitAgent,
     OperationsAgent,
     OperationsInput,
@@ -65,8 +66,14 @@ def test_registry_order_lookup_and_immutable_metadata() -> None:
     registry.register(ResearchAgent())
     registry.register(ProjectAgent())
     registry.register(GitAgent())
+    registry.register(CalendarAgent())
 
-    assert [item.agent_id for item in registry.list_metadata()] == ["git", "project", "research"]
+    assert [item.agent_id for item in registry.list_metadata()] == [
+        "calendar",
+        "git",
+        "project",
+        "research",
+    ]
     assert registry.get("project").metadata.name == "Project Agent"
     with pytest.raises(KeyError, match="Unknown agent"):
         registry.get("missing")
@@ -80,6 +87,7 @@ def test_registry_order_lookup_and_immutable_metadata() -> None:
         (ProjectAgent(), "What should I work on next in Cauco?", "work on"),
         (GitAgent(), "Commit my latest changes.", "commit"),
         (ResearchAgent(), "Research MCP support for local assistants.", "research"),
+        (CalendarAgent(), "Crea un evento mañana.", "evento"),
     ],
 )
 def test_builtin_positive_matches(
@@ -92,7 +100,9 @@ def test_builtin_positive_matches(
 
 
 def test_unrelated_request_has_no_match() -> None:
-    routed = AgentRouter(create_default_registry()).route(AgentRequest("Tell me a joke."))
+    routed = AgentRouter(create_default_registry()).route(
+        AgentRequest("Tell me a joke.")
+    )
     assert routed.selected_agent_id is None
     assert routed.result is None
     assert all(match.score == 0 for match in routed.matches)
@@ -115,7 +125,9 @@ class StubAgent(BaseAgent):
         )
 
     def can_handle(self, request: AgentRequest) -> AgentMatch:
-        return AgentMatch(self.id, True, 50, ("same",), ("Same score.",), self.metadata.priority)
+        return AgentMatch(
+            self.id, True, 50, ("same",), ("Same score.",), self.metadata.priority
+        )
 
     def execute(self, request: AgentRequest) -> AgentResult:
         return AgentResult(
@@ -140,9 +152,7 @@ def test_router_tie_breaks_by_priority_then_agent_id() -> None:
 
 def test_preferred_agent_is_accepted_only_when_relevant() -> None:
     router = AgentRouter(create_default_registry())
-    accepted = router.route(
-        AgentRequest("Review this diff", preferred_agent_id="git")
-    )
+    accepted = router.route(AgentRequest("Review this diff", preferred_agent_id="git"))
     rejected = router.route(
         AgentRequest("Research MCP support", preferred_agent_id="git")
     )
@@ -168,7 +178,9 @@ def test_request_rejects_empty_and_normalizes_whitespace() -> None:
     assert AgentRequest("  Plan   the\nproject  ").instruction == "Plan the project"
 
 
-@pytest.mark.parametrize("agent", [ProjectAgent(), GitAgent(), ResearchAgent()])
+@pytest.mark.parametrize(
+    "agent", [ProjectAgent(), GitAgent(), ResearchAgent(), CalendarAgent()]
+)
 def test_builtin_results_are_safe(agent: BaseAgent) -> None:
     result = agent.execute(AgentRequest("Relevant request", allow_execution=True))
     assert result.status == "proposal_only"
@@ -177,7 +189,9 @@ def test_builtin_results_are_safe(agent: BaseAgent) -> None:
     assert any("ignored" in warning for warning in result.warnings)
 
 
-def test_agents_do_not_invoke_subprocess_or_network(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_agents_do_not_invoke_subprocess_or_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def unexpected_call(*args: object, **kwargs: object) -> None:
         raise AssertionError("External execution was attempted.")
 

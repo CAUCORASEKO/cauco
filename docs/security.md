@@ -53,3 +53,8 @@ Contacts search is an explicit, read-only native capability. Responses contain s
 Calendar event reads are explicit and bounded. `calendar.events.get` accepts only current-Host opaque event references, uses exact EventKit lookup without full enumeration, and fails closed for stale references. Generic `calendar.list_events` accepts only a typed approved range of at most 31 days. References never expose native identifiers.
 
 Calendar creation requires an approved typed plan step, inert preview, exact single-use confirmation, granted native permission, and the Calendar ToolRuntimeAdapter bridge. Payloads are closed and bounded; a Core-lifetime request guard prevents duplicate creation on retry. No background or automatic Calendar writes are permitted.
+
+CalendarAgent and Calendar skills are planning-only. Ambiguous creation requests do not
+produce a mutation step: timezone, date, start time, duration, exact title, and opaque target
+calendar must be resolved first. Relative dates are interpreted only against the explicitly
+snapshotted planning timezone. Skills cannot read Calendar or invoke the native connector.

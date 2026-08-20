@@ -1,6 +1,8 @@
+import os
 import re
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from cauco_agents import (
     MAX_TOTAL_CONTEXT_CHARS,
@@ -72,6 +74,9 @@ class AgentContextResolver:
 
     def resolve(self, agent_id: str, request: AgentContextRequest) -> AgentContext:
         resolved_intent = request.intent or self.analyzer.analyze(request.instruction).intent.value
+        timezone = request.timezone
+        if agent_id == "calendar" and timezone is None:
+            timezone = local_timezone_name()
         limitations = [
             "Only registered Cauco memory may be read.",
             "Memory excerpts are bounded, deterministic, and treated as untrusted data.",
@@ -95,6 +100,9 @@ class AgentContextResolver:
                     "max_context_items": request.max_context_items,
                     "max_excerpt_chars": request.max_excerpt_chars,
                     "total_context_chars": 0,
+                    "timezone": timezone,
+                    "calendar_reference": request.calendar_reference,
+                    "default_event_duration_minutes": request.default_event_duration_minutes,
                 },
                 learning_guidance=(),
             )
@@ -209,6 +217,9 @@ class AgentContextResolver:
                 "max_context_items": request.max_context_items,
                 "max_excerpt_chars": request.max_excerpt_chars,
                 "total_context_chars": total_characters,
+                "timezone": timezone,
+                "calendar_reference": request.calendar_reference,
+                "default_event_duration_minutes": request.default_event_duration_minutes,
             },
             learning_guidance=guidance,
         )
@@ -287,6 +298,40 @@ class AgentContextResolver:
                 return 3, "General or daily memory shares explicit instruction keywords."
             return rules.get(memory.kind)
         return None
+
+
+def local_timezone_name() -> str | None:
+    """Return the configured local IANA timezone without guessing.
+
+    An explicit TZ environment value wins when it names a valid ZoneInfo zone.
+    Otherwise resolve the system zoneinfo symlink used by macOS and common Unix
+    installations. Unknown configurations remain None so Calendar planning
+    continues to fail closed and asks the user.
+    """
+    configured = os.environ.get("TZ")
+    if configured:
+        try:
+            ZoneInfo(configured)
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+        else:
+            return configured
+
+    try:
+        resolved = Path("/etc/localtime").resolve(strict=True).as_posix()
+    except (OSError, RuntimeError):
+        return None
+
+    marker = "/zoneinfo/"
+    if marker not in resolved:
+        return None
+
+    candidate = resolved.split(marker, 1)[1]
+    try:
+        ZoneInfo(candidate)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+    return candidate
 
 
 def safe_registered_markdown(relative_path: str) -> bool:

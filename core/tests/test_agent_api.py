@@ -9,8 +9,13 @@ def test_agent_list_exposes_registered_metadata(client: TestClient) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["count"] == 3
-    assert [agent["id"] for agent in payload["agents"]] == ["git", "project", "research"]
+    assert payload["count"] == 4
+    assert [agent["id"] for agent in payload["agents"]] == [
+        "calendar",
+        "git",
+        "project",
+        "research",
+    ]
     assert all(agent["version"] == "1.0.0" for agent in payload["agents"])
     assert all(agent["capabilities"] for agent in payload["agents"])
 
@@ -57,7 +62,7 @@ def test_route_api_returns_explicit_no_match(client: TestClient) -> None:
     assert payload["selected_agent"] is None
     assert payload["match"] is None
     assert payload["result"] is None
-    assert len(payload["matches"]) == 3
+    assert len(payload["matches"]) == 4
 
 
 def test_route_api_normalizes_request_and_ignores_execution(client: TestClient) -> None:
@@ -106,13 +111,9 @@ def test_route_api_handles_preferred_agents(client: TestClient) -> None:
     assert unknown.status_code == 404
 
 
-def test_agent_responses_expose_no_absolute_paths(
-    client: TestClient, brain_dir: Path
-) -> None:
+def test_agent_responses_expose_no_absolute_paths(client: TestClient, brain_dir: Path) -> None:
     listed = client.get("/api/agents")
-    routed = client.post(
-        "/api/agents/route", json={"instruction": "Review repository status"}
-    )
+    routed = client.post("/api/agents/route", json={"instruction": "Review repository status"})
 
     assert str(brain_dir) not in listed.text
     assert str(brain_dir) not in routed.text
