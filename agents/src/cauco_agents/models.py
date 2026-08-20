@@ -294,6 +294,42 @@ def _calendar_reference(value: str | None) -> str | None:
 
 
 @dataclass(frozen=True, slots=True)
+class EmailDraftInput:
+    recipient: str
+    subject: str
+    body: str
+
+    def __post_init__(self) -> None:
+        recipient = self.recipient.strip()
+        subject = " ".join(self.subject.split())
+
+        if (
+            not recipient
+            or len(recipient) > 254
+            or recipient.count("@") != 1
+            or any(character.isspace() for character in recipient)
+        ):
+            raise ValueError("Email recipient must be a valid bounded address.")
+
+        local_part, domain = recipient.split("@", 1)
+        if not local_part or not domain or "." not in domain:
+            raise ValueError("Email recipient must be a valid bounded address.")
+
+        if not subject or len(subject) > 300 or "\x00" in subject:
+            raise ValueError("Email subject must contain 1 to 300 safe characters.")
+
+        if (
+            not isinstance(self.body, str)
+            or len(self.body) > 4_000
+            or "\x00" in self.body
+        ):
+            raise ValueError("Email body must contain at most 4000 safe characters.")
+
+        object.__setattr__(self, "recipient", recipient)
+        object.__setattr__(self, "subject", subject)
+
+
+@dataclass(frozen=True, slots=True)
 class CalendarListEventsInput:
     start: str
     end: str
@@ -367,6 +403,7 @@ AgentOperationInput: TypeAlias = (
     | GitPushInput
     | CalendarListEventsInput
     | CalendarCreateEventInput
+    | EmailDraftInput
 )
 
 

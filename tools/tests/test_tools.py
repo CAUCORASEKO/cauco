@@ -75,7 +75,11 @@ def test_default_registry_contracts_and_validation() -> None:
     dangerous = registry.validate("git", "reset_hard")
     missing = registry.validate("missing", "run")
     assert status.valid and status.safe and not status.confirmation_required
-    assert commit.valid and commit.confirmation_required and commit.runtime_execution_allowed
+    assert (
+        commit.valid
+        and commit.confirmation_required
+        and commit.runtime_execution_allowed
+    )
     assert push.valid and push.confirmation_required and push.runtime_execution_allowed
     assert (
         not dangerous.valid
@@ -93,6 +97,7 @@ def test_default_registry_contracts_and_validation() -> None:
     assert runtime_allowed == {
         ("calendar", "list_events"),
         ("calendar", "create_event"),
+        ("email", "draft"),
         ("filesystem", "list_directory"),
         ("filesystem", "read_file"),
         ("filesystem", "write_text_file"),
@@ -105,7 +110,13 @@ def test_default_registry_contracts_and_validation() -> None:
     }
     assert registry.validate("git", "commit").runtime_execution_allowed
     assert registry.validate("git", "push").runtime_execution_allowed
+    email_draft = registry.validate("email", "draft")
+    assert email_draft.runtime_execution_allowed
+    assert email_draft.mutation
+    assert email_draft.preview_required
+    assert email_draft.confirmation_required
     assert not registry.validate("email", "send").runtime_execution_allowed
+
     calendar_mutation = registry.validate("calendar", "create_event")
     assert calendar_mutation.runtime_execution_allowed
     assert calendar_mutation.preview_required

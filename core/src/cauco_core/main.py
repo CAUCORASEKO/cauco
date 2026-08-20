@@ -58,6 +58,7 @@ from cauco_core.config import Settings
 from cauco_core.connectors import ConnectorRegistry, ConnectorRuntime, PermissionPolicy
 from cauco_core.connectors.apple_calendar import AppleCalendarConnector, CalendarToolRuntimeAdapter
 from cauco_core.connectors.apple_contacts import AppleContactsConnector
+from cauco_core.connectors.apple_mail import EmailToolRuntimeAdapter
 from cauco_core.context.builder import ContextBuilder
 from cauco_core.execution.policy import WorkspacePolicy
 from cauco_core.execution.runtime import TaskRuntime
@@ -107,6 +108,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app = FastAPI(title="Cauco Core", version="0.1.0")
     app.state.settings = settings or Settings()
     from cauco_core.native_broker import NativeBrokerClient
+
     app.state.native_broker_client = NativeBrokerClient()
     app.state.agent_registry = create_default_registry()
     app.state.tool_registry = create_default_tool_registry()
@@ -137,6 +139,9 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.state.tool_adapter_registry = ToolAdapterRegistry()
     app.state.tool_adapter_registry.register(
         CalendarToolRuntimeAdapter(app.state.apple_calendar_connector)
+    )
+    app.state.tool_adapter_registry.register(
+        EmailToolRuntimeAdapter(app.state.native_broker_client)
     )
     app.state.workspace_policy = None
     workspace = app.state.settings.resolved_workspace_dir()

@@ -5,18 +5,22 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
   private let contacts: ContactsDataGateway
   private let calendarPermission: CalendarPermissionGateway
   private let calendars: CalendarDataGateway
+  private let mailDrafts: MailDraftGateway
   public let registry: NativeCapabilityRegistry
+
   public init(
     permission: ContactsPermissionGateway,
     calendarPermission: CalendarPermissionGateway = NativeCalendarPermissionGateway(),
     contacts: ContactsDataGateway? = nil,
     calendars: CalendarDataGateway? = nil,
+    mailDrafts: MailDraftGateway? = nil,
     registry: NativeCapabilityRegistry = NativeCapabilityRegistry()
   ) {
     self.permission = permission
     self.contacts = contacts ?? NativeContactsDataGateway(permission: permission)
     self.calendarPermission = calendarPermission
     self.calendars = calendars ?? NativeCalendarDataGateway(permission: calendarPermission)
+    self.mailDrafts = mailDrafts ?? NativeMailDraftGateway()
     self.registry = registry
   }
   public func handle(_ request: NativeCapabilityRequest) -> NativeCapabilityResponse {
@@ -40,6 +44,25 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       do { let a = request.arguments; return response(request, .success, try calendars.eventCreate(title: a["title"]!.stringValue!, start: a["start"]!.stringValue!, end: a["end"]!.stringValue!, allDay: a["all_day"]!.boolValue!, calendarReference: a["calendar_reference"]?.stringValue, location: a["location"]?.stringValue, notes: a["notes"]?.stringValue), nil, definition.limitations) }
       catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
       catch { return response(request, .failed, nil, .internalFailure, definition.limitations) }
+    case .mailDraftCreate:
+      do {
+        let arguments = request.arguments
+        return response(
+          request,
+          .success,
+          try mailDrafts.createDraft(
+            recipient: arguments["recipient"]!.stringValue!,
+            subject: arguments["subject"]!.stringValue!,
+            body: arguments["body"]!.stringValue!
+          ),
+          nil,
+          definition.limitations
+        )
+      } catch let error as BrokerError {
+        return response(request, .rejected, nil, error, definition.limitations)
+      } catch {
+        return response(request, .failed, nil, .internalFailure, definition.limitations)
+      }
     case .calendarCalendarsList:
       do { return response(request, .success, try calendars.list(limit: Int(request.arguments["limit"]!.numberValue!)), nil, definition.limitations) }
       catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
@@ -147,6 +170,16 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       let allowed = Set(["title", "start", "end", "all_day", "calendar_reference", "location", "notes"])
       guard Set(args.keys).isSubset(of: allowed), Set(["title", "start", "end", "all_day"]).isSubset(of: Set(args.keys)), caseString(args["title"])?.isEmpty == false, caseString(args["start"]) != nil, caseString(args["end"]) != nil, args["all_day"]!.boolValue != nil else { throw BrokerError.invalidArguments }
       for key in ["location", "notes", "calendar_reference"] { if let value = args[key], caseString(value) == nil { throw BrokerError.invalidArguments } }
+    case .mailDraftCreate:
+      guard Set(args.keys) == Set(["recipient", "subject", "body"]),
+        let recipient = caseString(args["recipient"]),
+        !recipient.isEmpty,
+        let subject = caseString(args["subject"]),
+        !subject.isEmpty,
+        caseBoundedString(args["body"], max: 4_000) != nil
+      else {
+        throw BrokerError.invalidArguments
+      }
     }
   }
   private func calendarStatus(_ request: NativeCapabilityRequest, _ definition: NativeCapabilityDefinition) -> NativeCapabilityResponse {
@@ -165,6 +198,16 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     if case .string(let value) = value { return value.count <= 256 ? value : nil }
     return nil
   }
+  private func caseBoundedString(
+    _ value: BrokerJSONValue?, max: Int
+  ) -> String? {
+    guard max > 0 else { return nil }
+    if case .string(let value) = value, value.count <= max {
+      return value
+    }
+    return nil
+  }
+
   private func caseInt(_ value: BrokerJSONValue?, max: Double = 20) -> Int? {
     if case .number(let value) = value, value.rounded() == value, value >= 1, value <= max {
       return Int(value)

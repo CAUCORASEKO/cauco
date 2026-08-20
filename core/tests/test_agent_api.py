@@ -9,9 +9,10 @@ def test_agent_list_exposes_registered_metadata(client: TestClient) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["count"] == 4
+    assert payload["count"] == 5
     assert [agent["id"] for agent in payload["agents"]] == [
         "calendar",
+        "email",
         "git",
         "project",
         "research",
@@ -62,7 +63,7 @@ def test_route_api_returns_explicit_no_match(client: TestClient) -> None:
     assert payload["selected_agent"] is None
     assert payload["match"] is None
     assert payload["result"] is None
-    assert len(payload["matches"]) == 4
+    assert len(payload["matches"]) == 5
 
 
 def test_route_api_normalizes_request_and_ignores_execution(client: TestClient) -> None:

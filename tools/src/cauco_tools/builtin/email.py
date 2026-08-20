@@ -9,7 +9,13 @@ EMAIL_TOOL = ToolDefinition(
     version="1.0.0",
     enabled=True,
     operations=(
-        operation("draft", "Prepare an email draft.", confirmation=True),
+        operation(
+            "draft",
+            "Prepare an email draft.",
+            confirmation=True,
+            runtime_allowed=True,
+            mutation=True,
+        ),
         operation("send", "Send an email.", confirmation=True),
     ),
     permissions=(

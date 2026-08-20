@@ -1,5 +1,11 @@
 from cauco_agents.base import Agent, AgentMetadata, BaseAgent, PlanningAgent
-from cauco_agents.builtin import CalendarAgent, GitAgent, ProjectAgent, ResearchAgent
+from cauco_agents.builtin import (
+    CalendarAgent,
+    EmailAgent,
+    GitAgent,
+    ProjectAgent,
+    ResearchAgent,
+)
 from cauco_agents.models import (
     DEFAULT_MAX_CONTEXT_ITEMS,
     DEFAULT_MAX_EXCERPT_CHARS,
@@ -16,6 +22,7 @@ from cauco_agents.models import (
     AgentToolReference,
     CalendarCreateEventInput,
     CalendarListEventsInput,
+    EmailDraftInput,
     FilesystemWriteTextInput,
     MemoryConfirmProposalInput,
     MemoryCreateProposalInput,
@@ -35,6 +42,8 @@ from cauco_agents.skills import (
     CalendarInspectScheduleSkill,
     CalendarPrepareEventInput,
     CalendarPrepareEventSkill,
+    EmailPrepareDraftInput,
+    EmailPrepareDraftSkill,
     GitInspectRepositoryInput,
     GitInspectRepositorySkill,
     SkillAdapter,
@@ -71,12 +80,16 @@ __all__ = [
     "AgentPlanStep",
     "AgentToolReference",
     "CalendarAgent",
+    "EmailAgent",
     "CalendarCreateEventInput",
     "CalendarListEventsInput",
+    "EmailDraftInput",
     "CalendarInspectScheduleInput",
     "CalendarInspectScheduleSkill",
     "CalendarPrepareEventInput",
     "CalendarPrepareEventSkill",
+    "EmailPrepareDraftInput",
+    "EmailPrepareDraftSkill",
     "FilesystemWriteTextInput",
     "GitAddInput",
     "GitCommitInput",

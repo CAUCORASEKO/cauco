@@ -4,4 +4,5 @@
 <key>CFBundleDisplayName</key><string>Cauco</string><key>CFBundleIdentifier</key><string>com.cauco.host</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string><key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string><key>NSContactsUsageDescription</key><string>Cauco uses Contacts only when you explicitly ask it to find contact information.</string><key>NSCalendarsFullAccessUsageDescription</key><string>Cauco accesses your calendars only when you explicitly ask it to read or manage calendar information.</string>
+<key>NSAppleEventsUsageDescription</key><string>Cauco uses macOS Automation only when you explicitly ask it to prepare content in applications such as Mail.</string>
 </dict></plist>

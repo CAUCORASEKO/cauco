@@ -10,6 +10,7 @@ from typing import Any
 
 from cauco_agents import (
     CalendarCreateEventInput,
+    EmailDraftInput,
     FilesystemWriteTextInput,
     GitAddInput,
     GitCommitInput,
@@ -36,6 +37,7 @@ from cauco_core.agents.review_store import (
     PlanReviewNotFoundError,
 )
 from cauco_core.connectors.apple_calendar.tool_adapter import CalendarToolRuntimeAdapter
+from cauco_core.connectors.apple_mail.tool_adapter import EmailToolRuntimeAdapter
 from cauco_core.execution.models import (
     ExecutionConflictError,
     ExecutionForbiddenError,
@@ -76,6 +78,7 @@ PHRASES = {
     ("git", "commit"): "CREATE APPROVED COMMIT",
     ("git", "push"): "PUSH APPROVED COMMIT",
     ("calendar", "create_event"): "CREATE CALENDAR EVENT",
+    ("email", "draft"): "PREPARE EMAIL DRAFT",
 }
 DIFF_LIMIT = 20_000
 
@@ -358,13 +361,38 @@ class MutationService:
         return record, review, step, plan_step
 
     def _preview_fields(self, operation_input: object, tool_id: str, operation_id: str):
+        if isinstance(operation_input, EmailDraftInput):
+            adapter = self.adapter_registry.get(tool_id, operation_id)
+            if not isinstance(adapter, EmailToolRuntimeAdapter):
+                raise MutationConflictError("Email mutation adapter is unavailable.")
+            arguments = asdict(operation_input)
+            adapter.preflight(ToolExecutionRequest(tool_id, operation_id, arguments))
+            request_id = f"email_draft_{secrets.token_hex(12)}"
+            normalized_arguments = {
+                **arguments,
+                "request_id": request_id,
+            }
+            return {
+                "target": operation_input.recipient,
+                "normalized_arguments": normalized_arguments,
+                "before_state": {"draft_created": False},
+                "proposed_after_state": {
+                    "recipient": operation_input.recipient,
+                    "subject": operation_input.subject,
+                    "body": operation_input.body,
+                    "draft_created": True,
+                    "sent": False,
+                },
+                "diff_preview": email_draft_preview(operation_input),
+            }
+
         if isinstance(operation_input, CalendarCreateEventInput):
             adapter = self.adapter_registry.get(tool_id, operation_id)
             if not isinstance(adapter, CalendarToolRuntimeAdapter):
                 raise MutationConflictError("Calendar mutation adapter is unavailable.")
             arguments = asdict(operation_input)
             adapter.preflight(ToolExecutionRequest(tool_id, operation_id, arguments))
-            request_id = f"calendar_create_{secrets.token_urlsafe(12)}"
+            request_id = f"calendar_create_{secrets.token_hex(12)}"
             normalized_arguments = {**arguments, "request_id": request_id}
             return {
                 "target": operation_input.calendar_reference,
@@ -617,6 +645,25 @@ class MutationService:
         raise MutationValidationError("The approved mutation input is missing or invalid.")
 
     def _verify_before_state(self, preview: MutationPreview) -> None:
+        if preview.tool_id == "email" and preview.operation_id == "draft":
+            try:
+                adapter = self.adapter_registry.get("email", "draft")
+            except KeyError:
+                self._stale(preview)
+            if not isinstance(adapter, EmailToolRuntimeAdapter):
+                self._stale(preview)
+            try:
+                adapter.preflight(
+                    ToolExecutionRequest(
+                        preview.tool_id,
+                        preview.operation_id,
+                        preview.normalized_arguments,
+                    )
+                )
+            except ToolExecutionError:
+                self._stale(preview)
+            return
+
         if preview.tool_id == "calendar" and preview.operation_id == "create_event":
             try:
                 adapter = self.adapter_registry.get("calendar", "create_event")
@@ -779,6 +826,17 @@ def bounded_diff(before: str, after: str, relative: str) -> str:
         )
     )
     return value[:DIFF_LIMIT]
+
+
+def email_draft_preview(value: EmailDraftInput) -> str:
+    fields = (
+        ("Recipient", value.recipient),
+        ("Subject", value.subject),
+        ("Body", value.body),
+        ("Action", "create draft only"),
+        ("Send", "no"),
+    )
+    return "\n".join(f"{label}: {content}" for label, content in fields)[:DIFF_LIMIT]
 
 
 def calendar_event_preview(value: CalendarCreateEventInput) -> str:

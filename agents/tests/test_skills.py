@@ -155,12 +155,13 @@ def test_git_skill_preserves_typed_mutation_input_without_fabrication() -> None:
     assert missing.open_questions
 
 
-def test_default_registry_contains_calendar_planning_skills_only() -> None:
+def test_default_registry_contains_registered_planning_skills() -> None:
     registry = create_default_skill_registry()
 
     assert [item.skill_id for item in registry.list_definitions()] == [
         "calendar.inspect_schedule",
         "calendar.prepare_event",
+        "email.prepare_draft",
         "git.inspect_repository",
     ]
     assert registry.exists("calendar.delete_event") is False

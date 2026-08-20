@@ -281,6 +281,44 @@ final class HostCoreTests: XCTestCase {
       broker.handle(try request(.contactsListLimited, args: ["limit": .number(21)])).error?.code,
       "invalid_arguments")
   }
+  func testMailDraftBrokerIsBoundedAndRoutesOnlyValidatedDrafts() throws {
+    let mail = FakeMailDraftGateway()
+    let broker = NativeCapabilityBroker(
+      permission: FakePermission(.granted),
+      mailDrafts: mail
+    )
+
+    let response = broker.handle(
+      try request(
+        .mailDraftCreate,
+        args: [
+          "recipient": .string("claudio@aisosu.fi"),
+          "subject": .string("Prueba Cauco"),
+          "body": .string("Draft only"),
+        ]
+      )
+    )
+
+    XCTAssertEqual(response.outcome, .success)
+    XCTAssertEqual(response.method, "mail.draft.create.v1")
+    XCTAssertEqual(response.result?["draft_created"], .boolean(true))
+    XCTAssertEqual(mail.calls, 1)
+
+    let invalid = broker.handle(
+      try request(
+        .mailDraftCreate,
+        args: [
+          "recipient": .string("claudio@aisosu.fi"),
+          "subject": .string(""),
+          "body": .string("Draft only"),
+        ]
+      )
+    )
+
+    XCTAssertEqual(invalid.error?.code, "invalid_arguments")
+    XCTAssertEqual(mail.calls, 1)
+  }
+
   func testBrokerBoundsArgumentsAndRegistryOrder() throws {
     let registry = NativeCapabilityRegistry()
     XCTAssertEqual(registry.definitions.map(\.capability), NativeCapability.allCases)
@@ -446,6 +484,23 @@ private func connectToBroker(_ url: URL) throws -> Int32 {
   }
   guard result == 0 else { close(client); throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
   return client
+}
+
+private final class FakeMailDraftGateway: MailDraftGateway, @unchecked Sendable {
+  var calls = 0
+
+  func createDraft(
+    recipient: String,
+    subject: String,
+    body: String
+  ) throws -> [String: BrokerJSONValue] {
+    calls += 1
+    return [
+      "recipient": .string(recipient),
+      "subject": .string(subject),
+      "draft_created": .boolean(true),
+    ]
+  }
 }
 
 private final class FakePermission: ContactsPermissionGateway {

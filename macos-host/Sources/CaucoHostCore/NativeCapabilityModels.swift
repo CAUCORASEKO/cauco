@@ -10,6 +10,7 @@ public enum NativeCapability: String, Codable, CaseIterable, Sendable {
   case calendarEventsRange = "calendar.events.range"
   case calendarEventsGet = "calendar.events.get"
   case calendarEventsCreate = "calendar.events.create"
+  case mailDraftCreate = "mail.draft.create"
 }
 
 public enum NativeCapabilityOrigin: String, Codable, Sendable { case localCore }
@@ -65,7 +66,7 @@ public enum BrokerJSONValue: Codable, Equatable, Sendable {
   public func validate(depth: Int = 0) throws {
     guard depth <= 6 else { throw BrokerError.invalidArguments }
     switch self {
-    case .string(let v): guard v.count <= 512 else { throw BrokerError.invalidArguments }
+    case .string(let v): guard v.count <= 4_000 else { throw BrokerError.invalidArguments }
     case .number(let v): guard v.isFinite else { throw BrokerError.invalidArguments }
     case .object(let v):
       guard v.count <= 32 else { throw BrokerError.invalidArguments }

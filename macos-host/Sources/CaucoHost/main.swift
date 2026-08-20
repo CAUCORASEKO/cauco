@@ -130,15 +130,20 @@ import SwiftUI
           self.launchDiagnostics?.exitedBeforeHealth = self.coreStatus != "online"
           self.launchDiagnostics?.stderrTail = boundedDiagnosticTail(errorText, maxLines: 30)
           self.launchDiagnostics?.stdoutTail = boundedDiagnosticTail(outputText, maxLines: 10)
+          let previousStatus = self.coreStatus
           self.hasOwnedProcess = false
           self.process = nil
           self.brokerServer?.stop()
           self.brokerServer = nil
-          if self.coreStatus == "starting" {
-            self.coreStatus = "unavailable"
-            self.launchDiagnostics?.lifecycleState = .unavailable
+          self.coreStatus = "unavailable"
+          self.launchDiagnostics?.lifecycleState = .unavailable
+
+          if previousStatus == "starting" {
             self.diagnostic =
               "Core process exited before becoming healthy (exit code \(terminated.terminationStatus))."
+          } else {
+            self.diagnostic =
+              "Core process exited unexpectedly (exit code \(terminated.terminationStatus))."
           }
         }
       }
