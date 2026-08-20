@@ -9,8 +9,18 @@ CALENDAR_TOOL = ToolDefinition(
     version="1.0.0",
     enabled=True,
     operations=(
-        operation("list_events", "List calendar event metadata."),
-        operation("create_event", "Create a calendar event.", confirmation=True),
+        operation(
+            "list_events",
+            "List calendar event metadata.",
+            runtime_allowed=True,
+        ),
+        operation(
+            "create_event",
+            "Create a calendar event.",
+            confirmation=True,
+            runtime_allowed=True,
+            mutation=True,
+        ),
         operation(
             "delete_event",
             "Delete a calendar event.",

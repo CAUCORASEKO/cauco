@@ -189,11 +189,11 @@ and preparation recipe without enabling `git.diff` or fabricating missing mutati
 Skill registration is static and process-local in v1; duplicate IDs fail closed and there is
 no dynamic loading or plugin mechanism.
 
-No executable Calendar skill exists in v1. The native Apple Calendar connector has real broker
-capabilities, while `cauco_tools.CALENDAR_TOOL` operations are not runtime-enabled and have no
-connector-to-tool execution bridge. A skill must not bridge or bypass that mismatch. A later
-phase must introduce the proper Calendar `ToolRuntimeAdapter` boundary before Calendar actions
-can participate in approved execution.
+No Calendar skill exists in Skill Adapter v1 yet. Calendar runtime access instead begins at the
+typed ExecutionPlan boundary: `calendar.list_events` is an allowlisted read operation and
+`calendar.create_event` is a preview-first mutation. Both use `CalendarToolRuntimeAdapter`,
+which checks native permission and delegates to the Apple Calendar connector/Native Broker.
+Skills still cannot call that connector or adapter directly.
 
 ## Tool registry inspection
 
@@ -201,13 +201,21 @@ can participate in approved execution.
 
 `POST /api/tools/validate` accepts `{"tool_id":"git","operation_id":"status"}` and reports registration, tool/operation enablement, safety, confirmation requirements, and `execution_enabled: false`. Unknown or disabled references return `valid: false`; validation never invokes the operation.
 
-The built-in catalog contains `git`, `memory`, `filesystem`, `ollama`, `obsidian`, `calendar`, and `email`. Runtime policy allows the three read-only operations and preview-first mutations including exact-path `git.add`. Catalog responses expose `runtime_execution_allowed`; readiness additionally exposes adapter availability and `executable_now`.
+The built-in catalog contains `git`, `memory`, `filesystem`, `ollama`, `obsidian`, `calendar`, and `email`. Runtime policy includes bounded filesystem/Git reads, typed `calendar.list_events`, and preview-first mutations including `calendar.create_event` and exact-path `git.add`. Catalog responses expose `runtime_execution_allowed`; readiness additionally exposes adapter availability and `executable_now`.
 
 ## Step-level execution
 
 `POST /api/executions` with `{"review_id":"planrev_..."}` creates an inert `pending_execution` record and returns `201`. The review must be approved, unexpired, execution-authorized, and integrity-valid. One record is allowed per review. Creation never invokes an adapter.
 
-`POST /api/executions/{execution_id}/steps/{step_index}/execute` executes exactly the stored operation from that approved step. The body accepts only bounded controls: `timeout_seconds` (0.1–30), `max_output_chars` (100–100,000), `max_chars` (1–100,000), and `max_entries` (1–1,000). It cannot replace the tool, operation, target, cwd, Git arguments, or command. For the three read-only operations, this POST is the explicit tool-level confirmation.
+`POST /api/executions/{execution_id}/steps/{step_index}/execute` executes exactly the stored operation from that approved step. The body accepts only bounded controls: `timeout_seconds` (0.1–30), `max_output_chars` (100–100,000), `max_chars` (1–100,000), and `max_entries` (1–1,000). It cannot replace the tool, operation, target, calendar range, cwd, Git arguments, or command. Typed read-only operations, including `calendar.list_events`, execute only from the approved snapshot.
+
+`calendar.list_events` requires timezone-aware ISO-8601 bounds, a positive range of at most 31
+days, a limit of 1–100, and an optional opaque `calendar_reference`. `calendar.create_event`
+requires a bounded title, timezone-aware start/end, a duration of at most 31 days, an all-day
+flag, and optional bounded calendar reference, location, and notes. Preview creation is inert.
+Confirmation uses the exact phrase `CREATE CALENDAR EVENT`, claims the single-use preview
+before adapter invocation, and returns only opaque broker references and bounded event fields.
+`calendar.delete_event` remains disabled.
 
 `GET /api/executions/{execution_id}` retrieves a record. `GET /api/executions` lists newest first with optional `status`, `review_id`, and `limit` filters. `POST /api/executions/{execution_id}/cancel` cancels only a pending record. There is no execute-all or arbitrary-tool endpoint.
 

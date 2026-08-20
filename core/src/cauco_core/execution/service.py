@@ -1,7 +1,8 @@
 from collections.abc import Callable
+from dataclasses import asdict
 from datetime import UTC, datetime
 
-from cauco_agents import AgentPlanReviewRecord, AgentPlanReviewStatus
+from cauco_agents import AgentPlanReviewRecord, AgentPlanReviewStatus, CalendarListEventsInput
 from cauco_tools import (
     ToolAdapterRegistry,
     ToolExecutionError,
@@ -138,6 +139,7 @@ class ExecutionService:
                 reference.tool_id,
                 reference.operation_id,
                 reference.target,
+                plan_step.operation_input,
                 max_chars=max_chars,
                 max_entries=max_entries,
             )
@@ -220,12 +222,19 @@ class ExecutionService:
         tool_id: str,
         operation_id: str,
         target: str | None,
+        operation_input: object | None,
         *,
         max_chars: int | None,
         max_entries: int | None,
     ) -> dict[str, object]:
         if tool_id == "git" and operation_id == "status":
             return {}
+        if tool_id == "calendar" and operation_id == "list_events":
+            if not isinstance(operation_input, CalendarListEventsInput):
+                raise ExecutionValidationError(
+                    "Approved calendar list step has invalid typed input."
+                )
+            return asdict(operation_input)
         if self.workspace_policy is None:
             raise ExecutionConflictError("No execution workspace is configured.")
         if tool_id == "filesystem" and operation_id == "list_directory":

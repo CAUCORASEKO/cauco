@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Literal, Mapping, TypeAlias
@@ -254,6 +255,73 @@ class FilesystemWriteTextInput:
         object.__setattr__(self, "relative_path", reference.target)
 
 
+def _calendar_datetime(value: str, field_name: str) -> datetime:
+    if not isinstance(value, str) or len(value) > 100:
+        raise ValueError(f"Calendar {field_name} must be a bounded ISO-8601 timestamp.")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(f"Calendar {field_name} must be a valid ISO-8601 timestamp.") from error
+    if parsed.tzinfo is None:
+        raise ValueError(f"Calendar {field_name} must include a timezone offset.")
+    return parsed
+
+
+def _calendar_reference(value: str | None) -> str | None:
+    if value is not None and not re.fullmatch(r"calendar_[A-Za-z0-9_-]{8,80}", value):
+        raise ValueError("Calendar reference is invalid.")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class CalendarListEventsInput:
+    start: str
+    end: str
+    limit: int = 100
+    calendar_reference: str | None = None
+
+    def __post_init__(self) -> None:
+        starts = _calendar_datetime(self.start, "start")
+        ends = _calendar_datetime(self.end, "end")
+        if starts >= ends or ends - starts > timedelta(days=31):
+            raise ValueError("Calendar event range must be positive and at most 31 days.")
+        if isinstance(self.limit, bool) or not 1 <= self.limit <= 100:
+            raise ValueError("Calendar event range limit must be between 1 and 100.")
+        object.__setattr__(self, "calendar_reference", _calendar_reference(self.calendar_reference))
+
+
+@dataclass(frozen=True, slots=True)
+class CalendarCreateEventInput:
+    title: str
+    start: str
+    end: str
+    all_day: bool
+    calendar_reference: str | None = None
+    location: str | None = None
+    notes: str | None = None
+
+    def __post_init__(self) -> None:
+        title = normalize_whitespace(self.title)
+        if not title or len(title) > 300 or any(ord(character) < 32 for character in title):
+            raise ValueError("Calendar event title must contain 1 to 300 safe characters.")
+        starts = _calendar_datetime(self.start, "start")
+        ends = _calendar_datetime(self.end, "end")
+        if starts >= ends or ends - starts > timedelta(days=31):
+            raise ValueError("Calendar event duration must be positive and at most 31 days.")
+        if not isinstance(self.all_day, bool):
+            raise ValueError("Calendar all-day flag must be boolean.")
+        for field_name, value, maximum in (
+            ("location", self.location, 300),
+            ("notes", self.notes, 1000),
+        ):
+            if value is not None and (
+                len(value) > maximum or "\x00" in value or any(ord(character) < 9 for character in value)
+            ):
+                raise ValueError(f"Calendar event {field_name} is invalid.")
+        object.__setattr__(self, "title", title)
+        object.__setattr__(self, "calendar_reference", _calendar_reference(self.calendar_reference))
+
+
 AgentOperationInput: TypeAlias = (
     MemoryCreateProposalInput
     | MemoryConfirmProposalInput
@@ -261,6 +329,8 @@ AgentOperationInput: TypeAlias = (
     | GitAddInput
     | GitCommitInput
     | GitPushInput
+    | CalendarListEventsInput
+    | CalendarCreateEventInput
 )
 
 

@@ -91,20 +91,24 @@ def test_default_registry_contracts_and_validation() -> None:
         if operation.runtime_execution_allowed
     }
     assert runtime_allowed == {
-            ("git", "status"),
-            ("git", "add"),
-            ("git", "commit"),
-            ("git", "push"),
+        ("calendar", "list_events"),
+        ("calendar", "create_event"),
         ("filesystem", "list_directory"),
         ("filesystem", "read_file"),
         ("filesystem", "write_text_file"),
+        ("git", "status"),
+        ("git", "add"),
+        ("git", "commit"),
+        ("git", "push"),
         ("memory", "create_proposal"),
         ("memory", "confirm_proposal"),
     }
     assert registry.validate("git", "commit").runtime_execution_allowed
     assert registry.validate("git", "push").runtime_execution_allowed
     assert not registry.validate("email", "send").runtime_execution_allowed
-    assert not registry.validate("calendar", "create_event").runtime_execution_allowed
+    calendar_mutation = registry.validate("calendar", "create_event")
+    assert calendar_mutation.runtime_execution_allowed
+    assert calendar_mutation.preview_required
     memory_mutation = registry.validate("memory", "create_proposal")
     assert memory_mutation.runtime_execution_allowed
     assert memory_mutation.mutation and memory_mutation.preview_required

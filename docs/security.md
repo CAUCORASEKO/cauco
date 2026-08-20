@@ -11,7 +11,7 @@ The macOS Host exposes the Native Capability Broker only to its owned Core child
 - Memory access is limited to visible Markdown under one configured directory. Paths are relative, traversal is rejected, hidden directories are pruned, and symlinks are not followed.
 - Individual reads enforce a configurable maximum size and strict UTF-8 decoding. Search skips unreadable and oversized files.
 - File content is exposed through bounded core APIs. Memory insertion is limited to four allowlisted files and existing approved headings, and requires a stored proposal followed by explicit confirmation. No arbitrary update, rename, move, or delete route exists.
-- Tool definitions remain immutable metadata. Runtime policy allows the three read-only operations plus only `memory.create_proposal`, `memory.confirm_proposal`, `filesystem.write_text_file`, and exact-path `git.add` through the preview-first mutation path. All other mutations remain denied.
+- Tool definitions remain immutable metadata. Runtime policy allows bounded filesystem/Git reads and typed `calendar.list_events`; mutations including `calendar.create_event`, memory writes, workspace text writes, and allowlisted Git changes remain preview-first. All other mutations remain denied.
 - Git uses dedicated adapters only: fixed `git.status` and fixed `git add -- <approved paths>`, always with `shell=False`, a bounded environment, explicit workspace, and no client arguments.
 - The scheduler stores validated definitions but runs nothing.
 - The Operations Agent formats structured data and does not call a model.
@@ -50,6 +50,6 @@ Contacts search is an explicit, read-only native capability. Responses contain s
 `contacts.get` accepts only those opaque references during the Host lifetime. The internal mapping is bounded, in-memory-only, never logged or persisted, and unknown references fail closed.
 `contacts.list_limited` is explicit and bounded to 20; it does not load the complete address book, expose native identifiers, or request permission automatically.
 
-Calendar event reads are explicit and bounded. `calendar.events.get` accepts only current-Host opaque event references, uses exact EventKit lookup without full enumeration, and fails closed for stale references. References are never persisted or sent with native identifiers; Calendar writes remain disabled.
+Calendar event reads are explicit and bounded. `calendar.events.get` accepts only current-Host opaque event references, uses exact EventKit lookup without full enumeration, and fails closed for stale references. Generic `calendar.list_events` accepts only a typed approved range of at most 31 days. References never expose native identifiers.
 
-Calendar creation requires an explicit user request, connector eligibility, and matching confirmation. Payloads are closed and bounded; a Core-lifetime request guard prevents duplicate creation on retry. No background or automatic Calendar writes are permitted.
+Calendar creation requires an approved typed plan step, inert preview, exact single-use confirmation, granted native permission, and the Calendar ToolRuntimeAdapter bridge. Payloads are closed and bounded; a Core-lifetime request guard prevents duplicate creation on retry. No background or automatic Calendar writes are permitted.

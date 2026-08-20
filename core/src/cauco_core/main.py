@@ -56,7 +56,7 @@ from cauco_core.application_inventory import ApplicationInventoryService, Applic
 from cauco_core.cognitive_cycle.resolver import CognitiveCycleResolver
 from cauco_core.config import Settings
 from cauco_core.connectors import ConnectorRegistry, ConnectorRuntime, PermissionPolicy
-from cauco_core.connectors.apple_calendar import AppleCalendarConnector
+from cauco_core.connectors.apple_calendar import AppleCalendarConnector, CalendarToolRuntimeAdapter
 from cauco_core.connectors.apple_contacts import AppleContactsConnector
 from cauco_core.context.builder import ContextBuilder
 from cauco_core.execution.policy import WorkspacePolicy
@@ -135,6 +135,9 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.application_inventory_service, app.state.application_connector_matching_resolver
     )
     app.state.tool_adapter_registry = ToolAdapterRegistry()
+    app.state.tool_adapter_registry.register(
+        CalendarToolRuntimeAdapter(app.state.apple_calendar_connector)
+    )
     app.state.workspace_policy = None
     workspace = app.state.settings.resolved_workspace_dir()
     if workspace is not None:

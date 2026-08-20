@@ -17,6 +17,8 @@ from cauco_agents import (
     AgentResult,
     AgentRouteResult,
     AgentToolReference,
+    CalendarCreateEventInput,
+    CalendarListEventsInput,
     FilesystemWriteTextInput,
     MemoryConfirmProposalInput,
     MemoryCreateProposalInput,
@@ -407,6 +409,8 @@ def _from_json(raw: str) -> AgentPlanReviewRecord:
         "GitAddInput": GitAddInput,
         "GitCommitInput": GitCommitInput,
         "GitPushInput": GitPushInput,
+        "CalendarListEventsInput": CalendarListEventsInput,
+        "CalendarCreateEventInput": CalendarCreateEventInput,
     }
     for s in p["steps"]:
         ref = AgentToolReference(**s["tool_reference"]) if s["tool_reference"] else None
