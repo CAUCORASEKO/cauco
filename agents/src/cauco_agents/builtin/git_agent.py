@@ -5,11 +5,14 @@ from cauco_agents.builtin.base import DeterministicSignalAgent
 from cauco_agents.models import (
     AgentContext,
     AgentPlan,
-    AgentPlanStep,
-    AgentToolReference,
     FilesystemWriteTextInput,
     GitAddInput,
     GitCommitInput,
+)
+from cauco_agents.skills import (
+    GitInspectRepositoryInput,
+    SkillRegistry,
+    create_default_skill_registry,
 )
 
 
@@ -39,6 +42,9 @@ class GitAgent(DeterministicSignalAgent):
         "release",
     )
 
+    def __init__(self, skill_registry: SkillRegistry | None = None) -> None:
+        self.skill_registry = skill_registry or create_default_skill_registry()
+
     def summary(self) -> str:
         return (
             "This request belongs to Git operations, but no repository was inspected."
@@ -63,59 +69,15 @@ class GitAgent(DeterministicSignalAgent):
         commit_input = requested_git_commit(context.instruction)
         file_target = requested_file_target(context.instruction)
         write_input = requested_workspace_write(context.instruction)
-        steps = (
-            AgentPlanStep(
-                1,
-                "List the configured workspace",
-                "List visible entries in the configured workspace root.",
-                project_ids,
-                "Inspect the workspace directory without following hidden entries.",
-                False,
-                False,
-                tool_reference=AgentToolReference("filesystem", "list_directory", "."),
-            ),
-            AgentPlanStep(
-                2,
-                "Propose repository status inspection",
-                "Repository state is unknown because no repository or working tree was inspected.",
-                (),
-                "Request explicit permission for a future repository status inspection.",
-                False,
-                False,
-                ("No commands were executed.",),
-                AgentToolReference("git", "status"),
-            ),
-            AgentPlanStep(
-                3,
-                "Inspect an explicitly named file or propose diff review",
-                "Only an exact workspace-relative file named in the instruction can be read.",
-                (),
-                "Read the explicitly named text file; otherwise leave diff inspection disabled.",
-                False,
-                False,
-                tool_reference=(
-                    AgentToolReference(
-                        "filesystem", "write_text_file", write_input.relative_path
-                    )
-                    if write_input is not None
-                    else AgentToolReference("filesystem", "read_file", file_target)
-                    if file_target is not None
-                    else AgentToolReference("git", "diff")
-                ),
-                operation_input=write_input,
-            ),
-            AgentPlanStep(
-                4,
-                "Prepare a safe Git operation",
-                "Describe the requested future Git operation without running it.",
-                project_ids,
-                "Prepare the Git operation for explicit confirmation.",
-                requested_operation in {"add", "commit", "push"},
-                False,
-                ("Any future side effect requires explicit confirmation.",),
-                AgentToolReference("git", requested_operation),
-                operation_input=add_input or commit_input,
-            ),
+        compilation = self.skill_registry.get("git.inspect_repository").compile(
+            GitInspectRepositoryInput(
+                source_memory_ids=project_ids,
+                requested_operation=requested_operation,
+                file_target=file_target,
+                write_input=write_input,
+                add_input=add_input,
+                commit_input=commit_input,
+            )
         )
         warnings = [
             "Repository state was not inspected; branch and diff details are unknown.",
@@ -127,10 +89,9 @@ class GitAgent(DeterministicSignalAgent):
                 "allow_execution was ignored; execution requires an approved review "
                 "and an explicit step request."
             )
-        questions = (
-            ()
-            if project_ids
-            else ("Which project or repository does this request concern?",)
+        warnings.extend(compilation.warnings)
+        questions = compilation.open_questions + (
+            () if project_ids else ("Which project or repository does this request concern?",)
         )
         return AgentPlan(
             agent_id=self.id,
@@ -138,7 +99,7 @@ class GitAgent(DeterministicSignalAgent):
             status="proposal_only",
             objective=f"Prepare a safe future Git workflow for: {context.instruction}",
             context_used=bool(context.memory_references),
-            steps=steps,
+            steps=compilation.steps,
             open_questions=questions,
             warnings=tuple(warnings),
             requires_confirmation=True,

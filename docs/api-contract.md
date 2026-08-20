@@ -169,6 +169,32 @@ not implemented. Per-execution locks are retained for the process lifetime in v1
 execution-record capacity limits practical growth, and unsafe concurrent lock-map cleanup is
 not attempted.
 
+## Skill Adapter v1
+
+Skill Adapter v1 is a deterministic planning abstraction between agent routing/context and
+ExecutionPlan v1. An **Agent** owns problem/domain routing, context use, objectives, and
+top-level warnings or questions. A **Skill** compiles reusable typed planning input into an
+immutable tuple of `AgentPlanStep` values. A **Tool** defines one atomic capability contract;
+a **ToolRuntimeAdapter** implements that atomic operation; and **TaskRuntime** orchestrates
+only reviewed and approved plan steps through the existing execution and mutation services.
+
+Skills contain metadata and planning logic only. They cannot execute adapters, access
+execution or mutation services, invoke TaskRuntime, start subprocesses, access files or the
+network, call native connectors, create previews, or manufacture confirmations. Every tool
+reference emitted by a skill remains subject to PlanValidator, review, approval, snapshot,
+runtime, preview, and confirmation boundaries.
+
+The initial `git.inspect_repository` skill extracts GitAgent's bounded repository inspection
+and preparation recipe without enabling `git.diff` or fabricating missing mutation inputs.
+Skill registration is static and process-local in v1; duplicate IDs fail closed and there is
+no dynamic loading or plugin mechanism.
+
+No executable Calendar skill exists in v1. The native Apple Calendar connector has real broker
+capabilities, while `cauco_tools.CALENDAR_TOOL` operations are not runtime-enabled and have no
+connector-to-tool execution bridge. A skill must not bridge or bypass that mismatch. A later
+phase must introduce the proper Calendar `ToolRuntimeAdapter` boundary before Calendar actions
+can participate in approved execution.
+
 ## Tool registry inspection
 
 `GET /api/tools` returns all tool definitions in deterministic ID order. `GET /api/tools/{tool_id}` returns one definition, `GET /api/tools/categories` returns stable categories, and `GET /api/tools/{tool_id}/operations` returns stable operation contracts. Unknown tools return `404`.

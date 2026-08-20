@@ -28,6 +28,15 @@ from cauco_agents.router import (
     AgentRouter,
     UnknownPreferredAgentError,
 )
+from cauco_agents.skills import (
+    GitInspectRepositoryInput,
+    GitInspectRepositorySkill,
+    SkillAdapter,
+    SkillCompilation,
+    SkillDefinition,
+    SkillRegistry,
+    create_default_skill_registry,
+)
 from cauco_agents.review import (
     APPROVAL_WARNING,
     AgentPlanReviewRecord,
@@ -67,12 +76,19 @@ __all__ = [
     "AgentRouter",
     "BaseAgent",
     "GitAgent",
+    "GitInspectRepositoryInput",
+    "GitInspectRepositorySkill",
     "OperationsAgent",
     "OperationsInput",
     "ProjectAgent",
     "PlanningAgent",
     "ResearchAgent",
+    "SkillAdapter",
+    "SkillCompilation",
+    "SkillDefinition",
+    "SkillRegistry",
     "UnknownPreferredAgentError",
     "APPROVAL_WARNING",
     "create_default_registry",
+    "create_default_skill_registry",
 ]
