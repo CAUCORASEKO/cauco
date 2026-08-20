@@ -252,11 +252,91 @@ class ExecutionStore:
             self._records[execution_id] = updated
             return updated
 
+    def fail_runtime(self, execution_id: str, reason: str) -> AgentPlanExecutionRecord:
+        with self._lock:
+            record = self._record(execution_id)
+            if record.status not in {ExecutionStatus.PENDING_EXECUTION, ExecutionStatus.RUNNING}:
+                raise ExecutionConflictError(f"Execution is already {record.status.value}.")
+            if any(step.status is StepExecutionStatus.RUNNING for step in record.step_records):
+                raise ExecutionConflictError("A running step cannot be interrupted.")
+            now = self.clock()
+            updated = replace(
+                record,
+                status=ExecutionStatus.FAILED,
+                completed_at=now,
+                current_step_index=None,
+                failure_reason=reason,
+            )
+            self._records[execution_id] = updated
+            return updated
+
+    def retry_step(self, execution_id: str, step_index: int) -> AgentPlanExecutionRecord:
+        with self._lock:
+            record = self._record(execution_id)
+            position, step = self._step(record, step_index)
+            if (
+                record.status is not ExecutionStatus.FAILED
+                or step.status is not StepExecutionStatus.FAILED
+            ):
+                raise ExecutionConflictError("Only a failed step can be retried.")
+            steps = list(record.step_records)
+            steps[position] = replace(
+                step,
+                status=StepExecutionStatus.PENDING,
+                started_at=None,
+                completed_at=None,
+                result=None,
+                error=None,
+                execution_performed=False,
+            )
+            updated = replace(
+                record,
+                status=ExecutionStatus.RUNNING,
+                completed_at=None,
+                current_step_index=None,
+                step_records=tuple(steps),
+                failure_reason=None,
+            )
+            self._records[execution_id] = updated
+            return updated
+
+    def skip_failed_step(self, execution_id: str, step_index: int) -> AgentPlanExecutionRecord:
+        with self._lock:
+            record = self._record(execution_id)
+            position, step = self._step(record, step_index)
+            if (
+                record.status is not ExecutionStatus.FAILED
+                or step.status is not StepExecutionStatus.FAILED
+            ):
+                raise ExecutionConflictError("Only a failed step can be skipped by recovery.")
+            steps = list(record.step_records)
+            steps[position] = replace(step, status=StepExecutionStatus.SKIPPED)
+            terminal = all(
+                item.status in {StepExecutionStatus.COMPLETED, StepExecutionStatus.SKIPPED}
+                for item in steps
+            )
+            updated = replace(
+                record,
+                status=ExecutionStatus.COMPLETED if terminal else ExecutionStatus.RUNNING,
+                completed_at=self.clock() if terminal else None,
+                current_step_index=None,
+                step_records=tuple(steps),
+                failure_reason=None,
+            )
+            if terminal:
+                updated = self._with_event(
+                    updated, "execution_completed", "success", "Execution completed."
+                )
+            self._records[execution_id] = updated
+            return updated
+
     def cancel(self, execution_id: str) -> AgentPlanExecutionRecord:
         with self._lock:
             record = self._record(execution_id)
-            if record.status is not ExecutionStatus.PENDING_EXECUTION:
-                raise ExecutionConflictError("Only pending execution records can be cancelled.")
+            if record.status not in {ExecutionStatus.PENDING_EXECUTION, ExecutionStatus.RUNNING}:
+                raise ExecutionConflictError("Only active execution records can be cancelled.")
+            if any(step.status is StepExecutionStatus.RUNNING for step in record.step_records):
+                raise ExecutionConflictError("A running step cannot be interrupted.")
             now = self.clock()
             steps = tuple(
                 replace(item, status=StepExecutionStatus.CANCELLED, completed_at=now)
@@ -268,7 +348,7 @@ class ExecutionStore:
                 record, status=ExecutionStatus.CANCELLED, completed_at=now, step_records=steps
             )
             updated = self._with_event(
-                updated, "execution_cancelled", "cancelled", "Pending execution cancelled."
+                updated, "execution_cancelled", "cancelled", "Execution cancelled safely."
             )
             self._records[execution_id] = updated
             return updated

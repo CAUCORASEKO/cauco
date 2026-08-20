@@ -19,6 +19,7 @@ from cauco_core.execution.models import (
     ExecutionStatus,
     ExecutionValidationError,
 )
+from cauco_core.execution.runtime import TaskRuntimeStatus
 
 router = APIRouter(prefix="/api/executions", tags=["executions"])
 
@@ -101,11 +102,60 @@ def execute_step(
 @router.post("/{execution_id}/cancel")
 def cancel_execution(execution_id: str, request: Request) -> dict[str, Any]:
     try:
-        return record_response(request.app.state.execution_service.cancel(execution_id))
+        request.app.state.task_runtime.cancel(execution_id)
+        return record_response(request.app.state.execution_store.get(execution_id))
     except ExecutionNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     except ExecutionConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
+@router.post("/{execution_id}/run")
+def run_execution(execution_id: str, request: Request) -> dict[str, Any]:
+    return _runtime_action(request, execution_id, resume=False)
+
+
+@router.post("/{execution_id}/resume")
+def resume_execution(execution_id: str, request: Request) -> dict[str, Any]:
+    return _runtime_action(request, execution_id, resume=True)
+
+
+@router.get("/{execution_id}/runtime")
+def get_runtime_status(execution_id: str, request: Request) -> dict[str, Any]:
+    try:
+        return runtime_response(request.app.state.task_runtime.status(execution_id))
+    except ExecutionNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+def _runtime_action(request: Request, execution_id: str, *, resume: bool) -> dict[str, Any]:
+    try:
+        runtime = request.app.state.task_runtime
+        outcome = runtime.resume(execution_id) if resume else runtime.run(execution_id)
+        return runtime_response(outcome)
+    except (ExecutionNotFoundError, PlanReviewNotFoundError) as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except (ExecutionConflictError, PlanReviewIntegrityError) as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ExecutionForbiddenError as error:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
+    except ExecutionValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from error
+
+
+def runtime_response(runtime: TaskRuntimeStatus) -> dict[str, Any]:
+    return {
+        "execution_id": runtime.execution_id,
+        "state": runtime.state.value,
+        "current_step_index": runtime.current_step_index,
+        "preview_id": runtime.preview_id,
+        "preview_status": runtime.preview_status,
+        "recovery_decision": (
+            runtime.recovery_decision.value if runtime.recovery_decision is not None else None
+        ),
+    }
 
 
 def record_response(record: AgentPlanExecutionRecord) -> dict[str, Any]:

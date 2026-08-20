@@ -25,8 +25,8 @@ from cauco_core.ai.ollama import OllamaProvider
 from cauco_core.ai.service import AIService
 from cauco_core.api.agent_routes import router as agent_router_api
 from cauco_core.api.ai_routes import router as ai_router
-from cauco_core.api.apple_contacts_routes import router as apple_contacts_router
 from cauco_core.api.apple_calendar_routes import router as apple_calendar_router
+from cauco_core.api.apple_contacts_routes import router as apple_contacts_router
 from cauco_core.api.application_connector_matching_routes import (
     router as application_connector_matching_router,
 )
@@ -40,8 +40,8 @@ from cauco_core.api.experience_routes import router as experience_router
 from cauco_core.api.learning_guidance_routes import router as learning_guidance_router
 from cauco_core.api.memory_candidate_routes import router as memory_candidate_router
 from cauco_core.api.memory_routes import router as memory_router
-from cauco_core.api.native_broker_routes import router as native_broker_router
 from cauco_core.api.mutation_routes import router as mutation_router
+from cauco_core.api.native_broker_routes import router as native_broker_router
 from cauco_core.api.perception_routes import router as perception_router
 from cauco_core.api.reflection_routes import router as reflection_router
 from cauco_core.api.routes import router
@@ -56,10 +56,11 @@ from cauco_core.application_inventory import ApplicationInventoryService, Applic
 from cauco_core.cognitive_cycle.resolver import CognitiveCycleResolver
 from cauco_core.config import Settings
 from cauco_core.connectors import ConnectorRegistry, ConnectorRuntime, PermissionPolicy
-from cauco_core.connectors.apple_contacts import AppleContactsConnector
 from cauco_core.connectors.apple_calendar import AppleCalendarConnector
+from cauco_core.connectors.apple_contacts import AppleContactsConnector
 from cauco_core.context.builder import ContextBuilder
 from cauco_core.execution.policy import WorkspacePolicy
+from cauco_core.execution.runtime import TaskRuntime
 from cauco_core.execution.service import ExecutionService
 from cauco_core.execution.sqlite_store import SQLiteExecutionStore
 from cauco_core.executive import ExecutiveControlService, ExecutiveStateResolver
@@ -114,9 +115,13 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.state.connector_runtime = ConnectorRuntime(
         app.state.connector_registry, app.state.connector_policy
     )
-    app.state.apple_contacts_connector = AppleContactsConnector(broker_client=app.state.native_broker_client)
+    app.state.apple_contacts_connector = AppleContactsConnector(
+        broker_client=app.state.native_broker_client
+    )
     app.state.connector_registry.register(app.state.apple_contacts_connector)
-    app.state.apple_calendar_connector = AppleCalendarConnector(broker_client=app.state.native_broker_client)
+    app.state.apple_calendar_connector = AppleCalendarConnector(
+        broker_client=app.state.native_broker_client
+    )
     app.state.connector_registry.register(app.state.apple_calendar_connector)
     app.state.application_inventory_scanner = ApplicationScanner()
     app.state.application_inventory_service = ApplicationInventoryService(
@@ -303,6 +308,11 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.mutation_preview_store,
         app.state.memory_write_proposal_builder,
         app.state.memory_write_proposal_store,
+    )
+    app.state.task_runtime = TaskRuntime(
+        app.state.execution_service,
+        app.state.mutation_service,
+        app.state.execution_store,
     )
     app.state.memory_context_builder = MemoryContextBuilder(
         app.state.memory_service,

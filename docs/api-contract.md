@@ -149,6 +149,26 @@ Records are in-memory only and disappear when Core restarts. The store retains a
 
 Plan and plan-review responses include structured `tool_reference` data on every step and a registry-derived `readiness` object. `ready` means every referenced tool and operation currently exists and is enabled. It does not mean actions can run: readiness and every reference report `execution_enabled: false`.
 
+TaskRuntime v1 provides deterministic orchestration over an approved execution through
+`POST /api/executions/{execution_id}/run`, `POST /resume`, and `GET /runtime`. Its derived
+states are `pending`, `running`, `awaiting_confirmation`, `completed`, `failed`, `cancelled`,
+and `replan_required`. It coordinates `ExecutionService` and `MutationService`; it never
+retrieves or executes adapters directly. Preview-required mutations pause at
+`awaiting_confirmation` and remain subject to the existing exact, single-use human
+confirmation flow.
+
+RecoveryPolicy v1 is deterministic and fail closed. It permits at most one automatic retry,
+only for explicitly transient errors on allowlisted read-only operations. Mutation outcomes,
+confirmation failures, forbidden operations, stale state, and snapshot or integrity failures
+are never retried. `SKIP` is part of the runtime contract but the automatic v1 policy never
+selects it because ExecutionPlan v1 has no immutable optional-step metadata. Integrity and
+approved-snapshot failures abort; `replan_required` is reserved for allowlisted operational
+state drift. `replan_required` does not alter the approved plan: a future replan must
+create a new plan, review, approval, snapshot, and execution. Automatic model replanning is
+not implemented. Per-execution locks are retained for the process lifetime in v1; the bounded
+execution-record capacity limits practical growth, and unsafe concurrent lock-map cleanup is
+not attempted.
+
 ## Tool registry inspection
 
 `GET /api/tools` returns all tool definitions in deterministic ID order. `GET /api/tools/{tool_id}` returns one definition, `GET /api/tools/categories` returns stable categories, and `GET /api/tools/{tool_id}/operations` returns stable operation contracts. Unknown tools return `404`.

@@ -163,6 +163,36 @@ class SQLiteExecutionStore(ExecutionStore):
             self._persist_record(record)
             return record
 
+    def fail_runtime(
+        self,
+        execution_id: str,
+        reason: str,
+    ) -> AgentPlanExecutionRecord:
+        with self._lock:
+            record = super().fail_runtime(execution_id, reason)
+            self._persist_record(record)
+            return record
+
+    def retry_step(
+        self,
+        execution_id: str,
+        step_index: int,
+    ) -> AgentPlanExecutionRecord:
+        with self._lock:
+            record = super().retry_step(execution_id, step_index)
+            self._persist_record(record)
+            return record
+
+    def skip_failed_step(
+        self,
+        execution_id: str,
+        step_index: int,
+    ) -> AgentPlanExecutionRecord:
+        with self._lock:
+            record = super().skip_failed_step(execution_id, step_index)
+            self._persist_record(record)
+            return record
+
     def cancel(self, execution_id: str) -> AgentPlanExecutionRecord:
         with self._lock:
             record = super().cancel(execution_id)
