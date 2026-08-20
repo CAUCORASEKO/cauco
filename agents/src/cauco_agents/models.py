@@ -284,18 +284,9 @@ class AgentPlanStep:
             raise ValueError("Phase 5B plan execution cannot be available.")
         if self.tool_reference is None:
             raise ValueError("Phase 6A plan steps must reference a tool operation.")
-        expected = {
-            ("memory", "create_proposal"): MemoryCreateProposalInput,
-            ("memory", "confirm_proposal"): MemoryConfirmProposalInput,
-            ("filesystem", "write_text_file"): FilesystemWriteTextInput,
-            ("git", "add"): GitAddInput,
-            ("git", "commit"): GitCommitInput,
-            ("git", "push"): GitPushInput,
-        }.get((self.tool_reference.tool_id, self.tool_reference.operation_id))
-        if expected is None and self.operation_input is not None:
-            raise ValueError("Read-only plan steps cannot contain mutation input.")
-        if expected is not None and not isinstance(self.operation_input, expected):
-            raise ValueError("Mutation plan step input does not match its operation.")
+        # Input shape belongs to the registered operation/adapter contract, not
+        # to the shared plan model.  Readiness performs that validation without
+        # making plan construction aware of individual tools.
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,10 +302,13 @@ class AgentPlan:
     requires_confirmation: bool
     execution_performed: bool = False
     metadata: Mapping[str, AgentContextValue] = field(default_factory=dict)
+    plan_version: int = 1
 
     def __post_init__(self) -> None:
         if self.execution_performed:
             raise ValueError("Phase 5B agents cannot report performed execution.")
+        if self.plan_version != 1:
+            raise ValueError("Only ExecutionPlan version 1 is supported.")
         expected_orders = tuple(range(1, len(self.steps) + 1))
         if tuple(step.order for step in self.steps) != expected_orders:
             raise ValueError("Agent plan steps must use contiguous one-based ordering.")

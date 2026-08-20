@@ -210,6 +210,12 @@ class GitAddAdapter:
             "diff_preview": bounded_text("\n".join(diffs), 20_000)[0],
         }
 
+    def preflight(self, request: ToolExecutionRequest) -> None:
+        paths = request.arguments.get("paths")
+        if not isinstance(paths, (tuple, list)) or not all(isinstance(path, str) for path in paths):
+            raise ToolExecutionError("invalid_arguments", "git.add requires typed paths.")
+        self.inspect(tuple(paths))
+
     def verify_preview(self, arguments: Any) -> None:
         paths = self._argument_paths(arguments)
         if self.index_digest() != arguments.get("expected_index_digest"):
@@ -717,6 +723,13 @@ class GitCommitAdapter(GitAddAdapter):
 
     operations = frozenset({"commit"})
 
+    def preflight(self, request: ToolExecutionRequest) -> None:
+        message = request.arguments.get("message")
+        paths = request.arguments.get("expected_staged_paths")
+        if not isinstance(message, str) or not isinstance(paths, (tuple, list)):
+            raise ToolExecutionError("invalid_arguments", "git.commit requires typed input.")
+        self.inspect_commit(message, tuple(paths))
+
     def inspect_commit(self, message: str, expected_paths: tuple[str, ...]) -> dict[str, Any]:
         self._validate_repository()
         self._validate_operation_state()
@@ -868,6 +881,15 @@ class GitPushAdapter(GitAddAdapter):
     """Publishes one preview-bound branch tip through a fixed fast-forward push."""
 
     operations = frozenset({"push"})
+
+    def preflight(self, request: ToolExecutionRequest) -> None:
+        from cauco_tools.git_mutation import GitPushInput
+
+        try:
+            push_input = GitPushInput(**dict(request.arguments))
+        except (TypeError, ValueError) as error:
+            raise ToolExecutionError("invalid_arguments", "git.push requires typed input.") from error
+        self.inspect_push(push_input)
 
     def __init__(self, workspace: Path, *, allow_local_remotes: bool = False, **kwargs: Any) -> None:
         super().__init__(workspace, **kwargs)

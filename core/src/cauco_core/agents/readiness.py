@@ -1,8 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 
-from cauco_agents import AgentPlan, GitAddInput, GitCommitInput, GitPushInput
-from cauco_tools import ToolAdapterRegistry, ToolExecutionError, ToolRegistry
-from cauco_tools.adapters import GitAddAdapter, GitCommitAdapter, GitPushAdapter
+from cauco_agents import AgentPlan
+from cauco_tools import ToolAdapterRegistry, ToolExecutionError, ToolExecutionRequest, ToolRegistry
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +30,19 @@ class AgentPlanReadiness:
     execution_enabled: bool = False
 
 
+class PlanValidator:
+    """Generic, non-mutating validator for ExecutionPlan v1."""
+
+    def __init__(
+        self, registry: ToolRegistry, adapter_registry: ToolAdapterRegistry | None = None
+    ) -> None:
+        self.registry = registry
+        self.adapter_registry = adapter_registry
+
+    def validate(self, plan: AgentPlan) -> AgentPlanReadiness:
+        return evaluate_plan_readiness(plan, self.registry, self.adapter_registry)
+
+
 def evaluate_plan_readiness(
     plan: AgentPlan,
     registry: ToolRegistry,
@@ -45,48 +57,25 @@ def evaluate_plan_readiness(
         adapter_available = bool(
             adapter_registry and adapter_registry.exists(reference.tool_id, reference.operation_id)
         )
-        blocking_reasons: tuple[str, ...] = ()
-        if (
-            reference.tool_id == "git"
-            and reference.operation_id == "add"
-            and isinstance(step.operation_input, GitAddInput)
-            and adapter_registry
-            and adapter_available
-        ):
-            adapter = adapter_registry.get("git", "add")
-            if isinstance(adapter, GitAddAdapter):
+        blocking: list[str] = []
+        if not validation.tool_exists:
+            blocking.append(validation.reason or "Tool is not registered.")
+        elif not validation.operation_exists:
+            blocking.append(validation.reason or "Operation is not registered.")
+        if adapter_registry and adapter_available:
+            adapter = adapter_registry.get(reference.tool_id, reference.operation_id)
+            preflight = getattr(adapter, "preflight", None)
+            if callable(preflight):
+                arguments = (
+                    asdict(step.operation_input) if is_dataclass(step.operation_input) else {}
+                )
                 try:
-                    adapter.inspect(step.operation_input.paths)
-                except ToolExecutionError as error:
-                    blocking_reasons = (error.safe_message,)
-        if (
-            reference.tool_id == "git"
-            and reference.operation_id == "push"
-            and isinstance(step.operation_input, GitPushInput)
-            and adapter_registry
-            and adapter_available
-        ):
-            adapter = adapter_registry.get("git", "push")
-            if isinstance(adapter, GitPushAdapter):
-                try:
-                    adapter.inspect_push(step.operation_input)
-                except ToolExecutionError as error:
-                    blocking_reasons = (error.safe_message,)
-        if (
-            reference.tool_id == "git"
-            and reference.operation_id == "commit"
-            and isinstance(step.operation_input, GitCommitInput)
-            and adapter_registry
-            and adapter_available
-        ):
-            adapter = adapter_registry.get("git", "commit")
-            if isinstance(adapter, GitCommitAdapter):
-                try:
-                    adapter.inspect_commit(
-                        step.operation_input.message, step.operation_input.expected_staged_paths
+                    preflight(
+                        ToolExecutionRequest(reference.tool_id, reference.operation_id, arguments)
                     )
                 except ToolExecutionError as error:
-                    blocking_reasons = (error.safe_message,)
+                    blocking.append(error.safe_message)
+        blocking_reasons = tuple(blocking)
         references.append(
             PlanToolReadiness(
                 tool_id=reference.tool_id,

@@ -58,3 +58,19 @@ def test_readiness_detects_missing_tool(client: TestClient) -> None:
     ]
     assert response.json()["readiness"]["ready"] is False
     assert git_references and all(not item["registered"] for item in git_references)
+
+
+def test_readiness_does_not_require_runtime_adapter(client: TestClient) -> None:
+    response = client.post("/api/agents/plan", json={"instruction": "Review the Git status"})
+
+    assert response.status_code == 200
+    assert response.json()["readiness"]["ready"] is True
+    status_references = [
+        item
+        for item in response.json()["readiness"]["references"]
+        if item["tool_id"] == "git" and item["operation_id"] == "status"
+    ]
+    assert status_references
+    assert all(item["adapter_available"] is False for item in status_references)
+    assert all(item["executable_now"] is False for item in status_references)
+    assert all(item["blocking_reasons"] == [] for item in status_references)
