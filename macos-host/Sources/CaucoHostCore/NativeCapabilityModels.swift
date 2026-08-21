@@ -187,6 +187,7 @@ public struct BrokerError: Error, Codable, Equatable, Sendable {
   public static let eventReferenceUnknown = BrokerError("event_reference_unknown")
   public static let calendarReferenceUnknown = BrokerError("calendar_reference_unknown")
   public static let mailAccountReferenceUnknown = BrokerError("mail_account_reference_unknown")
+  public static let mailMailboxReferenceUnknown = BrokerError("mail_mailbox_reference_unknown")
   public static let calendarNotModifiable = BrokerError("calendar_not_modifiable")
 }
 public struct NativeCapabilityResponse: Codable, Equatable, Sendable {

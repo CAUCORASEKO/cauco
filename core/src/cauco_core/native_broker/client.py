@@ -133,7 +133,11 @@ class NativeBrokerClient:
         if result["title"]!=title or result["all_day"]!=all_day or result["start"] is None or result["end"] is None: raise NativeBrokerUnavailable("native calendar event create invalid")
         return response
 
-    def mail_messages_list(self, limit: int = 20) -> dict[str, Any]:
+    def mail_messages_list(self, mailbox_reference: str, limit: int) -> dict[str, Any]:
+        if not isinstance(mailbox_reference, str) or not MAILBOX_REF.fullmatch(
+            mailbox_reference
+        ):
+            raise ValueError("Invalid mail mailbox reference")
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 20:
             raise ValueError("Invalid mail message list limit")
 
@@ -147,13 +151,24 @@ class NativeBrokerClient:
             "requestLocale": "en",
             "responseLocale": "en",
             "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-            "arguments": {"limit": limit},
+            "arguments": {
+                "mailbox_reference": mailbox_reference,
+                "limit": limit,
+            },
         }
 
         response = self.request(request)
         result = response.get("result")
 
-        if response.get("outcome") != "success" or not isinstance(result, dict):
+        if response.get("outcome") != "success":
+            error = response.get("error")
+            if isinstance(error, dict) and error.get("code") == (
+                "mail_mailbox_reference_unknown"
+            ):
+                raise NativeBrokerReferenceNotFound("mail mailbox reference not found")
+            raise NativeBrokerUnavailable("native mail message list rejected")
+
+        if not isinstance(result, dict):
             raise NativeBrokerUnavailable("native mail message list rejected")
 
         if set(result) != {"results", "result_count", "truncated"}:

@@ -24,8 +24,10 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     self.contacts = contacts ?? NativeContactsDataGateway(permission: permission)
     self.calendarPermission = calendarPermission
     self.calendars = calendars ?? NativeCalendarDataGateway(permission: calendarPermission)
-    self.mailAccounts = mailAccounts ?? NativeMailAccountGateway()
-    self.mailMessages = mailMessages ?? NativeMailMessageGateway()
+    let mailReferences = MailAccountReferenceRegistry()
+    self.mailAccounts = mailAccounts ?? NativeMailAccountGateway(references: mailReferences)
+    self.mailMessages = mailMessages ?? NativeMailMessageGateway(
+      accountReferences: mailReferences)
     self.mailDrafts = mailDrafts ?? NativeMailDraftGateway()
     self.registry = registry
   }
@@ -77,7 +79,8 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
         return response(
           request,
           .success,
-          try mailMessages.listMessages(limit: limit),
+          try mailMessages.listMessages(
+            mailboxReference: request.arguments["mailbox_reference"]!.stringValue!, limit: limit),
           nil,
           definition.limitations
         )
@@ -226,7 +229,10 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       guard Set(args.keys).isSubset(of: allowed), Set(["title", "start", "end", "all_day"]).isSubset(of: Set(args.keys)), caseString(args["title"])?.isEmpty == false, caseString(args["start"]) != nil, caseString(args["end"]) != nil, args["all_day"]!.boolValue != nil else { throw BrokerError.invalidArguments }
       for key in ["location", "notes", "calendar_reference"] { if let value = args[key], caseString(value) == nil { throw BrokerError.invalidArguments } }
     case .mailMessagesList:
-      guard Set(args.keys) == Set(["limit"]),
+      guard Set(args.keys) == Set(["mailbox_reference", "limit"]),
+        let reference = caseString(args["mailbox_reference"]),
+        reference.range(of: #"^mailbox_[A-Za-z0-9_-]{8,80}$"#, options: .regularExpression)
+          != nil,
         caseInt(args["limit"], max: 20) != nil
       else {
         throw BrokerError.invalidArguments

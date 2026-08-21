@@ -62,7 +62,7 @@ public struct NativeCapabilityRegistry: Sendable {
         accessMode: "read", exposesPersonalData: true, confirmationRequired: true,
         implementationState: "implemented",
         limitations: [
-          "Inbox only",
+          "One explicitly discovered opaque mailbox reference",
           "metadata only",
           "limit 1..20",
           "opaque message references",

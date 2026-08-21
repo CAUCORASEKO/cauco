@@ -37,7 +37,7 @@ def valid_response() -> dict:
         },
         "error": None,
         "limitations": [
-            "Inbox only",
+            "One explicitly discovered opaque mailbox reference",
             "metadata only",
             "limit 1..20",
             "opaque message references",
@@ -230,7 +230,7 @@ def test_mail_account_and_mailbox_lists_reject_invalid_result_envelopes(kind: st
 def test_mail_messages_list_builds_bounded_native_request() -> None:
     client, calls = client_with_response(valid_response())
 
-    response = client.mail_messages_list(limit=5)
+    response = client.mail_messages_list("mailbox_0123456789abcdef", limit=5)
 
     assert response["result"]["result_count"] == 1
     assert len(calls) == 1
@@ -241,7 +241,38 @@ def test_mail_messages_list_builds_bounded_native_request() -> None:
     assert request["requesterId"] == "core"
     assert request["origin"] == "localCore"
     assert request["explicitUserRequest"] is True
-    assert request["arguments"] == {"limit": 5}
+    assert request["arguments"] == {
+        "mailbox_reference": "mailbox_0123456789abcdef",
+        "limit": 5,
+    }
+
+
+@pytest.mark.parametrize(
+    "mailbox_reference",
+    ["native-id", "mailbox_short", "mailacct_0123456789abcdef", "", None],
+)
+def test_mail_messages_list_rejects_invalid_mailbox_reference_before_broker_call(
+    mailbox_reference: object,
+) -> None:
+    client, calls = client_with_response(valid_response())
+
+    with pytest.raises(ValueError):
+        client.mail_messages_list(mailbox_reference, limit=5)  # type: ignore[arg-type]
+
+    assert calls == []
+
+
+def test_mail_messages_list_maps_stale_mailbox_reference() -> None:
+    client, _ = client_with_response(
+        {
+            "outcome": "rejected",
+            "result": None,
+            "error": {"code": "mail_mailbox_reference_unknown"},
+        }
+    )
+
+    with pytest.raises(NativeBrokerReferenceNotFound):
+        client.mail_messages_list("mailbox_0123456789abcdef", limit=5)
 
 
 @pytest.mark.parametrize("limit", [0, 21, -1, True, 1.5, "5"])
@@ -249,7 +280,9 @@ def test_mail_messages_list_rejects_invalid_limits(limit: object) -> None:
     client, calls = client_with_response(valid_response())
 
     with pytest.raises(ValueError):
-        client.mail_messages_list(limit=limit)  # type: ignore[arg-type]
+        client.mail_messages_list(
+            "mailbox_0123456789abcdef", limit=limit  # type: ignore[arg-type]
+        )
 
     assert calls == []
 
@@ -257,7 +290,7 @@ def test_mail_messages_list_rejects_invalid_limits(limit: object) -> None:
 def test_mail_messages_list_accepts_only_exact_bounded_metadata() -> None:
     client, _ = client_with_response(valid_response())
 
-    response = client.mail_messages_list()
+    response = client.mail_messages_list("mailbox_0123456789abcdef", limit=20)
 
     message = response["result"]["results"][0]
 
@@ -294,7 +327,7 @@ def test_mail_messages_list_rejects_malformed_message_fields(
     client, _ = client_with_response(response)
 
     with pytest.raises(NativeBrokerUnavailable):
-        client.mail_messages_list()
+        client.mail_messages_list("mailbox_0123456789abcdef", limit=20)
 
 
 @pytest.mark.parametrize(
@@ -309,7 +342,7 @@ def test_mail_messages_list_rejects_forbidden_or_extra_fields(
     client, _ = client_with_response(response)
 
     with pytest.raises(NativeBrokerUnavailable):
-        client.mail_messages_list()
+        client.mail_messages_list("mailbox_0123456789abcdef", limit=20)
 
 
 def test_mail_messages_list_rejects_inconsistent_result_count() -> None:
@@ -318,7 +351,7 @@ def test_mail_messages_list_rejects_inconsistent_result_count() -> None:
     client, _ = client_with_response(response)
 
     with pytest.raises(NativeBrokerUnavailable):
-        client.mail_messages_list()
+        client.mail_messages_list("mailbox_0123456789abcdef", limit=20)
 
 
 def test_mail_messages_list_rejects_more_rows_than_requested_limit() -> None:
@@ -330,7 +363,7 @@ def test_mail_messages_list_rejects_more_rows_than_requested_limit() -> None:
     client, _ = client_with_response(response)
 
     with pytest.raises(NativeBrokerUnavailable):
-        client.mail_messages_list(limit=1)
+        client.mail_messages_list("mailbox_0123456789abcdef", limit=1)
 
 
 def test_mail_messages_list_rejects_unexpected_result_fields() -> None:
@@ -339,4 +372,4 @@ def test_mail_messages_list_rejects_unexpected_result_fields() -> None:
     client, _ = client_with_response(response)
 
     with pytest.raises(NativeBrokerUnavailable):
-        client.mail_messages_list()
+        client.mail_messages_list("mailbox_0123456789abcdef", limit=20)

@@ -292,7 +292,10 @@ final class HostCoreTests: XCTestCase {
     let response = broker.handle(
       try request(
         .mailMessagesList,
-        args: ["limit": .number(5)]
+        args: [
+          "mailbox_reference": .string("mailbox_0123456789abcdef"),
+          "limit": .number(5),
+        ]
       )
     )
 
@@ -300,6 +303,7 @@ final class HostCoreTests: XCTestCase {
     XCTAssertEqual(response.method, "mail.messages.list.v1")
     XCTAssertEqual(mail.calls, 1)
     XCTAssertEqual(mail.lastLimit, 5)
+    XCTAssertEqual(mail.lastMailboxReference, "mailbox_0123456789abcdef")
 
     guard case let .array(results)? = response.result?["results"] else {
       return XCTFail("Mail results were missing.")
@@ -330,12 +334,66 @@ final class HostCoreTests: XCTestCase {
     let invalid = broker.handle(
       try request(
         .mailMessagesList,
-        args: ["limit": .number(21)]
+        args: [
+          "mailbox_reference": .string("mailbox_0123456789abcdef"),
+          "limit": .number(21),
+        ]
       )
     )
 
     XCTAssertEqual(invalid.error?.code, "invalid_arguments")
     XCTAssertEqual(mail.calls, 1)
+  }
+
+  func testMailMessagesBrokerRejectsImplicitInboxAndInvalidReferences() throws {
+    let mail = FakeMailMessageGateway()
+    let broker = NativeCapabilityBroker(
+      permission: FakePermission(.granted), mailMessages: mail)
+
+    let invalidArguments: [[String: BrokerJSONValue]] = [
+      ["limit": .number(5)],
+      ["mailbox_reference": .string("mailbox_0123456789abcdef")],
+      ["mailbox_reference": .string("native-mailbox-id"), "limit": .number(5)],
+      [
+        "mailbox_reference": .string("mailbox_0123456789abcdef"),
+        "limit": .number(5),
+        "mailbox_name": .string("Inbox"),
+      ],
+    ]
+
+    for arguments in invalidArguments {
+      let response = broker.handle(try request(.mailMessagesList, args: arguments))
+      XCTAssertEqual(response.error?.code, "invalid_arguments")
+    }
+    XCTAssertEqual(mail.calls, 0)
+  }
+
+  func testNativeMailMessageGatewayFailsClosedForUnknownOrStaleMailboxReference() throws {
+    let references = MailAccountReferenceRegistry(mailboxCapacity: 1)
+    let stale = references.mailboxReference(accountIdentifier: 41, mailboxIdentifier: 501)
+    _ = references.mailboxReference(accountIdentifier: 42, mailboxIdentifier: 502)
+    let gateway = NativeMailMessageGateway(accountReferences: references)
+
+    XCTAssertThrowsError(try gateway.listMessages(mailboxReference: stale, limit: 5)) { error in
+      XCTAssertEqual(error as? BrokerError, .mailMailboxReferenceUnknown)
+    }
+    XCTAssertThrowsError(
+      try gateway.listMessages(mailboxReference: "mailbox_0123456789abcdef", limit: 5)
+    ) { error in
+      XCTAssertEqual(error as? BrokerError, .mailMailboxReferenceUnknown)
+    }
+  }
+
+  func testMailMessageScriptRoutesExactAccountAndMailboxWithoutGlobalInbox() {
+    let script = mailMessagesScript(
+      locator: MailMailboxLocator(accountIdentifier: 41, mailboxIdentifier: 501), limit: 20)
+
+    XCTAssertTrue(script.contains("id of accountItem is 41"))
+    XCTAssertTrue(script.contains("id of mailboxItem is 501"))
+    XCTAssertTrue(script.contains("messages of targetMailbox"))
+    XCTAssertTrue(script.contains("set selectedCount to 20"))
+    XCTAssertFalse(script.contains("messages of inbox"))
+    XCTAssertFalse(script.contains("global inbox"))
   }
 
   func testMailAccountAndMailboxReferencesAreOpaqueStableAndBounded() throws {
@@ -629,10 +687,14 @@ private func connectToBroker(_ url: URL) throws -> Int32 {
 private final class FakeMailMessageGateway: MailMessageGateway, @unchecked Sendable {
   var calls = 0
   var lastLimit: Int?
+  var lastMailboxReference: String?
 
-  func listMessages(limit: Int) throws -> [String: BrokerJSONValue] {
+  func listMessages(
+    mailboxReference: String, limit: Int
+  ) throws -> [String: BrokerJSONValue] {
     calls += 1
     lastLimit = limit
+    lastMailboxReference = mailboxReference
 
     return [
       "results": .array([

@@ -1,7 +1,7 @@
 import Foundation
 
 public protocol MailMessageGateway: Sendable {
-  func listMessages(limit: Int) throws -> [String: BrokerJSONValue]
+  func listMessages(mailboxReference: String, limit: Int) throws -> [String: BrokerJSONValue]
 }
 
 public final class MailMessageReferenceRegistry: @unchecked Sendable {
@@ -52,22 +52,125 @@ public final class MailMessageReferenceRegistry: @unchecked Sendable {
 }
 
 public final class NativeMailMessageGateway: MailMessageGateway, @unchecked Sendable {
+  private let accountReferences: MailAccountReferenceRegistry
   private let references: MailMessageReferenceRegistry
 
   public init(
+    accountReferences: MailAccountReferenceRegistry = MailAccountReferenceRegistry(),
     references: MailMessageReferenceRegistry = MailMessageReferenceRegistry()
   ) {
+    self.accountReferences = accountReferences
     self.references = references
   }
 
-  public func listMessages(limit: Int) throws -> [String: BrokerJSONValue] {
+  public func listMessages(
+    mailboxReference: String, limit: Int
+  ) throws -> [String: BrokerJSONValue] {
     guard (1...20).contains(limit) else {
       throw BrokerError.invalidArguments
     }
+    guard let locator = accountReferences.mailboxLocator(for: mailboxReference) else {
+      throw BrokerError.mailMailboxReferenceUnknown
+    }
 
-    let script = """
+    let script = mailMessagesScript(locator: locator, limit: limit)
+
+    var errorInfo: NSDictionary?
+
+    guard let appleScript = NSAppleScript(source: script) else {
+      throw BrokerError.internalFailure
+    }
+
+    let descriptor = appleScript.executeAndReturnError(&errorInfo)
+
+    if errorInfo != nil {
+      throw BrokerError.internalFailure
+    }
+
+    guard descriptor.numberOfItems == 2,
+      let totalDescriptor = descriptor.atIndex(1),
+      let rowsDescriptor = descriptor.atIndex(2)
+    else {
+      throw BrokerError.internalFailure
+    }
+
+    let rawTotalCount = Int(totalDescriptor.int32Value)
+    guard rawTotalCount >= 0 else {
+      throw BrokerError.mailMailboxReferenceUnknown
+    }
+    let totalCount = rawTotalCount
+
+    var results: [BrokerJSONValue] = []
+    results.reserveCapacity(min(limit, rowsDescriptor.numberOfItems))
+
+    let rowCount = min(limit, rowsDescriptor.numberOfItems)
+    if rowCount > 0 {
+      for index in 1...rowCount {
+        guard let row = rowsDescriptor.atIndex(index),
+          row.numberOfItems == 5,
+          let idDescriptor = row.atIndex(1),
+          let senderDescriptor = row.atIndex(2),
+          let subjectDescriptor = row.atIndex(3),
+          let dateDescriptor = row.atIndex(4),
+          let readDescriptor = row.atIndex(5)
+        else {
+          continue
+        }
+
+        let identifier = idDescriptor.int32Value
+        guard identifier > 0 else {
+          continue
+        }
+
+        let reference = references.reference(for: identifier)
+        let sender = mailSanitized(senderDescriptor.stringValue ?? "", limit: 320)
+        let subject = mailSanitized(subjectDescriptor.stringValue ?? "", limit: 300)
+
+        guard let dateReceived = mailISO8601Date(from: dateDescriptor) else {
+          continue
+        }
+
+        results.append(
+          .object([
+            "message_reference": .string(reference),
+            "sender": .string(sender),
+            "subject": .string(subject),
+            "date_received": .string(dateReceived),
+            "read": .boolean(readDescriptor.booleanValue),
+          ]))
+      }
+    }
+
+    return [
+      "results": .array(results),
+      "result_count": .number(Double(results.count)),
+      "truncated": .boolean(totalCount > results.count),
+    ]
+  }
+}
+
+func mailMessagesScript(locator: MailMailboxLocator, limit: Int) -> String {
+  """
     tell application "Mail"
-      set sourceMessages to messages of inbox
+      set targetAccount to missing value
+      repeat with accountItem in every account
+        if id of accountItem is \(locator.accountIdentifier) then
+          set targetAccount to accountItem
+          exit repeat
+        end if
+      end repeat
+      if targetAccount is missing value then return {-1, {}}
+
+      set targetMailbox to missing value
+      repeat with mailboxItem in every mailbox of targetAccount
+        if id of mailboxItem is \(locator.mailboxIdentifier) then
+          set targetMailbox to mailboxItem
+          exit repeat
+        end if
+      end repeat
+      if targetMailbox is missing value then return {-1, {}}
+
+      set sourceMessages to messages of targetMailbox
       set totalCount to count of sourceMessages
       set selectedCount to \(limit)
 
@@ -91,81 +194,6 @@ public final class NativeMailMessageGateway: MailMessageGateway, @unchecked Send
       return {totalCount, outputRows}
     end tell
     """
-
-    var errorInfo: NSDictionary?
-
-    guard let appleScript = NSAppleScript(source: script) else {
-      throw BrokerError.internalFailure
-    }
-
-    let descriptor = appleScript.executeAndReturnError(&errorInfo)
-
-    if errorInfo != nil {
-      throw BrokerError.internalFailure
-    }
-
-    guard descriptor.numberOfItems == 2,
-      let totalDescriptor = descriptor.atIndex(1),
-      let rowsDescriptor = descriptor.atIndex(2)
-    else {
-      throw BrokerError.internalFailure
-    }
-
-    let totalCount = max(0, Int(totalDescriptor.int32Value))
-
-    var results: [BrokerJSONValue] = []
-    results.reserveCapacity(min(limit, rowsDescriptor.numberOfItems))
-
-    for index in 1...rowsDescriptor.numberOfItems {
-      guard let row = rowsDescriptor.atIndex(index),
-        row.numberOfItems == 5,
-        let idDescriptor = row.atIndex(1),
-        let senderDescriptor = row.atIndex(2),
-        let subjectDescriptor = row.atIndex(3),
-        let dateDescriptor = row.atIndex(4),
-        let readDescriptor = row.atIndex(5)
-      else {
-        continue
-      }
-
-      let identifier = idDescriptor.int32Value
-      guard identifier > 0 else {
-        continue
-      }
-
-      let reference = references.reference(for: identifier)
-
-      let sender = mailSanitized(
-        senderDescriptor.stringValue ?? "",
-        limit: 320
-      )
-
-      let subject = mailSanitized(
-        subjectDescriptor.stringValue ?? "",
-        limit: 300
-      )
-
-      guard let dateReceived = mailISO8601Date(from: dateDescriptor) else {
-        continue
-      }
-
-      results.append(
-        .object([
-          "message_reference": .string(reference),
-          "sender": .string(sender),
-          "subject": .string(subject),
-          "date_received": .string(dateReceived),
-          "read": .boolean(readDescriptor.booleanValue),
-        ])
-      )
-    }
-
-    return [
-      "results": .array(results),
-      "result_count": .number(Double(results.count)),
-      "truncated": .boolean(totalCount > results.count),
-    ]
-  }
 }
 
 func mailISO8601Date(from descriptor: NSAppleEventDescriptor) -> String? {
