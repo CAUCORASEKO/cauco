@@ -1,6 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from cauco_agents import (
     AgentPlan,
     AgentPlanStep,
@@ -8,12 +9,13 @@ from cauco_agents import (
     EmailDraftInput,
     EmailListMessagesInput,
 )
-from cauco_tools import ToolExecutionRequest
+from cauco_tools import ToolExecutionError, ToolExecutionRequest
 from fastapi.testclient import TestClient
 
 from cauco_core.agents.review_store import snapshot_digest
 from cauco_core.config import Settings
 from cauco_core.main import create_app
+from cauco_core.native_broker import NativeBrokerUnavailable
 
 
 class FakeBrokerClient:
@@ -70,6 +72,18 @@ class FakeBrokerClient:
             "limitations": ["draft creation only"],
             "method": "mail.draft.create.v1",
         }
+
+
+class UnavailableMailBrokerClient:
+    configured = True
+    token = "t" * 44
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def mail_messages_list(self, limit: int = 20) -> dict:
+        self.calls += 1
+        raise NativeBrokerUnavailable("Mail broker unavailable")
 
 
 def email_execution(
@@ -188,6 +202,34 @@ def test_email_list_messages_adapter_is_read_only_and_bounded(tmp_path: Path) ->
                 "arguments": {"limit": 5},
             }
         ]
+
+
+def test_email_list_messages_adapter_maps_broker_unavailability_safely(
+    tmp_path: Path,
+) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+
+    with TestClient(create_app(Settings(brain_dir=brain))) as client:
+        adapter = client.app.state.tool_adapter_registry.get(
+            "email",
+            "list_messages",
+        )
+        unavailable = UnavailableMailBrokerClient()
+        adapter.broker_client = unavailable
+
+        with pytest.raises(ToolExecutionError) as captured:
+            adapter.execute(
+                ToolExecutionRequest(
+                    "email",
+                    "list_messages",
+                    {"limit": 5},
+                )
+            )
+
+        assert captured.value.code == "email_unavailable"
+        assert captured.value.safe_message == "Email message listing is unavailable."
+        assert unavailable.calls == 1
 
 
 def test_email_list_messages_runs_through_execution_service_without_workspace(
@@ -325,6 +367,61 @@ def test_email_agent_inbox_plan_runs_unchanged_through_task_runtime(
                 "arguments": {"limit": 5},
             }
         ]
+
+        refreshed = client.get(
+            f"/api/agents/plan-reviews/{approved['review_id']}"
+        ).json()
+        assert refreshed["plan"] == approved["plan"]
+        assert refreshed["snapshot_digest"] == approved["snapshot_digest"]
+
+
+def test_email_agent_inbox_broker_failure_aborts_without_retry_or_replan(
+    tmp_path: Path,
+) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+
+    with TestClient(create_app(Settings(brain_dir=brain))) as client:
+        adapter = client.app.state.tool_adapter_registry.get(
+            "email",
+            "list_messages",
+        )
+        unavailable = UnavailableMailBrokerClient()
+        adapter.broker_client = unavailable
+
+        pending = client.post(
+            "/api/agents/plan-reviews",
+            json={
+                "instruction": "Muéstrame los últimos 5 correos",
+                "include_context": False,
+            },
+        ).json()
+        approved = client.post(
+            f"/api/agents/plan-reviews/{pending['review_id']}/approve",
+            json={},
+        ).json()
+        execution = client.post(
+            "/api/executions",
+            json={"review_id": approved["review_id"]},
+        ).json()
+
+        run_response = client.post(
+            f"/api/executions/{execution['execution_id']}/run"
+        )
+
+        assert run_response.status_code == 200
+        assert run_response.json()["state"] == "failed"
+        assert unavailable.calls == 1
+
+        record = client.app.state.execution_store.get(execution["execution_id"])
+        failed = record.step_records[0]
+        assert failed.result is not None
+        assert failed.result.error_code == "email_unavailable"
+        assert not any(
+            event.event_type in {"recovery_retry", "recovery_replan_required"}
+            for event in record.audit_events
+        )
+        assert any(event.event_type == "recovery_abort" for event in record.audit_events)
 
         refreshed = client.get(
             f"/api/agents/plan-reviews/{approved['review_id']}"
