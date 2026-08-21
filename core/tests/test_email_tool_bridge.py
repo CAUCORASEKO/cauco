@@ -252,6 +252,87 @@ def test_email_list_messages_runs_through_execution_service_without_workspace(
         assert refreshed["snapshot_digest"] == approved["snapshot_digest"]
 
 
+def test_email_agent_inbox_plan_runs_unchanged_through_task_runtime(
+    tmp_path: Path,
+) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+
+    with TestClient(create_app(Settings(brain_dir=brain))) as client:
+        adapter = client.app.state.tool_adapter_registry.get(
+            "email",
+            "list_messages",
+        )
+        fake = FakeBrokerClient()
+        adapter.broker_client = fake
+
+        pending_response = client.post(
+            "/api/agents/plan-reviews",
+            json={
+                "instruction": "Muéstrame los últimos 5 correos",
+                "include_context": False,
+            },
+        )
+
+        assert pending_response.status_code == 201
+        pending = pending_response.json()
+        assert pending["selected_agent_id"] == "email"
+        assert pending["readiness"]["ready"] is True
+        assert pending["plan"]["requires_confirmation"] is False
+        assert pending["plan"]["metadata"]["skill_id"] == "email.inspect_inbox"
+        assert len(pending["plan"]["steps"]) == 1
+
+        step = pending["plan"]["steps"][0]
+        assert step["tool_reference"] == {
+            "tool_id": "email",
+            "operation_id": "list_messages",
+            "target": None,
+        }
+        assert step["operation_input"] == {"limit": 5}
+        assert step["requires_confirmation"] is False
+        assert fake.calls == []
+
+        approved_response = client.post(
+            f"/api/agents/plan-reviews/{pending['review_id']}/approve",
+            json={},
+        )
+        assert approved_response.status_code == 200
+        approved = approved_response.json()
+
+        execution_response = client.post(
+            "/api/executions",
+            json={"review_id": approved["review_id"]},
+        )
+        assert execution_response.status_code == 201
+        execution_id = execution_response.json()["execution_id"]
+
+        run_response = client.post(f"/api/executions/{execution_id}/run")
+        assert run_response.status_code == 200
+        assert run_response.json()["state"] == "completed"
+        assert fake.calls == [
+            {
+                "capability": "mail.messages.list",
+                "arguments": {"limit": 5},
+            }
+        ]
+
+        repeated_run = client.post(f"/api/executions/{execution_id}/run")
+        assert repeated_run.status_code == 200
+        assert repeated_run.json()["state"] == "completed"
+        assert fake.calls == [
+            {
+                "capability": "mail.messages.list",
+                "arguments": {"limit": 5},
+            }
+        ]
+
+        refreshed = client.get(
+            f"/api/agents/plan-reviews/{approved['review_id']}"
+        ).json()
+        assert refreshed["plan"] == approved["plan"]
+        assert refreshed["snapshot_digest"] == approved["snapshot_digest"]
+
+
 def test_email_adapter_preflight_is_inert_and_execution_is_typed(tmp_path: Path) -> None:
     brain = tmp_path / "brain"
     brain.mkdir()
