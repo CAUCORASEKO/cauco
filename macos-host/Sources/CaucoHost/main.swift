@@ -1,17 +1,42 @@
 import AppKit
 import CaucoHostCore
+import Darwin
 import SwiftUI
 
 @MainActor final class CaucoHostAppDelegate: NSObject, NSApplicationDelegate {
   weak var model: HostModel?
+  private var terminationSignalSources: [DispatchSourceSignal] = []
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApplication.shared.setActivationPolicy(.regular)
     NSApplication.shared.activate(ignoringOtherApps: true)
+    installTerminationSignalHandlers()
   }
 
   func applicationWillTerminate(_ notification: Notification) {
     model?.shutdownForHostTermination()
+    removeTerminationSignalHandlers()
+  }
+
+  private func installTerminationSignalHandlers() {
+    for terminationSignal in [SIGINT, SIGTERM] {
+      signal(terminationSignal, SIG_IGN)
+      let source = DispatchSource.makeSignalSource(signal: terminationSignal, queue: .main)
+      source.setEventHandler { [weak self] in
+        guard let self else { return }
+        self.model?.shutdownForHostTermination()
+        NSApplication.shared.terminate(nil)
+      }
+      source.resume()
+      terminationSignalSources.append(source)
+    }
+  }
+
+  private func removeTerminationSignalHandlers() {
+    for source in terminationSignalSources { source.cancel() }
+    terminationSignalSources.removeAll()
+    signal(SIGINT, SIG_DFL)
+    signal(SIGTERM, SIG_DFL)
   }
 }
 
