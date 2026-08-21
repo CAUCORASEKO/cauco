@@ -161,6 +161,7 @@ def test_default_registry_contains_registered_planning_skills() -> None:
     assert [item.skill_id for item in registry.list_definitions()] == [
         "calendar.inspect_schedule",
         "calendar.prepare_event",
+        "email.inspect_inbox",
         "email.prepare_draft",
         "git.inspect_repository",
     ]

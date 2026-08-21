@@ -1,5 +1,10 @@
 from cauco_agents.skills.adapter import SkillAdapter
-from cauco_agents.skills.email import EmailPrepareDraftInput, EmailPrepareDraftSkill
+from cauco_agents.skills.email import (
+    EmailInspectInboxInput,
+    EmailInspectInboxSkill,
+    EmailPrepareDraftInput,
+    EmailPrepareDraftSkill,
+)
 from cauco_agents.skills.calendar import (
     CalendarInspectScheduleInput,
     CalendarInspectScheduleSkill,
@@ -14,6 +19,7 @@ from cauco_agents.skills.registry import SkillRegistry
 def create_default_skill_registry() -> SkillRegistry:
     registry = SkillRegistry()
     registry.register(CalendarInspectScheduleSkill())
+    registry.register(EmailInspectInboxSkill())
     registry.register(EmailPrepareDraftSkill())
     registry.register(CalendarPrepareEventSkill())
     registry.register(GitInspectRepositorySkill())
@@ -27,6 +33,8 @@ __all__ = [
     "CalendarInspectScheduleSkill",
     "CalendarPrepareEventInput",
     "CalendarPrepareEventSkill",
+    "EmailInspectInboxInput",
+    "EmailInspectInboxSkill",
     "EmailPrepareDraftInput",
     "EmailPrepareDraftSkill",
     "SkillAdapter",

@@ -2,7 +2,12 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from cauco_agents import AgentContext, EmailAgent, EmailDraftInput
+from cauco_agents import (
+    AgentContext,
+    EmailAgent,
+    EmailDraftInput,
+    EmailListMessagesInput,
+)
 
 
 def context(instruction: str) -> AgentContext:
@@ -84,3 +89,57 @@ def test_email_agent_does_not_invent_missing_subject_or_body() -> None:
     assert plan.steps == ()
     assert "What exact subject should the draft have?" in plan.open_questions
     assert "What exact body should the draft contain?" in plan.open_questions
+
+
+@pytest.mark.parametrize(
+    ("instruction", "expected_limit"),
+    (
+        ("Muéstrame los últimos 5 correos", 5),
+        ("Show my last 10 emails", 10),
+        ("Revisa mi inbox", 20),
+        ("Lista 3 emails", 3),
+    ),
+)
+def test_email_agent_builds_bounded_inbox_inspection_plan(
+    instruction: str,
+    expected_limit: int,
+) -> None:
+    plan = EmailAgent().plan(context(instruction))
+
+    assert plan.open_questions == ()
+    assert plan.requires_confirmation is False
+    assert len(plan.steps) == 1
+    assert plan.metadata["skill_id"] == "email.inspect_inbox"
+
+    step = plan.steps[0]
+
+    assert step.tool_reference.tool_id == "email"
+    assert step.tool_reference.operation_id == "list_messages"
+    assert step.requires_confirmation is False
+    assert step.operation_input == EmailListMessagesInput(limit=expected_limit)
+
+
+def test_email_agent_rejects_inbox_limit_above_native_boundary() -> None:
+    plan = EmailAgent().plan(context("Muéstrame los últimos 50 correos"))
+
+    assert plan.steps == ()
+    assert plan.requires_confirmation is False
+    assert plan.metadata["skill_id"] == "email.inspect_inbox"
+    assert plan.open_questions == (
+        "How many inbox messages should be inspected? "
+        "The supported limit is between 1 and 20.",
+    )
+
+
+def test_email_agent_keeps_draft_requests_on_draft_skill() -> None:
+    plan = EmailAgent().plan(
+        context(
+            "Prepara un correo para claudio@aisosu.fi "
+            "asunto: Prueba Cauco "
+            "cuerpo: Este es un borrador."
+        )
+    )
+
+    assert plan.metadata["skill_id"] == "email.prepare_draft"
+    assert plan.requires_confirmation is True
+    assert plan.steps[0].tool_reference.operation_id == "draft"
