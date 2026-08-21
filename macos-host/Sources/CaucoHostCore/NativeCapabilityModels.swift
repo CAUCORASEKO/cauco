@@ -10,6 +10,8 @@ public enum NativeCapability: String, Codable, CaseIterable, Sendable {
   case calendarEventsRange = "calendar.events.range"
   case calendarEventsGet = "calendar.events.get"
   case calendarEventsCreate = "calendar.events.create"
+  case mailAccountsList = "mail.accounts.list"
+  case mailMailboxesList = "mail.mailboxes.list"
   case mailMessagesList = "mail.messages.list"
   case mailDraftCreate = "mail.draft.create"
 }
@@ -184,6 +186,7 @@ public struct BrokerError: Error, Codable, Equatable, Sendable {
   public static let contactReferenceUnknown = BrokerError("contact_reference_unknown")
   public static let eventReferenceUnknown = BrokerError("event_reference_unknown")
   public static let calendarReferenceUnknown = BrokerError("calendar_reference_unknown")
+  public static let mailAccountReferenceUnknown = BrokerError("mail_account_reference_unknown")
   public static let calendarNotModifiable = BrokerError("calendar_not_modifiable")
 }
 public struct NativeCapabilityResponse: Codable, Equatable, Sendable {

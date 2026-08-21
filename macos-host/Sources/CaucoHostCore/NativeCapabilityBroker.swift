@@ -5,6 +5,7 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
   private let contacts: ContactsDataGateway
   private let calendarPermission: CalendarPermissionGateway
   private let calendars: CalendarDataGateway
+  private let mailAccounts: MailAccountGateway
   private let mailMessages: MailMessageGateway
   private let mailDrafts: MailDraftGateway
   public let registry: NativeCapabilityRegistry
@@ -14,6 +15,7 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     calendarPermission: CalendarPermissionGateway = NativeCalendarPermissionGateway(),
     contacts: ContactsDataGateway? = nil,
     calendars: CalendarDataGateway? = nil,
+    mailAccounts: MailAccountGateway? = nil,
     mailMessages: MailMessageGateway? = nil,
     mailDrafts: MailDraftGateway? = nil,
     registry: NativeCapabilityRegistry = NativeCapabilityRegistry()
@@ -22,6 +24,7 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     self.contacts = contacts ?? NativeContactsDataGateway(permission: permission)
     self.calendarPermission = calendarPermission
     self.calendars = calendars ?? NativeCalendarDataGateway(permission: calendarPermission)
+    self.mailAccounts = mailAccounts ?? NativeMailAccountGateway()
     self.mailMessages = mailMessages ?? NativeMailMessageGateway()
     self.mailDrafts = mailDrafts ?? NativeMailDraftGateway()
     self.registry = registry
@@ -47,6 +50,27 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       do { let a = request.arguments; return response(request, .success, try calendars.eventCreate(title: a["title"]!.stringValue!, start: a["start"]!.stringValue!, end: a["end"]!.stringValue!, allDay: a["all_day"]!.boolValue!, calendarReference: a["calendar_reference"]?.stringValue, location: a["location"]?.stringValue, notes: a["notes"]?.stringValue), nil, definition.limitations) }
       catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
       catch { return response(request, .failed, nil, .internalFailure, definition.limitations) }
+    case .mailAccountsList:
+      do {
+        return response(
+          request, .success, try mailAccounts.listAccounts(), nil, definition.limitations)
+      } catch let error as BrokerError {
+        return response(request, .rejected, nil, error, definition.limitations)
+      } catch {
+        return response(request, .failed, nil, .internalFailure, definition.limitations)
+      }
+    case .mailMailboxesList:
+      do {
+        return response(
+          request, .success,
+          try mailAccounts.listMailboxes(
+            accountReference: request.arguments["account_reference"]!.stringValue!),
+          nil, definition.limitations)
+      } catch let error as BrokerError {
+        return response(request, .rejected, nil, error, definition.limitations)
+      } catch {
+        return response(request, .failed, nil, .internalFailure, definition.limitations)
+      }
     case .mailMessagesList:
       do {
         let limit = Int(request.arguments["limit"]!.numberValue!)
@@ -177,7 +201,8 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     _ args: [String: BrokerJSONValue], for capability: NativeCapability
   ) throws {
     switch capability {
-    case .contactsStatus, .calendarStatus: guard args.isEmpty else { throw BrokerError.invalidArguments }
+    case .contactsStatus, .calendarStatus, .mailAccountsList:
+      guard args.isEmpty else { throw BrokerError.invalidArguments }
     case .contactsSearch:
       guard Set(args.keys) == Set(["query", "limit"]), caseString(args["query"])?.isEmpty == false,
         caseInt(args["limit"]) != nil
@@ -203,6 +228,14 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     case .mailMessagesList:
       guard Set(args.keys) == Set(["limit"]),
         caseInt(args["limit"], max: 20) != nil
+      else {
+        throw BrokerError.invalidArguments
+      }
+    case .mailMailboxesList:
+      guard Set(args.keys) == Set(["account_reference"]),
+        let reference = caseString(args["account_reference"]),
+        reference.range(of: #"^mailacct_[A-Za-z0-9_-]{8,80}$"#, options: .regularExpression)
+          != nil
       else {
         throw BrokerError.invalidArguments
       }

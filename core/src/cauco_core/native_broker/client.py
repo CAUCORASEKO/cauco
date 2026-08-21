@@ -4,14 +4,15 @@ import json
 import os
 import re
 import socket
-from datetime import timedelta
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 MAX_REQUEST = 16 * 1024
 MAX_RESPONSE = 32 * 1024
 BROKER_REF = re.compile(r"^contact_[A-Za-z0-9_-]{8,80}$")
 CALENDAR_REF = re.compile(r"^calendar_[A-Za-z0-9_-]{8,80}$")
+MAIL_ACCOUNT_REF = re.compile(r"^mailacct_[A-Za-z0-9_-]{8,80}$")
+MAILBOX_REF = re.compile(r"^mailbox_[A-Za-z0-9_-]{8,80}$")
 
 
 class NativeBrokerUnavailable(Exception):
@@ -145,7 +146,7 @@ class NativeBrokerClient:
             "explicitUserRequest": True,
             "requestLocale": "en",
             "responseLocale": "en",
-            "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "arguments": {"limit": limit},
         }
 
@@ -226,6 +227,116 @@ class NativeBrokerClient:
                 raise NativeBrokerUnavailable("native mail message list response invalid")
 
         return response
+
+    def mail_accounts_list(self) -> dict[str, Any]:
+        request = {
+            "protocolVersion": "native-capability-broker-v1",
+            "requestId": "core-native-mail-accounts-list",
+            "capability": "mail.accounts.list",
+            "requesterId": "core",
+            "origin": "localCore",
+            "explicitUserRequest": True,
+            "requestLocale": "en",
+            "responseLocale": "en",
+            "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "arguments": {},
+        }
+        response = self.request(request)
+        result = self._mail_list_result(response, maximum=20, kind="account")
+        for row in result["results"]:
+            if not isinstance(row, dict) or set(row) != {
+                "account_reference",
+                "name",
+                "email_addresses",
+            }:
+                raise NativeBrokerUnavailable("native mail account list response invalid")
+            if not isinstance(row["account_reference"], str) or not MAIL_ACCOUNT_REF.fullmatch(
+                row["account_reference"]
+            ):
+                raise NativeBrokerUnavailable("native mail account list response invalid")
+            if not self._bounded_mail_text(row["name"], maximum=300):
+                raise NativeBrokerUnavailable("native mail account list response invalid")
+            addresses = row["email_addresses"]
+            if not isinstance(addresses, list) or len(addresses) > 20 or any(
+                not self._bounded_mail_text(address, maximum=320, allow_empty=False)
+                for address in addresses
+            ):
+                raise NativeBrokerUnavailable("native mail account list response invalid")
+        return response
+
+    def mail_mailboxes_list(self, account_reference: str) -> dict[str, Any]:
+        if not isinstance(account_reference, str) or not MAIL_ACCOUNT_REF.fullmatch(
+            account_reference
+        ):
+            raise ValueError("Invalid mail account reference")
+        request = {
+            "protocolVersion": "native-capability-broker-v1",
+            "requestId": "core-native-mail-mailboxes-list",
+            "capability": "mail.mailboxes.list",
+            "requesterId": "core",
+            "origin": "localCore",
+            "explicitUserRequest": True,
+            "requestLocale": "en",
+            "responseLocale": "en",
+            "createdAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "arguments": {"account_reference": account_reference},
+        }
+        response = self.request(request)
+        if response.get("outcome") != "success":
+            error = response.get("error")
+            if (
+                isinstance(error, dict)
+                and error.get("code") == "mail_account_reference_unknown"
+            ):
+                raise NativeBrokerReferenceNotFound("mail account reference not found")
+            raise NativeBrokerUnavailable("native mail mailbox list rejected")
+        result = self._mail_list_result(response, maximum=100, kind="mailbox")
+        for row in result["results"]:
+            if not isinstance(row, dict) or set(row) != {"mailbox_reference", "name"}:
+                raise NativeBrokerUnavailable("native mail mailbox list response invalid")
+            if not isinstance(row["mailbox_reference"], str) or not MAILBOX_REF.fullmatch(
+                row["mailbox_reference"]
+            ):
+                raise NativeBrokerUnavailable("native mail mailbox list response invalid")
+            if not self._bounded_mail_text(row["name"], maximum=300):
+                raise NativeBrokerUnavailable("native mail mailbox list response invalid")
+        return response
+
+    @staticmethod
+    def _mail_list_result(
+        response: dict[str, Any], *, maximum: int, kind: str
+    ) -> dict[str, Any]:
+        result = response.get("result")
+        if response.get("outcome") != "success" or not isinstance(result, dict):
+            raise NativeBrokerUnavailable(f"native mail {kind} list rejected")
+        if set(result) != {"results", "result_count", "truncated"}:
+            raise NativeBrokerUnavailable(f"native mail {kind} list response invalid")
+        rows = result.get("results")
+        count = result.get("result_count")
+        if (
+            not isinstance(rows, list)
+            or len(rows) > maximum
+            or not isinstance(count, int)
+            or isinstance(count, bool)
+            or count != len(rows)
+            or not isinstance(result.get("truncated"), bool)
+        ):
+            raise NativeBrokerUnavailable(f"native mail {kind} list response invalid")
+        return result
+
+    @staticmethod
+    def _bounded_mail_text(
+        value: object, *, maximum: int, allow_empty: bool = True
+    ) -> bool:
+        return (
+            isinstance(value, str)
+            and (allow_empty or bool(value))
+            and len(value) <= maximum
+            and not any(
+                ord(character) < 32 or 127 <= ord(character) <= 159
+                for character in value
+            )
+        )
 
     def contacts_search(self, query: str, limit: int = 20) -> dict[str, Any]:
         if not isinstance(query, str) or not query.strip() or len(query) > 200 or not 1 <= limit <= 20:

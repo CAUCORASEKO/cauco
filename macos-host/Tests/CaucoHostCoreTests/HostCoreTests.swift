@@ -338,6 +338,89 @@ final class HostCoreTests: XCTestCase {
     XCTAssertEqual(mail.calls, 1)
   }
 
+  func testMailAccountAndMailboxReferencesAreOpaqueStableAndBounded() throws {
+    let references = MailAccountReferenceRegistry(accountCapacity: 1, mailboxCapacity: 1)
+    let firstAccount = references.accountReference(for: 41)
+    XCTAssertEqual(firstAccount, references.accountReference(for: 41))
+    XCTAssertTrue(firstAccount.hasPrefix("mailacct_"))
+    XCTAssertFalse(firstAccount.contains("41"))
+    XCTAssertEqual(references.accountIdentifier(for: firstAccount), 41)
+
+    let firstMailbox = references.mailboxReference(
+      accountIdentifier: 41, mailboxIdentifier: 501)
+    XCTAssertEqual(
+      firstMailbox,
+      references.mailboxReference(accountIdentifier: 41, mailboxIdentifier: 501))
+    XCTAssertTrue(firstMailbox.hasPrefix("mailbox_"))
+    XCTAssertFalse(firstMailbox.contains("501"))
+    XCTAssertEqual(
+      references.mailboxLocator(for: firstMailbox),
+      MailMailboxLocator(accountIdentifier: 41, mailboxIdentifier: 501))
+
+    _ = references.accountReference(for: 42)
+    _ = references.mailboxReference(accountIdentifier: 42, mailboxIdentifier: 502)
+    XCTAssertNil(references.accountIdentifier(for: firstAccount))
+    XCTAssertNil(references.mailboxLocator(for: firstMailbox))
+    XCTAssertNil(references.accountIdentifier(for: "mailacct_unknown"))
+    XCTAssertNil(references.mailboxLocator(for: "mailbox_unknown"))
+  }
+
+  func testMailAccountsAndMailboxesBrokerRoutingIsBoundedAndFailClosed() throws {
+    let mail = FakeMailAccountGateway()
+    let broker = NativeCapabilityBroker(
+      permission: FakePermission(.granted),
+      mailAccounts: mail
+    )
+
+    let accounts = broker.handle(try request(.mailAccountsList, args: [:]))
+    XCTAssertEqual(accounts.outcome, .success)
+    XCTAssertEqual(accounts.method, "mail.accounts.list.v1")
+    XCTAssertEqual(mail.accountCalls, 1)
+    guard case let .array(accountRows)? = accounts.result?["results"],
+      case let .object(account) = accountRows.first
+    else { return XCTFail("Mail account metadata was missing.") }
+    XCTAssertEqual(account["account_reference"], .string(mail.accountReference))
+    XCTAssertEqual(account["name"], .string("Personal"))
+    XCTAssertEqual(account["email_addresses"], .array([.string("user@example.com")]))
+    XCTAssertNil(account["id"])
+    XCTAssertNil(account["native_identifier"])
+    XCTAssertEqual(accounts.result?["result_count"], .number(1))
+
+    let mailboxes = broker.handle(
+      try request(
+        .mailMailboxesList,
+        args: ["account_reference": .string(mail.accountReference)]))
+    XCTAssertEqual(mailboxes.outcome, .success)
+    XCTAssertEqual(mailboxes.method, "mail.mailboxes.list.v1")
+    XCTAssertEqual(mail.mailboxCalls, 1)
+    guard case let .array(mailboxRows)? = mailboxes.result?["results"],
+      case let .object(mailbox) = mailboxRows.first
+    else { return XCTFail("Mail mailbox metadata was missing.") }
+    XCTAssertEqual(mailbox["mailbox_reference"], .string("mailbox_0123456789abcdef"))
+    XCTAssertEqual(mailbox["name"], .string("Inbox"))
+    XCTAssertNil(mailbox["id"])
+    XCTAssertNil(mailbox["native_identifier"])
+    XCTAssertEqual(mailboxes.result?["result_count"], .number(1))
+
+    let invalidAccounts = broker.handle(
+      try request(.mailAccountsList, args: ["limit": .number(20)]))
+    XCTAssertEqual(invalidAccounts.error?.code, "invalid_arguments")
+    XCTAssertEqual(mail.accountCalls, 1)
+
+    let invalidReference = broker.handle(
+      try request(.mailMailboxesList, args: ["account_reference": .string("native-id")]))
+    XCTAssertEqual(invalidReference.error?.code, "invalid_arguments")
+    XCTAssertEqual(mail.mailboxCalls, 1)
+
+    let unknownReference = broker.handle(
+      try request(
+        .mailMailboxesList,
+        args: ["account_reference": .string("mailacct_ffffffffffffffff")]))
+    XCTAssertEqual(unknownReference.outcome, .rejected)
+    XCTAssertEqual(unknownReference.error?.code, "mail_account_reference_unknown")
+    XCTAssertEqual(mail.mailboxCalls, 2)
+  }
+
   func testMailDraftBrokerIsBoundedAndRoutesOnlyValidatedDrafts() throws {
     let mail = FakeMailDraftGateway()
     let broker = NativeCapabilityBroker(
@@ -559,6 +642,44 @@ private final class FakeMailMessageGateway: MailMessageGateway, @unchecked Senda
           "subject": .string("Subject"),
           "date_received": .string("2026-08-21T05:00:00.000Z"),
           "read": .boolean(false),
+        ])
+      ]),
+      "result_count": .number(1),
+      "truncated": .boolean(false),
+    ]
+  }
+}
+
+private final class FakeMailAccountGateway: MailAccountGateway, @unchecked Sendable {
+  let accountReference = "mailacct_0123456789abcdef"
+  var accountCalls = 0
+  var mailboxCalls = 0
+
+  func listAccounts() throws -> [String: BrokerJSONValue] {
+    accountCalls += 1
+    return [
+      "results": .array([
+        .object([
+          "account_reference": .string(accountReference),
+          "name": .string("Personal"),
+          "email_addresses": .array([.string("user@example.com")]),
+        ])
+      ]),
+      "result_count": .number(1),
+      "truncated": .boolean(false),
+    ]
+  }
+
+  func listMailboxes(accountReference: String) throws -> [String: BrokerJSONValue] {
+    mailboxCalls += 1
+    guard accountReference == self.accountReference else {
+      throw BrokerError.mailAccountReferenceUnknown
+    }
+    return [
+      "results": .array([
+        .object([
+          "mailbox_reference": .string("mailbox_0123456789abcdef"),
+          "name": .string("Inbox"),
         ])
       ]),
       "result_count": .number(1),
