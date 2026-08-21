@@ -31,7 +31,7 @@ from cauco_agents import (
 )
 from cauco_tools import GitAddInput, GitCommitInput, GitPushInput
 
-from cauco_core.agents.review_store import AgentPlanReviewStore
+from cauco_core.agents.review_store import AgentPlanReviewStore, PlanReviewIntegrityError
 from cauco_core.persistence import SQLiteDatabase
 
 CONTRACT_VERSION = "phase_8d_v1"
@@ -40,6 +40,7 @@ CONTRACT_VERSION = "phase_8d_v1"
 class SQLiteAgentPlanReviewStore(AgentPlanReviewStore):
     def __init__(self, database: SQLiteDatabase, **kwargs: Any) -> None:
         self.database = database
+        self.restore_skipped_count = 0
         self.database.initialize()
         super().__init__(**kwargs)
         self._restore()
@@ -100,26 +101,30 @@ class SQLiteAgentPlanReviewStore(AgentPlanReviewStore):
                 "SELECT * FROM agent_plan_reviews ORDER BY created_at ASC, review_id ASC"
             ).fetchall()
             for row in rows:
-                record = _from_json(str(row["record_json"]))
-                self.verify_integrity(record)
-                if (
-                    record.review_id,
-                    record.status.value,
-                    record.selected_agent_id,
-                    record.snapshot_digest,
-                    _dt(record.created_at),
-                    _dt(record.expires_at),
-                    _dt(record.updated_at),
-                ) != (
-                    row["review_id"],
-                    row["status"],
-                    row["selected_agent_id"],
-                    row["snapshot_digest"],
-                    row["created_at"],
-                    row["expires_at"],
-                    row["updated_at"],
-                ):
-                    raise ValueError("Stored plan review index fields are inconsistent.")
+                try:
+                    record = _from_json(str(row["record_json"]))
+                    self.verify_integrity(record)
+                    if (
+                        record.review_id,
+                        record.status.value,
+                        record.selected_agent_id,
+                        record.snapshot_digest,
+                        _dt(record.created_at),
+                        _dt(record.expires_at),
+                        _dt(record.updated_at),
+                    ) != (
+                        row["review_id"],
+                        row["status"],
+                        row["selected_agent_id"],
+                        row["snapshot_digest"],
+                        row["created_at"],
+                        row["expires_at"],
+                        row["updated_at"],
+                    ):
+                        raise ValueError("Stored plan review index fields are inconsistent.")
+                except (ValueError, TypeError, KeyError, PlanReviewIntegrityError):
+                    self.restore_skipped_count = min(self.restore_skipped_count + 1, 10_000)
+                    continue
                 self._records[record.review_id] = record
             now = self.clock()
             for record in tuple(self._records.values()):
