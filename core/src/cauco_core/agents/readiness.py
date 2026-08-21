@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass, is_dataclass
 
-from cauco_agents import AgentPlan
+from cauco_agents import AgentPlan, contains_step_output_binding
 from cauco_tools import ToolAdapterRegistry, ToolExecutionError, ToolExecutionRequest, ToolRegistry
 
 
@@ -65,7 +65,7 @@ def evaluate_plan_readiness(
         if adapter_registry and adapter_available:
             adapter = adapter_registry.get(reference.tool_id, reference.operation_id)
             preflight = getattr(adapter, "preflight", None)
-            if callable(preflight):
+            if callable(preflight) and not contains_step_output_binding(step.operation_input):
                 arguments = (
                     asdict(step.operation_input) if is_dataclass(step.operation_input) else {}
                 )

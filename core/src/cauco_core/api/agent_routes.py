@@ -24,6 +24,7 @@ from cauco_agents import (
     AgentRouteResult,
     AgentToolReference,
     UnknownPreferredAgentError,
+    encode_step_output_bindings,
 )
 from cauco_tools import ToolAdapterRegistry, ToolRegistry
 from fastapi import APIRouter, HTTPException, Query, Request, status
@@ -74,6 +75,18 @@ class AgentPlanRequest(AgentApiModel):
     timezone: str | None = Field(default=None, min_length=1, max_length=100)
     calendar_reference: str | None = Field(default=None, min_length=17, max_length=89)
     default_event_duration_minutes: int | None = Field(default=None, ge=1, le=1440)
+    mail_account_reference: str | None = Field(
+        default=None,
+        min_length=17,
+        max_length=89,
+        pattern=r"^mailacct_[A-Za-z0-9_-]{8,80}$",
+    )
+    mailbox_reference: str | None = Field(
+        default=None,
+        min_length=16,
+        max_length=88,
+        pattern=r"^mailbox_[A-Za-z0-9_-]{8,80}$",
+    )
 
 
 class AgentPlanReviewCreateRequest(AgentPlanRequest):
@@ -584,6 +597,8 @@ def perform_plan(
             timezone=payload.timezone,
             calendar_reference=payload.calendar_reference,
             default_event_duration_minutes=payload.default_event_duration_minutes,
+            mail_account_reference=payload.mail_account_reference,
+            mailbox_reference=payload.mailbox_reference,
         )
         outcome = request.app.state.agent_planning_service.plan(
             context_request,
@@ -694,10 +709,7 @@ def operation_input_response(value: object | None) -> dict[str, Any] | None:
     if value is None:
         return None
     fields = getattr(value, "__dataclass_fields__", {})
-    return {
-        name: list(item) if isinstance(item := getattr(value, name), tuple) else item
-        for name in fields
-    }
+    return {name: encode_step_output_bindings(getattr(value, name)) for name in fields}
 
 
 def plan_response(plan: AgentPlan) -> AgentPlanResponse:
@@ -728,6 +740,8 @@ def context_request_from_payload(payload: AgentPlanRequest) -> AgentContextReque
         timezone=payload.timezone,
         calendar_reference=payload.calendar_reference,
         default_event_duration_minutes=payload.default_event_duration_minutes,
+        mail_account_reference=payload.mail_account_reference,
+        mailbox_reference=payload.mailbox_reference,
     )
 
 

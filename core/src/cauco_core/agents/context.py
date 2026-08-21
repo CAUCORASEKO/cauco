@@ -103,6 +103,8 @@ class AgentContextResolver:
                     "timezone": timezone,
                     "calendar_reference": request.calendar_reference,
                     "default_event_duration_minutes": request.default_event_duration_minutes,
+                    "mail_account_reference": request.mail_account_reference,
+                    "mailbox_reference": request.mailbox_reference,
                 },
                 learning_guidance=(),
             )
@@ -220,6 +222,8 @@ class AgentContextResolver:
                 "timezone": timezone,
                 "calendar_reference": request.calendar_reference,
                 "default_event_duration_minutes": request.default_event_duration_minutes,
+                "mail_account_reference": request.mail_account_reference,
+                "mailbox_reference": request.mailbox_reference,
             },
             learning_guidance=guidance,
         )

@@ -4,6 +4,8 @@ from cauco_agents.models import (
     AgentPlanStep,
     AgentToolReference,
     EmailDraftInput,
+    EmailListAccountsInput,
+    EmailListMailboxesInput,
     EmailListMessagesInput,
 )
 from cauco_agents.skills.models import SkillCompilation, SkillDefinition
@@ -11,7 +13,9 @@ from cauco_agents.skills.models import SkillCompilation, SkillDefinition
 
 @dataclass(frozen=True, slots=True)
 class EmailInspectInboxInput:
-    list_input: EmailListMessagesInput | None
+    operation_input: (
+        EmailListAccountsInput | EmailListMailboxesInput | EmailListMessagesInput | None
+    )
     open_questions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -29,22 +33,25 @@ class EmailInspectInboxSkill:
     def compile(self, input_data: EmailInspectInboxInput) -> SkillCompilation:
         steps: tuple[AgentPlanStep, ...] = ()
 
-        if input_data.list_input is not None:
+        if input_data.operation_input is not None:
+            operation_id, title, description, proposed_action = _inspection_step(
+                input_data.operation_input
+            )
             steps = (
                 AgentPlanStep(
                     1,
-                    "Inspect recent inbox messages",
-                    "Read bounded Apple Mail inbox metadata without message bodies or attachments.",
+                    title,
+                    description,
                     (),
-                    "List recent inbox message metadata through the native email boundary.",
+                    proposed_action,
                     False,
                     False,
                     (
-                        "Inbox inspection is metadata-only.",
+                        "Email inspection is metadata-only.",
                         "Message bodies and attachments are not exposed.",
                     ),
-                    AgentToolReference("email", "list_messages"),
-                    input_data.list_input,
+                    AgentToolReference("email", operation_id),
+                    input_data.operation_input,
                 ),
             )
 
@@ -54,6 +61,29 @@ class EmailInspectInboxSkill:
             steps,
             open_questions=input_data.open_questions,
         )
+
+
+def _inspection_step(operation_input):
+    if isinstance(operation_input, EmailListAccountsInput):
+        return (
+            "list_accounts",
+            "Discover available email accounts",
+            "List bounded visible Apple Mail account metadata without selecting an account.",
+            "Discover accounts through the native email boundary for explicit selection.",
+        )
+    if isinstance(operation_input, EmailListMailboxesInput):
+        return (
+            "list_mailboxes",
+            "Discover mailboxes for the selected account",
+            "List bounded mailbox names for the exact explicit account reference.",
+            "Discover mailboxes for explicit selection without assuming Inbox.",
+        )
+    return (
+        "list_messages",
+        "Inspect recent messages in the selected mailbox",
+        "Read bounded metadata from the exact explicit mailbox reference.",
+        "List recent message metadata through the native email boundary.",
+    )
 
 
 @dataclass(frozen=True, slots=True)

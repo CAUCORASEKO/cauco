@@ -6,6 +6,8 @@ from cauco_agents.models import (
     AgentContext,
     AgentPlan,
     EmailDraftInput,
+    EmailListAccountsInput,
+    EmailListMailboxesInput,
     EmailListMessagesInput,
 )
 from cauco_agents.skills import (
@@ -69,14 +71,17 @@ class EmailAgent(DeterministicSignalAgent):
         inspection = is_inbox_inspection_request(context.instruction)
 
         if inspection:
-            list_input, open_questions = resolve_email_inbox(context.instruction)
+            operation_input, open_questions, planning_metadata = resolve_email_inbox(
+                context
+            )
             compilation = self.skill_registry.get("email.inspect_inbox").compile(
                 EmailInspectInboxInput(
-                    list_input=list_input,
+                    operation_input=operation_input,
                     open_questions=open_questions,
                 )
             )
         else:
+            planning_metadata = {}
             draft_input, open_questions = resolve_email_draft(context.instruction)
             compilation = self.skill_registry.get("email.prepare_draft").compile(
                 EmailPrepareDraftInput(
@@ -107,7 +112,11 @@ class EmailAgent(DeterministicSignalAgent):
             agent_name=self.metadata.name,
             status="proposal_only",
             objective=f"Prepare a safe Email workflow for: {context.instruction}",
-            context_used=bool(context.memory_references),
+            context_used=bool(
+                context.memory_references
+                or planning_metadata.get("mail_account_reference")
+                or planning_metadata.get("mailbox_reference")
+            ),
             steps=compilation.steps,
             open_questions=compilation.open_questions,
             warnings=tuple(warnings),
@@ -116,6 +125,7 @@ class EmailAgent(DeterministicSignalAgent):
                 "framework_phase": "email_skill_v1",
                 "skill_id": compilation.skill_id,
                 "operation_input_complete": not compilation.open_questions,
+                **planning_metadata,
             },
         )
 
@@ -144,8 +154,13 @@ def is_inbox_inspection_request(instruction: str) -> bool:
 
 
 def resolve_email_inbox(
-    instruction: str,
-) -> tuple[EmailListMessagesInput | None, tuple[str, ...]]:
+    context: AgentContext,
+) -> tuple[
+    EmailListAccountsInput | EmailListMailboxesInput | EmailListMessagesInput | None,
+    tuple[str, ...],
+    dict[str, str | int | bool | None],
+]:
+    instruction = context.instruction
     normalized = instruction.casefold()
 
     match = re.search(
@@ -162,11 +177,78 @@ def resolve_email_inbox(
     limit = 20 if match is None else int(match.group(1))
 
     if not 1 <= limit <= 20:
-        return None, (
-            "How many inbox messages should be inspected? The supported limit is between 1 and 20.",
+        return (
+            None,
+            (
+                "How many inbox messages should be inspected? The supported limit is between 1 and 20.",
+            ),
+            {"requested_message_limit": limit},
         )
 
-    return EmailListMessagesInput(limit=limit), ()
+    account_reference, account_invalid = _opaque_context_reference(
+        context, "mail_account_reference", r"mailacct_[A-Za-z0-9_-]{8,80}"
+    )
+    mailbox_reference, mailbox_invalid = _opaque_context_reference(
+        context, "mailbox_reference", r"mailbox_[A-Za-z0-9_-]{8,80}"
+    )
+    selector = _visible_account_selector(instruction)
+    mailbox_selector = "Inbox" if re.search(r"\binbox\b", normalized) else None
+    metadata: dict[str, str | int | bool | None] = {
+        "requested_message_limit": limit,
+        "mail_account_selector": selector,
+        "mailbox_selector": mailbox_selector,
+        "mail_account_reference": account_reference,
+        "mailbox_reference": mailbox_reference,
+    }
+
+    if account_invalid or mailbox_invalid:
+        return (
+            None,
+            ("The explicit Email account or mailbox reference is invalid.",),
+            metadata,
+        )
+
+    if mailbox_reference is not None:
+        return EmailListMessagesInput(mailbox_reference, limit), (), metadata
+
+    if account_reference is not None:
+        return (
+            EmailListMailboxesInput(account_reference),
+            ("Which mailbox should Cauco inspect?",),
+            metadata,
+        )
+
+    return (
+        EmailListAccountsInput(),
+        ("Which email account should Cauco inspect?",),
+        metadata,
+    )
+
+
+def _opaque_context_reference(
+    context: AgentContext, key: str, pattern: str
+) -> tuple[str | None, bool]:
+    if key not in context.metadata or context.metadata[key] is None:
+        return None, False
+    value = context.metadata[key]
+    if not isinstance(value, str) or re.fullmatch(pattern, value) is None:
+        return None, True
+    return value, False
+
+
+def _visible_account_selector(instruction: str) -> str | None:
+    address = _recipient(instruction)
+    if address is not None:
+        return address
+    match = re.search(
+        r"\b(?:account|cuenta)\s+([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9 ._-]{0,79})",
+        instruction,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    selector = " ".join(match.group(1).strip().split())
+    return selector or None
 
 
 def resolve_email_draft(

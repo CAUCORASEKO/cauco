@@ -10,8 +10,18 @@ EMAIL_TOOL = ToolDefinition(
     enabled=True,
     operations=(
         operation(
+            "list_accounts",
+            "List bounded Apple Mail account metadata.",
+            runtime_allowed=True,
+        ),
+        operation(
+            "list_mailboxes",
+            "List bounded mailbox metadata for an explicit account reference.",
+            runtime_allowed=True,
+        ),
+        operation(
             "list_messages",
-            "List bounded Apple Mail inbox message metadata.",
+            "List bounded message metadata for an explicit mailbox reference.",
             runtime_allowed=True,
         ),
         operation(

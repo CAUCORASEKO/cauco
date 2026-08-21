@@ -6,11 +6,13 @@ from cauco_agents import (
     AgentContext,
     EmailAgent,
     EmailDraftInput,
+    EmailListAccountsInput,
+    EmailListMailboxesInput,
     EmailListMessagesInput,
 )
 
 
-def context(instruction: str) -> AgentContext:
+def context(instruction: str, **metadata: object) -> AgentContext:
     return AgentContext(
         agent_id="email",
         instruction=instruction,
@@ -18,7 +20,7 @@ def context(instruction: str) -> AgentContext:
         memory_references=(),
         context_summary="",
         limitations=(),
-        metadata={},
+        metadata=metadata,
         learning_guidance=(),
     )
 
@@ -100,13 +102,13 @@ def test_email_agent_does_not_invent_missing_subject_or_body() -> None:
         ("Lista 3 emails", 3),
     ),
 )
-def test_email_agent_builds_bounded_inbox_inspection_plan(
+def test_email_agent_starts_bounded_inspection_with_account_discovery(
     instruction: str,
     expected_limit: int,
 ) -> None:
     plan = EmailAgent().plan(context(instruction))
 
-    assert plan.open_questions == ()
+    assert plan.open_questions == ("Which email account should Cauco inspect?",)
     assert plan.requires_confirmation is False
     assert len(plan.steps) == 1
     assert plan.metadata["skill_id"] == "email.inspect_inbox"
@@ -114,9 +116,82 @@ def test_email_agent_builds_bounded_inbox_inspection_plan(
     step = plan.steps[0]
 
     assert step.tool_reference.tool_id == "email"
-    assert step.tool_reference.operation_id == "list_messages"
+    assert step.tool_reference.operation_id == "list_accounts"
     assert step.requires_confirmation is False
-    assert step.operation_input == EmailListMessagesInput(limit=expected_limit)
+    assert step.operation_input == EmailListAccountsInput()
+    assert plan.metadata["requested_message_limit"] == expected_limit
+    assert plan.metadata["mail_account_reference"] is None
+    assert plan.metadata["mailbox_reference"] is None
+
+
+def test_email_agent_lists_messages_for_explicit_context_mailbox() -> None:
+    mailbox_reference = "mailbox_0123456789abcdef"
+    plan = EmailAgent().plan(
+        context(
+            "Muéstrame los últimos 5 correos",
+            mailbox_reference=mailbox_reference,
+        )
+    )
+
+    assert plan.open_questions == ()
+    assert plan.context_used is True
+    assert plan.steps[0].tool_reference.operation_id == "list_messages"
+    assert plan.steps[0].operation_input == EmailListMessagesInput(mailbox_reference, 5)
+    assert plan.metadata["mailbox_reference"] == mailbox_reference
+
+
+def test_email_agent_lists_mailboxes_for_explicit_context_account() -> None:
+    account_reference = "mailacct_0123456789abcdef"
+    plan = EmailAgent().plan(
+        context(
+            "Muéstrame los últimos 5 correos",
+            mail_account_reference=account_reference,
+        )
+    )
+
+    assert plan.open_questions == ("Which mailbox should Cauco inspect?",)
+    assert plan.steps[0].tool_reference.operation_id == "list_mailboxes"
+    assert plan.steps[0].operation_input == EmailListMailboxesInput(account_reference)
+    assert plan.metadata["mail_account_reference"] == account_reference
+
+
+@pytest.mark.parametrize(
+    ("instruction", "selector", "mailbox_selector"),
+    [
+        ("Revisa los correos de claudio@aisosu.fi", "claudio@aisosu.fi", None),
+        ("Muéstrame 5 correos de la cuenta Aisosu", "Aisosu", None),
+        ("Revisa mi inbox", None, "Inbox"),
+    ],
+)
+def test_email_agent_preserves_visible_selectors_without_opaque_references(
+    instruction: str, selector: str | None, mailbox_selector: str | None
+) -> None:
+    plan = EmailAgent().plan(context(instruction))
+
+    assert plan.steps[0].tool_reference.operation_id == "list_accounts"
+    assert plan.steps[0].operation_input == EmailListAccountsInput()
+    assert plan.metadata["mail_account_selector"] == selector
+    assert plan.metadata["mailbox_selector"] == mailbox_selector
+    assert plan.metadata["mail_account_reference"] is None
+    assert plan.metadata["mailbox_reference"] is None
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"mail_account_reference": "native-account-id"},
+        {"mailbox_reference": "INBOX"},
+    ],
+)
+def test_email_agent_rejects_invalid_explicit_context_references(
+    metadata: dict[str, str],
+) -> None:
+    plan = EmailAgent().plan(context("Muéstrame 5 correos", **metadata))
+
+    assert plan.steps == ()
+    assert plan.open_questions == (
+        "The explicit Email account or mailbox reference is invalid.",
+    )
 
 
 def test_email_agent_rejects_inbox_limit_above_native_boundary() -> None:

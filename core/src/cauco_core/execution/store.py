@@ -1,5 +1,5 @@
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from threading import RLock
@@ -104,6 +104,7 @@ class ExecutionStore:
         step_index: int | None = None,
         tool_id: str | None = None,
         operation_id: str | None = None,
+        metadata: Mapping[str, str | int | float | bool | None] | None = None,
     ) -> AgentPlanExecutionRecord:
         with self._lock:
             record = self._with_event(
@@ -114,6 +115,7 @@ class ExecutionStore:
                 step_index=step_index,
                 tool_id=tool_id,
                 operation_id=operation_id,
+                metadata=metadata,
             )
             self._records[execution_id] = record
             return record
@@ -405,6 +407,7 @@ class ExecutionStore:
             operation_id=fields.get("operation_id")
             if isinstance(fields.get("operation_id"), str)
             else None,
+            metadata=(fields["metadata"] if isinstance(fields.get("metadata"), Mapping) else {}),
         )
 
     def _make_room(self) -> None:

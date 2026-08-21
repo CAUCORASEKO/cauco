@@ -20,9 +20,14 @@ from cauco_agents import (
     CalendarCreateEventInput,
     CalendarListEventsInput,
     EmailDraftInput,
+    EmailListAccountsInput,
+    EmailListMailboxesInput,
+    EmailListMessagesInput,
     FilesystemWriteTextInput,
     MemoryConfirmProposalInput,
     MemoryCreateProposalInput,
+    decode_step_output_bindings,
+    encode_step_output_bindings,
 )
 from cauco_tools import GitAddInput, GitCommitInput, GitPushInput
 
@@ -346,10 +351,7 @@ def _input(x: Any) -> dict[str, Any] | None:
         if hasattr(x, "__dict__")
         else {
             "type": type(x).__name__,
-            **{
-                k: list(getattr(x, k)) if isinstance(getattr(x, k), tuple) else getattr(x, k)
-                for k in x.__dataclass_fields__
-            },
+            **{k: encode_step_output_bindings(getattr(x, k)) for k in x.__dataclass_fields__},
         }
     )
 
@@ -413,11 +415,20 @@ def _from_json(raw: str) -> AgentPlanReviewRecord:
         "CalendarListEventsInput": CalendarListEventsInput,
         "CalendarCreateEventInput": CalendarCreateEventInput,
         "EmailDraftInput": EmailDraftInput,
+        "EmailListAccountsInput": EmailListAccountsInput,
+        "EmailListMailboxesInput": EmailListMailboxesInput,
+        "EmailListMessagesInput": EmailListMessagesInput,
     }
     for s in p["steps"]:
         ref = AgentToolReference(**s["tool_reference"]) if s["tool_reference"] else None
         value = s["operation_input"]
-        operation = classes[value.pop("type")](**value) if value else None
+        operation = (
+            classes[value.pop("type")](
+                **{key: decode_step_output_bindings(item) for key, item in value.items()}
+            )
+            if value
+            else None
+        )
         steps.append(
             AgentPlanStep(
                 **{

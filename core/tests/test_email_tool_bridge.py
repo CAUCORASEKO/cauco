@@ -7,6 +7,8 @@ from cauco_agents import (
     AgentPlanStep,
     AgentToolReference,
     EmailDraftInput,
+    EmailListAccountsInput,
+    EmailListMailboxesInput,
     EmailListMessagesInput,
 )
 from cauco_tools import ToolExecutionError, ToolExecutionRequest
@@ -15,7 +17,10 @@ from fastapi.testclient import TestClient
 from cauco_core.agents.review_store import snapshot_digest
 from cauco_core.config import Settings
 from cauco_core.main import create_app
-from cauco_core.native_broker import NativeBrokerUnavailable
+from cauco_core.native_broker import (
+    NativeBrokerReferenceNotFound,
+    NativeBrokerUnavailable,
+)
 
 
 class FakeBrokerClient:
@@ -25,11 +30,52 @@ class FakeBrokerClient:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    def mail_messages_list(self, limit: int = 20) -> dict:
+    def mail_accounts_list(self) -> dict:
+        self.calls.append({"capability": "mail.accounts.list", "arguments": {}})
+        return {
+            "outcome": "success",
+            "result": {
+                "results": [
+                    {
+                        "account_reference": "mailacct_0123456789abcdef",
+                        "name": "Personal",
+                        "email_addresses": ["user@example.com"],
+                    }
+                ],
+                "result_count": 1,
+                "truncated": False,
+            },
+        }
+
+    def mail_mailboxes_list(self, account_reference: str) -> dict:
+        self.calls.append(
+            {
+                "capability": "mail.mailboxes.list",
+                "arguments": {"account_reference": account_reference},
+            }
+        )
+        return {
+            "outcome": "success",
+            "result": {
+                "results": [
+                    {
+                        "mailbox_reference": "mailbox_0123456789abcdef",
+                        "name": "INBOX",
+                    }
+                ],
+                "result_count": 1,
+                "truncated": False,
+            },
+        }
+
+    def mail_messages_list(self, mailbox_reference: str, limit: int) -> dict:
         self.calls.append(
             {
                 "capability": "mail.messages.list",
-                "arguments": {"limit": limit},
+                "arguments": {
+                    "mailbox_reference": mailbox_reference,
+                    "limit": limit,
+                },
             }
         )
         return {
@@ -49,7 +95,7 @@ class FakeBrokerClient:
             },
             "error": None,
             "limitations": [
-                "Inbox only",
+                "One explicitly discovered opaque mailbox reference",
                 "metadata only",
                 "limit 1..20",
                 "opaque message references",
@@ -81,14 +127,28 @@ class UnavailableMailBrokerClient:
     def __init__(self) -> None:
         self.calls = 0
 
-    def mail_messages_list(self, limit: int = 20) -> dict:
+    def mail_messages_list(self, mailbox_reference: str, limit: int) -> dict:
         self.calls += 1
         raise NativeBrokerUnavailable("Mail broker unavailable")
 
 
+class StaleReferenceMailBrokerClient:
+    configured = True
+    token = "t" * 44
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def mail_mailboxes_list(self, account_reference: str) -> dict:
+        self.calls += 1
+        raise NativeBrokerReferenceNotFound("stale account")
+
+
 def email_execution(
     client: TestClient,
-    operation_input: EmailDraftInput | EmailListMessagesInput,
+    operation_input: (
+        EmailDraftInput | EmailListAccountsInput | EmailListMailboxesInput | EmailListMessagesInput
+    ),
     *,
     operation_id: str = "draft",
 ) -> tuple[dict, dict]:
@@ -169,12 +229,15 @@ def test_email_list_messages_adapter_is_read_only_and_bounded(tmp_path: Path) ->
         request = ToolExecutionRequest(
             "email",
             "list_messages",
-            {"limit": 5},
+            {"mailbox_reference": "mailbox_0123456789abcdef", "limit": 5},
         )
 
         inspected = adapter.preflight(request)
 
-        assert inspected == {"limit": 5}
+        assert inspected == {
+            "mailbox_reference": "mailbox_0123456789abcdef",
+            "limit": 5,
+        }
         assert fake.calls == []
 
         result = adapter.execute(request)
@@ -199,9 +262,112 @@ def test_email_list_messages_adapter_is_read_only_and_bounded(tmp_path: Path) ->
         assert fake.calls == [
             {
                 "capability": "mail.messages.list",
-                "arguments": {"limit": 5},
+                "arguments": {
+                    "mailbox_reference": "mailbox_0123456789abcdef",
+                    "limit": 5,
+                },
             }
         ]
+
+
+@pytest.mark.parametrize(
+    ("operation_id", "arguments", "result_key", "expected_call"),
+    [
+        (
+            "list_accounts",
+            {},
+            "accounts",
+            {"capability": "mail.accounts.list", "arguments": {}},
+        ),
+        (
+            "list_mailboxes",
+            {"account_reference": "mailacct_0123456789abcdef"},
+            "mailboxes",
+            {
+                "capability": "mail.mailboxes.list",
+                "arguments": {"account_reference": "mailacct_0123456789abcdef"},
+            },
+        ),
+    ],
+)
+def test_email_discovery_adapter_routes_exact_read_only_broker_calls(
+    tmp_path: Path,
+    operation_id: str,
+    arguments: dict,
+    result_key: str,
+    expected_call: dict,
+) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+
+    with TestClient(create_app(Settings(brain_dir=brain))) as client:
+        adapter = client.app.state.tool_adapter_registry.get("email", operation_id)
+        fake = FakeBrokerClient()
+        adapter.broker_client = fake
+
+        request = ToolExecutionRequest("email", operation_id, arguments)
+        assert adapter.preflight(request) == arguments
+        assert fake.calls == []
+
+        result = adapter.execute(request)
+
+        assert result.execution_performed is True
+        assert result.mutation_performed is False
+        assert result.structured_data[result_key]
+        assert result.structured_data["result_count"] == 1
+        assert result.structured_data["truncated"] is False
+        assert fake.calls == [expected_call]
+
+
+@pytest.mark.parametrize(
+    ("operation_id", "arguments"),
+    [
+        ("list_mailboxes", {"account_reference": "native-account-id"}),
+        ("list_messages", {"mailbox_reference": "INBOX", "limit": 5}),
+        (
+            "list_messages",
+            {"mailbox_reference": "mailbox_0123456789abcdef", "limit": 21},
+        ),
+    ],
+)
+def test_email_read_adapter_rejects_malformed_arguments_before_broker_call(
+    tmp_path: Path, operation_id: str, arguments: dict
+) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+
+    with TestClient(create_app(Settings(brain_dir=brain))) as client:
+        adapter = client.app.state.tool_adapter_registry.get("email", operation_id)
+        fake = FakeBrokerClient()
+        adapter.broker_client = fake
+
+        with pytest.raises(ToolExecutionError) as captured:
+            adapter.execute(ToolExecutionRequest("email", operation_id, arguments))
+
+        assert captured.value.code == "invalid_arguments"
+        assert fake.calls == []
+
+
+def test_email_read_adapter_maps_stale_reference_without_fallback(tmp_path: Path) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+
+    with TestClient(create_app(Settings(brain_dir=brain))) as client:
+        adapter = client.app.state.tool_adapter_registry.get("email", "list_mailboxes")
+        stale = StaleReferenceMailBrokerClient()
+        adapter.broker_client = stale
+
+        with pytest.raises(ToolExecutionError) as captured:
+            adapter.execute(
+                ToolExecutionRequest(
+                    "email",
+                    "list_mailboxes",
+                    {"account_reference": "mailacct_0123456789abcdef"},
+                )
+            )
+
+        assert captured.value.code == "email_reference_not_found"
+        assert stale.calls == 1
 
 
 def test_email_list_messages_adapter_maps_broker_unavailability_safely(
@@ -223,12 +389,15 @@ def test_email_list_messages_adapter_maps_broker_unavailability_safely(
                 ToolExecutionRequest(
                     "email",
                     "list_messages",
-                    {"limit": 5},
+                    {
+                        "mailbox_reference": "mailbox_0123456789abcdef",
+                        "limit": 5,
+                    },
                 )
             )
 
         assert captured.value.code == "email_unavailable"
-        assert captured.value.safe_message == "Email message listing is unavailable."
+        assert captured.value.safe_message == "Email metadata listing is unavailable."
         assert unavailable.calls == 1
 
 
@@ -248,7 +417,7 @@ def test_email_list_messages_runs_through_execution_service_without_workspace(
 
         approved, execution = email_execution(
             client,
-            EmailListMessagesInput(limit=5),
+            EmailListMessagesInput(mailbox_reference="mailbox_0123456789abcdef", limit=5),
             operation_id="list_messages",
         )
 
@@ -284,7 +453,10 @@ def test_email_list_messages_runs_through_execution_service_without_workspace(
         assert fake.calls == [
             {
                 "capability": "mail.messages.list",
-                "arguments": {"limit": 5},
+                "arguments": {
+                    "mailbox_reference": "mailbox_0123456789abcdef",
+                    "limit": 5,
+                },
             }
         ]
 
@@ -294,17 +466,14 @@ def test_email_list_messages_runs_through_execution_service_without_workspace(
         assert refreshed["snapshot_digest"] == approved["snapshot_digest"]
 
 
-def test_email_agent_inbox_plan_runs_unchanged_through_task_runtime(
+def test_email_agent_account_discovery_plan_runs_through_task_runtime(
     tmp_path: Path,
 ) -> None:
     brain = tmp_path / "brain"
     brain.mkdir()
 
     with TestClient(create_app(Settings(brain_dir=brain))) as client:
-        adapter = client.app.state.tool_adapter_registry.get(
-            "email",
-            "list_messages",
-        )
+        adapter = client.app.state.tool_adapter_registry.get("email", "list_accounts")
         fake = FakeBrokerClient()
         adapter.broker_client = fake
 
@@ -322,15 +491,16 @@ def test_email_agent_inbox_plan_runs_unchanged_through_task_runtime(
         assert pending["readiness"]["ready"] is True
         assert pending["plan"]["requires_confirmation"] is False
         assert pending["plan"]["metadata"]["skill_id"] == "email.inspect_inbox"
+        assert pending["plan"]["open_questions"] == ["Which email account should Cauco inspect?"]
         assert len(pending["plan"]["steps"]) == 1
 
         step = pending["plan"]["steps"][0]
         assert step["tool_reference"] == {
             "tool_id": "email",
-            "operation_id": "list_messages",
+            "operation_id": "list_accounts",
             "target": None,
         }
-        assert step["operation_input"] == {"limit": 5}
+        assert step["operation_input"] == {}
         assert step["requires_confirmation"] is False
         assert fake.calls == []
 
@@ -353,8 +523,8 @@ def test_email_agent_inbox_plan_runs_unchanged_through_task_runtime(
         assert run_response.json()["state"] == "completed"
         assert fake.calls == [
             {
-                "capability": "mail.messages.list",
-                "arguments": {"limit": 5},
+                "capability": "mail.accounts.list",
+                "arguments": {},
             }
         ]
 
@@ -363,14 +533,12 @@ def test_email_agent_inbox_plan_runs_unchanged_through_task_runtime(
         assert repeated_run.json()["state"] == "completed"
         assert fake.calls == [
             {
-                "capability": "mail.messages.list",
-                "arguments": {"limit": 5},
+                "capability": "mail.accounts.list",
+                "arguments": {},
             }
         ]
 
-        refreshed = client.get(
-            f"/api/agents/plan-reviews/{approved['review_id']}"
-        ).json()
+        refreshed = client.get(f"/api/agents/plan-reviews/{approved['review_id']}").json()
         assert refreshed["plan"] == approved["plan"]
         assert refreshed["snapshot_digest"] == approved["snapshot_digest"]
 
@@ -394,6 +562,7 @@ def test_email_agent_inbox_broker_failure_aborts_without_retry_or_replan(
             json={
                 "instruction": "Muéstrame los últimos 5 correos",
                 "include_context": False,
+                "mailbox_reference": "mailbox_0123456789abcdef",
             },
         ).json()
         approved = client.post(
@@ -405,9 +574,7 @@ def test_email_agent_inbox_broker_failure_aborts_without_retry_or_replan(
             json={"review_id": approved["review_id"]},
         ).json()
 
-        run_response = client.post(
-            f"/api/executions/{execution['execution_id']}/run"
-        )
+        run_response = client.post(f"/api/executions/{execution['execution_id']}/run")
 
         assert run_response.status_code == 200
         assert run_response.json()["state"] == "failed"
@@ -423,9 +590,7 @@ def test_email_agent_inbox_broker_failure_aborts_without_retry_or_replan(
         )
         assert any(event.event_type == "recovery_abort" for event in record.audit_events)
 
-        refreshed = client.get(
-            f"/api/agents/plan-reviews/{approved['review_id']}"
-        ).json()
+        refreshed = client.get(f"/api/agents/plan-reviews/{approved['review_id']}").json()
         assert refreshed["plan"] == approved["plan"]
         assert refreshed["snapshot_digest"] == approved["snapshot_digest"]
 

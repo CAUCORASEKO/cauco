@@ -14,6 +14,7 @@ from cauco_agents import (
     AgentPlanReviewRecord,
     AgentPlanReviewStatus,
     AgentRouteResult,
+    encode_step_output_bindings,
 )
 
 DEFAULT_PLAN_REVIEW_TTL_SECONDS = 1800
@@ -446,7 +447,4 @@ def operation_input_payload(value: Any) -> dict[str, Any] | None:
     if value is None:
         return None
     fields = getattr(value, "__dataclass_fields__", {})
-    return {
-        name: list(item) if isinstance(item := getattr(value, name), tuple) else item
-        for name in fields
-    }
+    return {name: encode_step_output_bindings(getattr(value, name)) for name in fields}

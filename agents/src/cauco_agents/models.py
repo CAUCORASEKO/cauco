@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import PurePosixPath
 from types import MappingProxyType
-from typing import Literal, Mapping, TypeAlias
+from typing import Any, Literal, Mapping, TypeAlias
 
 from cauco_tools import GitAddInput, GitCommitInput, GitPushInput
 
@@ -14,6 +14,101 @@ MAX_CONTEXT_ITEMS = 8
 MIN_EXCERPT_CHARS = 100
 MAX_EXCERPT_CHARS = 4000
 MAX_TOTAL_CONTEXT_CHARS = 7000
+STEP_OUTPUT_BINDING_MARKER = "$step_output"
+
+
+@dataclass(frozen=True, slots=True)
+class StepOutputBinding:
+    source_step_index: int
+    path: tuple[str | int, ...]
+    value_type: Literal["string", "integer", "number", "boolean"] = "string"
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.source_step_index, int)
+            or isinstance(self.source_step_index, bool)
+            or self.source_step_index < 1
+        ):
+            raise ValueError("Binding source step index must be positive.")
+        path = tuple(self.path)
+        if not path or len(path) > 16:
+            raise ValueError("Binding paths must contain between 1 and 16 segments.")
+        for segment in path:
+            if isinstance(segment, str):
+                if not segment or len(segment) > 100:
+                    raise ValueError(
+                        "Binding mapping keys must be bounded and non-empty."
+                    )
+            elif (
+                not isinstance(segment, int)
+                or isinstance(segment, bool)
+                or not 0 <= segment <= 999
+            ):
+                raise ValueError("Binding list indexes must be between 0 and 999.")
+        if len("/".join(str(segment) for segment in path)) > 500:
+            raise ValueError("Binding path description cannot exceed 500 characters.")
+        if self.value_type not in {"string", "integer", "number", "boolean"}:
+            raise ValueError("Binding value type is unsupported.")
+        object.__setattr__(self, "path", path)
+
+    @property
+    def path_description(self) -> str:
+        return "/".join(str(segment) for segment in self.path)
+
+
+def encode_step_output_bindings(value: Any) -> Any:
+    if isinstance(value, StepOutputBinding):
+        return {
+            STEP_OUTPUT_BINDING_MARKER: {
+                "source_step_index": value.source_step_index,
+                "path": list(value.path),
+                "value_type": value.value_type,
+            }
+        }
+    if isinstance(value, Mapping):
+        return {
+            str(key): encode_step_output_bindings(item) for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [encode_step_output_bindings(item) for item in value]
+    return value
+
+
+def decode_step_output_bindings(value: Any) -> Any:
+    if isinstance(value, dict):
+        if set(value) == {STEP_OUTPUT_BINDING_MARKER}:
+            payload = value[STEP_OUTPUT_BINDING_MARKER]
+            if not isinstance(payload, dict) or set(payload) != {
+                "source_step_index",
+                "path",
+                "value_type",
+            }:
+                raise ValueError("Stored step output binding is invalid.")
+            path = payload["path"]
+            if not isinstance(path, list):
+                raise ValueError("Stored step output binding path is invalid.")
+            return StepOutputBinding(
+                source_step_index=payload["source_step_index"],
+                path=tuple(path),
+                value_type=payload["value_type"],
+            )
+        return {
+            str(key): decode_step_output_bindings(item) for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return tuple(decode_step_output_bindings(item) for item in value)
+    return value
+
+
+def contains_step_output_binding(value: Any) -> bool:
+    if isinstance(value, StepOutputBinding):
+        return True
+    if isinstance(value, Mapping):
+        return any(contains_step_output_binding(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(contains_step_output_binding(item) for item in value)
+    fields = getattr(value, "__dataclass_fields__", {})
+    return any(contains_step_output_binding(getattr(value, name)) for name in fields)
 
 
 def normalize_whitespace(value: str) -> str:
@@ -119,6 +214,8 @@ class AgentContextRequest:
     timezone: str | None = None
     calendar_reference: str | None = None
     default_event_duration_minutes: int | None = None
+    mail_account_reference: str | None = None
+    mailbox_reference: str | None = None
 
     def __post_init__(self) -> None:
         normalized = AgentRequest(
@@ -138,6 +235,20 @@ class AgentContextRequest:
             raise ValueError("Planning timezone is invalid.")
         if self.calendar_reference is not None:
             _calendar_reference(self.calendar_reference)
+        if (
+            self.mail_account_reference is not None
+            and re.fullmatch(
+                r"mailacct_[A-Za-z0-9_-]{8,80}", self.mail_account_reference
+            )
+            is None
+        ):
+            raise ValueError("Email account reference is invalid.")
+        if (
+            self.mailbox_reference is not None
+            and re.fullmatch(r"mailbox_[A-Za-z0-9_-]{8,80}", self.mailbox_reference)
+            is None
+        ):
+            raise ValueError("Email mailbox reference is invalid.")
         if self.default_event_duration_minutes is not None and (
             isinstance(self.default_event_duration_minutes, bool)
             or not 1 <= self.default_event_duration_minutes <= 1440
@@ -294,10 +405,42 @@ def _calendar_reference(value: str | None) -> str | None:
 
 
 @dataclass(frozen=True, slots=True)
+class EmailListAccountsInput:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class EmailListMailboxesInput:
+    account_reference: str | StepOutputBinding
+
+    def __post_init__(self) -> None:
+        if isinstance(self.account_reference, StepOutputBinding):
+            if self.account_reference.value_type != "string":
+                raise ValueError(
+                    "Email account reference binding must resolve to a string."
+                )
+            return
+        if not isinstance(self.account_reference, str) or not re.fullmatch(
+            r"mailacct_[A-Za-z0-9_-]{8,80}", self.account_reference
+        ):
+            raise ValueError("Email account reference is invalid.")
+
+
+@dataclass(frozen=True, slots=True)
 class EmailListMessagesInput:
+    mailbox_reference: str | StepOutputBinding
     limit: int = 20
 
     def __post_init__(self) -> None:
+        if isinstance(self.mailbox_reference, StepOutputBinding):
+            if self.mailbox_reference.value_type != "string":
+                raise ValueError(
+                    "Email mailbox reference binding must resolve to a string."
+                )
+        elif not isinstance(self.mailbox_reference, str) or not re.fullmatch(
+            r"mailbox_[A-Za-z0-9_-]{8,80}", self.mailbox_reference
+        ):
+            raise ValueError("Email mailbox reference is invalid.")
         if (
             not isinstance(self.limit, int)
             or isinstance(self.limit, bool)
@@ -416,6 +559,8 @@ AgentOperationInput: TypeAlias = (
     | GitPushInput
     | CalendarListEventsInput
     | CalendarCreateEventInput
+    | EmailListAccountsInput
+    | EmailListMailboxesInput
     | EmailListMessagesInput
     | EmailDraftInput
 )

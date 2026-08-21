@@ -98,6 +98,8 @@ def test_default_registry_contracts_and_validation() -> None:
         ("calendar", "list_events"),
         ("calendar", "create_event"),
         ("email", "draft"),
+        ("email", "list_accounts"),
+        ("email", "list_mailboxes"),
         ("email", "list_messages"),
         ("filesystem", "list_directory"),
         ("filesystem", "read_file"),
@@ -115,6 +117,11 @@ def test_default_registry_contracts_and_validation() -> None:
     assert email_list.runtime_execution_allowed
     assert not email_list.mutation
     assert not email_list.preview_required
+    for operation_id in ("list_accounts", "list_mailboxes"):
+        email_discovery = registry.validate("email", operation_id)
+        assert email_discovery.runtime_execution_allowed
+        assert not email_discovery.mutation
+        assert not email_discovery.preview_required
 
     email_draft = registry.validate("email", "draft")
     assert email_draft.runtime_execution_allowed

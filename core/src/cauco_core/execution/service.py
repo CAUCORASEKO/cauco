@@ -6,7 +6,10 @@ from cauco_agents import (
     AgentPlanReviewRecord,
     AgentPlanReviewStatus,
     CalendarListEventsInput,
+    EmailListAccountsInput,
+    EmailListMailboxesInput,
     EmailListMessagesInput,
+    StepOutputBinding,
 )
 from cauco_tools import (
     ToolAdapterRegistry,
@@ -21,6 +24,10 @@ from cauco_core.agents.review_store import (
     AgentPlanReviewStore,
     PlanReviewIntegrityError,
     PlanReviewNotFoundError,
+)
+from cauco_core.execution.bindings import (
+    StepOutputBindingError,
+    resolve_step_output_bindings,
 )
 from cauco_core.execution.models import (
     AgentPlanExecutionRecord,
@@ -140,11 +147,53 @@ class ExecutionService:
             self._deny(record, step_index, "No runtime adapter is available.")
             raise ExecutionConflictError("No runtime adapter is available.")
         try:
+            resolved_input, resolutions = resolve_step_output_bindings(
+                plan_step.operation_input,
+                record=record,
+                consuming_step_index=step_index,
+            )
+        except StepOutputBindingError as error:
+            self.execution_store.append_event(
+                execution_id,
+                "input_binding_resolution_failed",
+                "rejected",
+                "Approved step output binding could not be resolved.",
+                step_index=step_index,
+                tool_id=reference.tool_id,
+                operation_id=reference.operation_id,
+                metadata=self._binding_metadata(
+                    step_index,
+                    error.destination_field,
+                    error.binding,
+                    success=False,
+                ),
+            )
+            self._deny(record, step_index, "Approved step output binding was denied.")
+            raise ExecutionValidationError(str(error)) from error
+
+        for destination_field, binding in resolutions:
+            self.execution_store.append_event(
+                execution_id,
+                "input_binding_resolved",
+                "success",
+                "Approved step output binding resolved.",
+                step_index=step_index,
+                tool_id=reference.tool_id,
+                operation_id=reference.operation_id,
+                metadata=self._binding_metadata(
+                    step_index,
+                    destination_field,
+                    binding,
+                    success=True,
+                ),
+            )
+
+        try:
             arguments = self._arguments(
                 reference.tool_id,
                 reference.operation_id,
                 reference.target,
-                plan_step.operation_input,
+                resolved_input,
                 max_chars=max_chars,
                 max_entries=max_entries,
             )
@@ -240,11 +289,14 @@ class ExecutionService:
                     "Approved calendar list step has invalid typed input."
                 )
             return asdict(operation_input)
-        if tool_id == "email" and operation_id == "list_messages":
-            if not isinstance(operation_input, EmailListMessagesInput):
-                raise ExecutionValidationError(
-                    "Approved email message list step has invalid typed input."
-                )
+        email_read_inputs = {
+            "list_accounts": EmailListAccountsInput,
+            "list_mailboxes": EmailListMailboxesInput,
+            "list_messages": EmailListMessagesInput,
+        }
+        if tool_id == "email" and operation_id in email_read_inputs:
+            if not isinstance(operation_input, email_read_inputs[operation_id]):
+                raise ExecutionValidationError("Approved email read step has invalid typed input.")
             return asdict(operation_input)
         if self.workspace_policy is None:
             raise ExecutionConflictError("No execution workspace is configured.")
@@ -274,6 +326,22 @@ class ExecutionService:
             message,
             step_index=step_index,
         )
+
+    @staticmethod
+    def _binding_metadata(
+        step_index: int,
+        destination_field: str,
+        binding: StepOutputBinding,
+        *,
+        success: bool,
+    ) -> dict[str, str | int | bool]:
+        return {
+            "consuming_step_index": step_index,
+            "source_step_index": binding.source_step_index,
+            "destination_field": destination_field,
+            "path": binding.path_description,
+            "success": success,
+        }
 
     def _failed_result(
         self,

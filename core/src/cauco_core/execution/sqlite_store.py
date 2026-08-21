@@ -63,6 +63,7 @@ class SQLiteExecutionStore(ExecutionStore):
         step_index: int | None = None,
         tool_id: str | None = None,
         operation_id: str | None = None,
+        metadata: Mapping[str, str | int | float | bool | None] | None = None,
     ) -> AgentPlanExecutionRecord:
         with self._lock:
             record = super().append_event(
@@ -73,6 +74,7 @@ class SQLiteExecutionStore(ExecutionStore):
                 step_index=step_index,
                 tool_id=tool_id,
                 operation_id=operation_id,
+                metadata=metadata,
             )
             self._persist_record(record)
             return record
