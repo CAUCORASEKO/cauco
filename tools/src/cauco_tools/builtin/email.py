@@ -10,6 +10,11 @@ EMAIL_TOOL = ToolDefinition(
     enabled=True,
     operations=(
         operation(
+            "list_messages",
+            "List bounded Apple Mail inbox message metadata.",
+            runtime_allowed=True,
+        ),
+        operation(
             "draft",
             "Prepare an email draft.",
             confirmation=True,
@@ -19,6 +24,7 @@ EMAIL_TOOL = ToolDefinition(
         operation("send", "Send an email.", confirmation=True),
     ),
     permissions=(
+        permission("email_read", "Read bounded email metadata."),
         permission("email_draft", "Prepare email content."),
         permission("email_send", "Send email."),
     ),

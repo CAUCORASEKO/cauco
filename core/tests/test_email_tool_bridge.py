@@ -6,6 +6,7 @@ from cauco_agents import (
     AgentPlanStep,
     AgentToolReference,
     EmailDraftInput,
+    EmailListMessagesInput,
 )
 from cauco_tools import ToolExecutionRequest
 from fastapi.testclient import TestClient
@@ -21,6 +22,39 @@ class FakeBrokerClient:
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
+
+    def mail_messages_list(self, limit: int = 20) -> dict:
+        self.calls.append(
+            {
+                "capability": "mail.messages.list",
+                "arguments": {"limit": limit},
+            }
+        )
+        return {
+            "outcome": "success",
+            "result": {
+                "results": [
+                    {
+                        "message_reference": "mailmsg_0123456789abcdef",
+                        "sender": "Sender <sender@example.com>",
+                        "subject": "Subject",
+                        "date_received": "2026-08-21T05:00:00.000Z",
+                        "read": False,
+                    }
+                ],
+                "result_count": 1,
+                "truncated": False,
+            },
+            "error": None,
+            "limitations": [
+                "Inbox only",
+                "metadata only",
+                "limit 1..20",
+                "opaque message references",
+                "no body or attachments",
+            ],
+            "method": "mail.messages.list.v1",
+        }
 
     def request(self, request: dict) -> dict:
         self.calls.append(request)
@@ -38,7 +72,12 @@ class FakeBrokerClient:
         }
 
 
-def email_execution(client: TestClient, operation_input: EmailDraftInput) -> tuple[dict, dict]:
+def email_execution(
+    client: TestClient,
+    operation_input: EmailDraftInput | EmailListMessagesInput,
+    *,
+    operation_id: str = "draft",
+) -> tuple[dict, dict]:
     pending = client.post(
         "/api/agents/plan-reviews",
         json={"instruction": "Inspect git status"},
@@ -55,7 +94,7 @@ def email_execution(client: TestClient, operation_input: EmailDraftInput) -> tup
         "Create through the generic mutation boundary.",
         True,
         False,
-        tool_reference=AgentToolReference("email", "draft"),
+        tool_reference=AgentToolReference("email", operation_id),
         operation_input=operation_input,
     )
 
@@ -99,6 +138,118 @@ def email_execution(client: TestClient, operation_input: EmailDraftInput) -> tup
     assert execution.status_code == 201
 
     return approved.json(), execution.json()
+
+
+def test_email_list_messages_adapter_is_read_only_and_bounded(tmp_path: Path) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+
+    with TestClient(create_app(Settings(brain_dir=brain))) as client:
+        adapter = client.app.state.tool_adapter_registry.get(
+            "email",
+            "list_messages",
+        )
+        fake = FakeBrokerClient()
+        adapter.broker_client = fake
+
+        request = ToolExecutionRequest(
+            "email",
+            "list_messages",
+            {"limit": 5},
+        )
+
+        inspected = adapter.preflight(request)
+
+        assert inspected == {"limit": 5}
+        assert fake.calls == []
+
+        result = adapter.execute(request)
+
+        assert result.success is True
+        assert result.execution_performed is True
+        assert result.mutation_performed is False
+        assert result.structured_data["result_count"] == 1
+        assert result.structured_data["truncated"] is False
+        assert len(result.structured_data["messages"]) == 1
+
+        message = result.structured_data["messages"][0]
+
+        assert message == {
+            "message_reference": "mailmsg_0123456789abcdef",
+            "sender": "Sender <sender@example.com>",
+            "subject": "Subject",
+            "date_received": "2026-08-21T05:00:00.000Z",
+            "read": False,
+        }
+
+        assert fake.calls == [
+            {
+                "capability": "mail.messages.list",
+                "arguments": {"limit": 5},
+            }
+        ]
+
+
+def test_email_list_messages_runs_through_execution_service_without_workspace(
+    tmp_path: Path,
+) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+
+    with TestClient(create_app(Settings(brain_dir=brain))) as client:
+        adapter = client.app.state.tool_adapter_registry.get(
+            "email",
+            "list_messages",
+        )
+        fake = FakeBrokerClient()
+        adapter.broker_client = fake
+
+        approved, execution = email_execution(
+            client,
+            EmailListMessagesInput(limit=5),
+            operation_id="list_messages",
+        )
+
+        execution_id = execution["execution_id"]
+
+        run = client.post(
+            f"/api/executions/{execution_id}/run",
+        )
+
+        assert run.status_code == 200
+
+        payload = run.json()
+
+        assert payload["state"] == "completed"
+
+        record_response = client.get(
+            f"/api/executions/{execution_id}",
+        )
+
+        assert record_response.status_code == 200
+
+        record = record_response.json()
+        assert record["status"] == "completed"
+
+        result = record["step_records"][0]["result"]
+
+        assert result["success"] is True
+        assert result["execution_performed"] is True
+        assert result["mutation_performed"] is False
+        assert result["structured_data"]["result_count"] == 1
+        assert result["structured_data"]["truncated"] is False
+
+        assert fake.calls == [
+            {
+                "capability": "mail.messages.list",
+                "arguments": {"limit": 5},
+            }
+        ]
+
+        refreshed = client.get(f"/api/agents/plan-reviews/{approved['review_id']}").json()
+
+        assert refreshed["plan"] == approved["plan"]
+        assert refreshed["snapshot_digest"] == approved["snapshot_digest"]
 
 
 def test_email_adapter_preflight_is_inert_and_execution_is_typed(tmp_path: Path) -> None:

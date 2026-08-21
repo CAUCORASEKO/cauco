@@ -132,6 +132,101 @@ class NativeBrokerClient:
         if result["title"]!=title or result["all_day"]!=all_day or result["start"] is None or result["end"] is None: raise NativeBrokerUnavailable("native calendar event create invalid")
         return response
 
+    def mail_messages_list(self, limit: int = 20) -> dict[str, Any]:
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 20:
+            raise ValueError("Invalid mail message list limit")
+
+        request = {
+            "protocolVersion": "native-capability-broker-v1",
+            "requestId": "core-native-mail-messages-list",
+            "capability": "mail.messages.list",
+            "requesterId": "core",
+            "origin": "localCore",
+            "explicitUserRequest": True,
+            "requestLocale": "en",
+            "responseLocale": "en",
+            "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "arguments": {"limit": limit},
+        }
+
+        response = self.request(request)
+        result = response.get("result")
+
+        if response.get("outcome") != "success" or not isinstance(result, dict):
+            raise NativeBrokerUnavailable("native mail message list rejected")
+
+        if set(result) != {"results", "result_count", "truncated"}:
+            raise NativeBrokerUnavailable("native mail message list response invalid")
+
+        rows = result.get("results")
+        result_count = result.get("result_count")
+        truncated = result.get("truncated")
+
+        if (
+            not isinstance(rows, list)
+            or len(rows) > limit
+            or not isinstance(result_count, int)
+            or isinstance(result_count, bool)
+            or result_count != len(rows)
+            or not isinstance(truncated, bool)
+        ):
+            raise NativeBrokerUnavailable("native mail message list response invalid")
+
+        allowed = {
+            "message_reference",
+            "sender",
+            "subject",
+            "date_received",
+            "read",
+        }
+
+        for row in rows:
+            if not isinstance(row, dict) or set(row) != allowed:
+                raise NativeBrokerUnavailable("native mail message list response invalid")
+
+            reference = row.get("message_reference")
+            sender = row.get("sender")
+            subject = row.get("subject")
+            date_received = row.get("date_received")
+            read = row.get("read")
+
+            if not isinstance(reference, str) or not re.fullmatch(
+                r"^mailmsg_[A-Za-z0-9_-]{8,80}$", reference
+            ):
+                raise NativeBrokerUnavailable("native mail message list response invalid")
+
+            if (
+                not isinstance(sender, str)
+                or len(sender) > 320
+                or any(ord(character) < 32 or 127 <= ord(character) <= 159 for character in sender)
+            ):
+                raise NativeBrokerUnavailable("native mail message list response invalid")
+
+            if (
+                not isinstance(subject, str)
+                or len(subject) > 300
+                or any(ord(character) < 32 or 127 <= ord(character) <= 159 for character in subject)
+            ):
+                raise NativeBrokerUnavailable("native mail message list response invalid")
+
+            if not isinstance(date_received, str):
+                raise NativeBrokerUnavailable("native mail message list response invalid")
+
+            try:
+                parsed_date = datetime.fromisoformat(date_received.replace("Z", "+00:00"))
+            except ValueError as error:
+                raise NativeBrokerUnavailable(
+                    "native mail message list response invalid"
+                ) from error
+
+            if parsed_date.tzinfo is None:
+                raise NativeBrokerUnavailable("native mail message list response invalid")
+
+            if not isinstance(read, bool):
+                raise NativeBrokerUnavailable("native mail message list response invalid")
+
+        return response
+
     def contacts_search(self, query: str, limit: int = 20) -> dict[str, Any]:
         if not isinstance(query, str) or not query.strip() or len(query) > 200 or not 1 <= limit <= 20:
             raise ValueError("Invalid contacts search arguments")

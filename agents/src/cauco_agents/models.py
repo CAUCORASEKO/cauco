@@ -294,6 +294,19 @@ def _calendar_reference(value: str | None) -> str | None:
 
 
 @dataclass(frozen=True, slots=True)
+class EmailListMessagesInput:
+    limit: int = 20
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.limit, int)
+            or isinstance(self.limit, bool)
+            or not 1 <= self.limit <= 20
+        ):
+            raise ValueError("Email message list limit must be between 1 and 20.")
+
+
+@dataclass(frozen=True, slots=True)
 class EmailDraftInput:
     recipient: str
     subject: str
@@ -403,6 +416,7 @@ AgentOperationInput: TypeAlias = (
     | GitPushInput
     | CalendarListEventsInput
     | CalendarCreateEventInput
+    | EmailListMessagesInput
     | EmailDraftInput
 )
 

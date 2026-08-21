@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from time import monotonic
 from typing import Any
 
-from cauco_agents import EmailDraftInput
+from cauco_agents import EmailDraftInput, EmailListMessagesInput
 from cauco_tools import ToolExecutionError, ToolExecutionRequest, ToolExecutionResult
 
 from cauco_core.native_broker import NativeBrokerUnavailable
@@ -13,7 +13,7 @@ from cauco_core.native_broker.client import MAX_REQUEST
 
 class EmailToolRuntimeAdapter:
     tool_id = "email"
-    operations = frozenset({"draft"})
+    operations = frozenset({"draft", "list_messages"})
 
     def __init__(self, broker_client: Any) -> None:
         self.broker_client = broker_client
@@ -23,14 +23,18 @@ class EmailToolRuntimeAdapter:
             raise ToolExecutionError("invalid_request", "Email operation is invalid.")
 
         arguments = dict(request.arguments)
-        arguments.pop("request_id", None)
 
         try:
+            if request.operation_id == "list_messages":
+                value = EmailListMessagesInput(**arguments)
+                return asdict(value)
+
+            arguments.pop("request_id", None)
             value = EmailDraftInput(**arguments)
         except (TypeError, ValueError) as error:
             raise ToolExecutionError(
                 "invalid_arguments",
-                "Email draft arguments are invalid.",
+                "Email arguments are invalid.",
             ) from error
 
         normalized = asdict(value)
@@ -79,6 +83,52 @@ class EmailToolRuntimeAdapter:
         started = monotonic()
 
         arguments = self.preflight(request)
+
+        if request.operation_id == "list_messages":
+            try:
+                response = self.broker_client.mail_messages_list(limit=arguments["limit"])
+            except NativeBrokerUnavailable as error:
+                raise ToolExecutionError(
+                    "email_unavailable",
+                    "Email message listing is unavailable.",
+                ) from error
+
+            result = response.get("result")
+            if not isinstance(result, dict):
+                raise ToolExecutionError(
+                    "invalid_response",
+                    "Email message listing returned an invalid response.",
+                )
+
+            structured = {
+                "messages": tuple(result["results"]),
+                "result_count": result["result_count"],
+                "truncated": result["truncated"],
+            }
+
+            output = json.dumps(
+                structured,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            truncated = len(output) > request.max_output_chars
+            output = output[: request.max_output_chars]
+
+            completed_at = datetime.now(tz=UTC)
+
+            return ToolExecutionResult(
+                tool_id=self.tool_id,
+                operation_id=request.operation_id,
+                success=True,
+                started_at=started_at,
+                completed_at=completed_at,
+                duration_ms=max(0, round((monotonic() - started) * 1000)),
+                output=output,
+                structured_data=structured,
+                truncated=truncated,
+                execution_performed=True,
+                mutation_performed=False,
+            )
 
         request_id = request.arguments.get("request_id")
         if not isinstance(request_id, str) or not request_id.startswith("email_draft_"):

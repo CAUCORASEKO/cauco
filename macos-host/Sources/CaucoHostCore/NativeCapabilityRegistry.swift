@@ -40,6 +40,18 @@ public struct NativeCapabilityRegistry: Sendable {
       .init(capability: .calendarEventsGet, permissionId: "macos.calendar.read", accessMode: "read", exposesPersonalData: true, confirmationRequired: true, implementationState: "implemented", limitations: ["bounded opaque reference"], method: "calendar.events.get.v1"),
       .init(capability: .calendarEventsCreate, permissionId: "macos.calendar.read", accessMode: "write", exposesPersonalData: true, confirmationRequired: true, implementationState: "implemented", limitations: ["bounded payload", "no attendees or recurrence"], method: "calendar.events.create.v1"),
       .init(
+        capability: .mailMessagesList, permissionId: "macos.automation.mail",
+        accessMode: "read", exposesPersonalData: true, confirmationRequired: true,
+        implementationState: "implemented",
+        limitations: [
+          "Inbox only",
+          "metadata only",
+          "limit 1..20",
+          "opaque message references",
+          "no body or attachments",
+        ],
+        method: "mail.messages.list.v1"),
+      .init(
         capability: .mailDraftCreate, permissionId: "macos.automation.mail",
         accessMode: "write", exposesPersonalData: true, confirmationRequired: true,
         implementationState: "implemented",

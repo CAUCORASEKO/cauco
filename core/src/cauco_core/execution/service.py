@@ -2,7 +2,12 @@ from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from cauco_agents import AgentPlanReviewRecord, AgentPlanReviewStatus, CalendarListEventsInput
+from cauco_agents import (
+    AgentPlanReviewRecord,
+    AgentPlanReviewStatus,
+    CalendarListEventsInput,
+    EmailListMessagesInput,
+)
 from cauco_tools import (
     ToolAdapterRegistry,
     ToolExecutionError,
@@ -233,6 +238,12 @@ class ExecutionService:
             if not isinstance(operation_input, CalendarListEventsInput):
                 raise ExecutionValidationError(
                     "Approved calendar list step has invalid typed input."
+                )
+            return asdict(operation_input)
+        if tool_id == "email" and operation_id == "list_messages":
+            if not isinstance(operation_input, EmailListMessagesInput):
+                raise ExecutionValidationError(
+                    "Approved email message list step has invalid typed input."
                 )
             return asdict(operation_input)
         if self.workspace_policy is None:

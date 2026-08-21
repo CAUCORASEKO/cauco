@@ -281,6 +281,63 @@ final class HostCoreTests: XCTestCase {
       broker.handle(try request(.contactsListLimited, args: ["limit": .number(21)])).error?.code,
       "invalid_arguments")
   }
+  func testMailMessagesBrokerIsBoundedAndDoesNotExposeNativeIDs() throws {
+    let mail = FakeMailMessageGateway()
+
+    let broker = NativeCapabilityBroker(
+      permission: FakePermission(.granted),
+      mailMessages: mail
+    )
+
+    let response = broker.handle(
+      try request(
+        .mailMessagesList,
+        args: ["limit": .number(5)]
+      )
+    )
+
+    XCTAssertEqual(response.outcome, .success)
+    XCTAssertEqual(response.method, "mail.messages.list.v1")
+    XCTAssertEqual(mail.calls, 1)
+    XCTAssertEqual(mail.lastLimit, 5)
+
+    guard case let .array(results)? = response.result?["results"] else {
+      return XCTFail("Mail results were missing.")
+    }
+
+    XCTAssertEqual(results.count, 1)
+
+    guard case let .object(message) = results[0] else {
+      return XCTFail("Mail result was not an object.")
+    }
+
+    XCTAssertEqual(
+      message["message_reference"],
+      .string("mailmsg_0123456789abcdef")
+    )
+    XCTAssertEqual(message["sender"], .string("Sender <sender@example.com>"))
+    XCTAssertEqual(message["subject"], .string("Subject"))
+    XCTAssertEqual(
+      message["date_received"],
+      .string("2026-08-21T05:00:00.000Z")
+    )
+    XCTAssertEqual(message["read"], .boolean(false))
+
+    XCTAssertNil(message["id"])
+    XCTAssertNil(message["message_id"])
+    XCTAssertNil(message["native_identifier"])
+
+    let invalid = broker.handle(
+      try request(
+        .mailMessagesList,
+        args: ["limit": .number(21)]
+      )
+    )
+
+    XCTAssertEqual(invalid.error?.code, "invalid_arguments")
+    XCTAssertEqual(mail.calls, 1)
+  }
+
   func testMailDraftBrokerIsBoundedAndRoutesOnlyValidatedDrafts() throws {
     let mail = FakeMailDraftGateway()
     let broker = NativeCapabilityBroker(
@@ -484,6 +541,30 @@ private func connectToBroker(_ url: URL) throws -> Int32 {
   }
   guard result == 0 else { close(client); throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
   return client
+}
+
+private final class FakeMailMessageGateway: MailMessageGateway, @unchecked Sendable {
+  var calls = 0
+  var lastLimit: Int?
+
+  func listMessages(limit: Int) throws -> [String: BrokerJSONValue] {
+    calls += 1
+    lastLimit = limit
+
+    return [
+      "results": .array([
+        .object([
+          "message_reference": .string("mailmsg_0123456789abcdef"),
+          "sender": .string("Sender <sender@example.com>"),
+          "subject": .string("Subject"),
+          "date_received": .string("2026-08-21T05:00:00.000Z"),
+          "read": .boolean(false),
+        ])
+      ]),
+      "result_count": .number(1),
+      "truncated": .boolean(false),
+    ]
+  }
 }
 
 private final class FakeMailDraftGateway: MailDraftGateway, @unchecked Sendable {

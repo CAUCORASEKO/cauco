@@ -98,6 +98,7 @@ def test_default_registry_contracts_and_validation() -> None:
         ("calendar", "list_events"),
         ("calendar", "create_event"),
         ("email", "draft"),
+        ("email", "list_messages"),
         ("filesystem", "list_directory"),
         ("filesystem", "read_file"),
         ("filesystem", "write_text_file"),
@@ -110,6 +111,11 @@ def test_default_registry_contracts_and_validation() -> None:
     }
     assert registry.validate("git", "commit").runtime_execution_allowed
     assert registry.validate("git", "push").runtime_execution_allowed
+    email_list = registry.validate("email", "list_messages")
+    assert email_list.runtime_execution_allowed
+    assert not email_list.mutation
+    assert not email_list.preview_required
+
     email_draft = registry.validate("email", "draft")
     assert email_draft.runtime_execution_allowed
     assert email_draft.mutation

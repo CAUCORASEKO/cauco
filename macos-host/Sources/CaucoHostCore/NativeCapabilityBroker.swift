@@ -5,6 +5,7 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
   private let contacts: ContactsDataGateway
   private let calendarPermission: CalendarPermissionGateway
   private let calendars: CalendarDataGateway
+  private let mailMessages: MailMessageGateway
   private let mailDrafts: MailDraftGateway
   public let registry: NativeCapabilityRegistry
 
@@ -13,6 +14,7 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     calendarPermission: CalendarPermissionGateway = NativeCalendarPermissionGateway(),
     contacts: ContactsDataGateway? = nil,
     calendars: CalendarDataGateway? = nil,
+    mailMessages: MailMessageGateway? = nil,
     mailDrafts: MailDraftGateway? = nil,
     registry: NativeCapabilityRegistry = NativeCapabilityRegistry()
   ) {
@@ -20,6 +22,7 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     self.contacts = contacts ?? NativeContactsDataGateway(permission: permission)
     self.calendarPermission = calendarPermission
     self.calendars = calendars ?? NativeCalendarDataGateway(permission: calendarPermission)
+    self.mailMessages = mailMessages ?? NativeMailMessageGateway()
     self.mailDrafts = mailDrafts ?? NativeMailDraftGateway()
     self.registry = registry
   }
@@ -44,6 +47,33 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       do { let a = request.arguments; return response(request, .success, try calendars.eventCreate(title: a["title"]!.stringValue!, start: a["start"]!.stringValue!, end: a["end"]!.stringValue!, allDay: a["all_day"]!.boolValue!, calendarReference: a["calendar_reference"]?.stringValue, location: a["location"]?.stringValue, notes: a["notes"]?.stringValue), nil, definition.limitations) }
       catch let error as BrokerError { return response(request, .rejected, nil, error, definition.limitations) }
       catch { return response(request, .failed, nil, .internalFailure, definition.limitations) }
+    case .mailMessagesList:
+      do {
+        let limit = Int(request.arguments["limit"]!.numberValue!)
+        return response(
+          request,
+          .success,
+          try mailMessages.listMessages(limit: limit),
+          nil,
+          definition.limitations
+        )
+      } catch let error as BrokerError {
+        return response(
+          request,
+          .rejected,
+          nil,
+          error,
+          definition.limitations
+        )
+      } catch {
+        return response(
+          request,
+          .failed,
+          nil,
+          .internalFailure,
+          definition.limitations
+        )
+      }
     case .mailDraftCreate:
       do {
         let arguments = request.arguments
@@ -170,6 +200,12 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       let allowed = Set(["title", "start", "end", "all_day", "calendar_reference", "location", "notes"])
       guard Set(args.keys).isSubset(of: allowed), Set(["title", "start", "end", "all_day"]).isSubset(of: Set(args.keys)), caseString(args["title"])?.isEmpty == false, caseString(args["start"]) != nil, caseString(args["end"]) != nil, args["all_day"]!.boolValue != nil else { throw BrokerError.invalidArguments }
       for key in ["location", "notes", "calendar_reference"] { if let value = args[key], caseString(value) == nil { throw BrokerError.invalidArguments } }
+    case .mailMessagesList:
+      guard Set(args.keys) == Set(["limit"]),
+        caseInt(args["limit"], max: 20) != nil
+      else {
+        throw BrokerError.invalidArguments
+      }
     case .mailDraftCreate:
       guard Set(args.keys) == Set(["recipient", "subject", "body"]),
         let recipient = caseString(args["recipient"]),

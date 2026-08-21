@@ -10,6 +10,7 @@ public enum NativeCapability: String, Codable, CaseIterable, Sendable {
   case calendarEventsRange = "calendar.events.range"
   case calendarEventsGet = "calendar.events.get"
   case calendarEventsCreate = "calendar.events.create"
+  case mailMessagesList = "mail.messages.list"
   case mailDraftCreate = "mail.draft.create"
 }
 
