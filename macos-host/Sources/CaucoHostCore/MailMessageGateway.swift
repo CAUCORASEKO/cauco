@@ -24,11 +24,10 @@ public final class MailMessageReferenceRegistry: @unchecked Sendable {
       return existing
     }
 
-    let reference =
-      "mailmsg_"
+    let reference = "mailmsg_"
       + UUID().uuidString
-        .replacingOccurrences(of: "-", with: "")
-        .lowercased()
+      .replacingOccurrences(of: "-", with: "")
+      .lowercased()
 
     byIdentifier[identifier] = reference
     byReference[reference] = identifier
@@ -150,25 +149,23 @@ public final class NativeMailMessageGateway: MailMessageGateway, @unchecked Send
 }
 
 func mailMessagesScript(locator: MailMailboxLocator, limit: Int) -> String {
-  """
+  let accountLiteral = mailAppleScriptStringLiteral(locator.accountIdentifier)
+  let expectedNameLiteral = mailAppleScriptStringLiteral(locator.expectedName)
+  return """
     tell application "Mail"
       set targetAccount to missing value
       repeat with accountItem in every account
-        if id of accountItem is \(locator.accountIdentifier) then
+        if (id of accountItem as text) is \(accountLiteral) then
           set targetAccount to accountItem
           exit repeat
         end if
       end repeat
       if targetAccount is missing value then return {-1, {}}
 
-      set targetMailbox to missing value
-      repeat with mailboxItem in every mailbox of targetAccount
-        if id of mailboxItem is \(locator.mailboxIdentifier) then
-          set targetMailbox to mailboxItem
-          exit repeat
-        end if
-      end repeat
-      if targetMailbox is missing value then return {-1, {}}
+      set sourceMailboxes to every mailbox of targetAccount
+      if (count of sourceMailboxes) < \(locator.mailboxIndex) then return {-1, {}}
+      set targetMailbox to item \(locator.mailboxIndex) of sourceMailboxes
+      if (name of targetMailbox as text) is not \(expectedNameLiteral) then return {-1, {}}
 
       set sourceMessages to messages of targetMailbox
       set totalCount to count of sourceMessages

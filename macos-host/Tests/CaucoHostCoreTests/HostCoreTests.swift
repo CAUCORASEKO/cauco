@@ -370,8 +370,13 @@ final class HostCoreTests: XCTestCase {
 
   func testNativeMailMessageGatewayFailsClosedForUnknownOrStaleMailboxReference() throws {
     let references = MailAccountReferenceRegistry(mailboxCapacity: 1)
-    let stale = references.mailboxReference(accountIdentifier: 41, mailboxIdentifier: 501)
-    _ = references.mailboxReference(accountIdentifier: 42, mailboxIdentifier: 502)
+    let stale = try XCTUnwrap(
+      references.mailboxReference(
+        accountIdentifier: "AB4A35A2-68F3-4E3C-8BDD-ADF94AE4844C", mailboxIndex: 1,
+        expectedName: "Inbox"))
+    _ = references.mailboxReference(
+      accountIdentifier: "74FC86AA-448E-456E-8967-B5B53E08662A", mailboxIndex: 2,
+      expectedName: "Archive")
     let gateway = NativeMailMessageGateway(accountReferences: references)
 
     XCTAssertThrowsError(try gateway.listMessages(mailboxReference: stale, limit: 5)) { error in
@@ -385,42 +390,94 @@ final class HostCoreTests: XCTestCase {
   }
 
   func testMailMessageScriptRoutesExactAccountAndMailboxWithoutGlobalInbox() {
+    let accountIdentifier = "AB4A35A2-68F3-4E3C-8BDD-ADF94AE4844C"
     let script = mailMessagesScript(
-      locator: MailMailboxLocator(accountIdentifier: 41, mailboxIdentifier: 501), limit: 20)
+      locator: MailMailboxLocator(
+        accountIdentifier: accountIdentifier, mailboxIndex: 7, expectedName: "Project Inbox"),
+      limit: 20)
 
-    XCTAssertTrue(script.contains("id of accountItem is 41"))
-    XCTAssertTrue(script.contains("id of mailboxItem is 501"))
+    XCTAssertTrue(script.contains("(id of accountItem as text) is \"\(accountIdentifier)\""))
+    XCTAssertTrue(script.contains("item 7 of sourceMailboxes"))
+    XCTAssertTrue(script.contains("name of targetMailbox as text) is not \"Project Inbox\""))
     XCTAssertTrue(script.contains("messages of targetMailbox"))
     XCTAssertTrue(script.contains("set selectedCount to 20"))
+    XCTAssertFalse(script.contains("id of mailboxItem"))
     XCTAssertFalse(script.contains("messages of inbox"))
     XCTAssertFalse(script.contains("global inbox"))
   }
 
   func testMailAccountAndMailboxReferencesAreOpaqueStableAndBounded() throws {
     let references = MailAccountReferenceRegistry(accountCapacity: 1, mailboxCapacity: 1)
-    let firstAccount = references.accountReference(for: 41)
-    XCTAssertEqual(firstAccount, references.accountReference(for: 41))
+    let firstIdentifier = "AB4A35A2-68F3-4E3C-8BDD-ADF94AE4844C"
+    let secondIdentifier = "74FC86AA-448E-456E-8967-B5B53E08662A"
+    let firstAccount = try XCTUnwrap(references.accountReference(for: firstIdentifier))
+    XCTAssertEqual(firstAccount, references.accountReference(for: firstIdentifier))
     XCTAssertTrue(firstAccount.hasPrefix("mailacct_"))
-    XCTAssertFalse(firstAccount.contains("41"))
-    XCTAssertEqual(references.accountIdentifier(for: firstAccount), 41)
+    XCTAssertFalse(firstAccount.contains(firstIdentifier))
+    XCTAssertEqual(references.accountIdentifier(for: firstAccount), firstIdentifier)
 
-    let firstMailbox = references.mailboxReference(
-      accountIdentifier: 41, mailboxIdentifier: 501)
+    let firstMailbox = try XCTUnwrap(
+      references.mailboxReference(
+        accountIdentifier: firstIdentifier, mailboxIndex: 7, expectedName: "Project Inbox"))
     XCTAssertEqual(
       firstMailbox,
-      references.mailboxReference(accountIdentifier: 41, mailboxIdentifier: 501))
+      references.mailboxReference(
+        accountIdentifier: firstIdentifier, mailboxIndex: 7, expectedName: "Project Inbox"))
     XCTAssertTrue(firstMailbox.hasPrefix("mailbox_"))
-    XCTAssertFalse(firstMailbox.contains("501"))
+    XCTAssertFalse(firstMailbox.contains(firstIdentifier))
+    XCTAssertFalse(firstMailbox.contains("Project Inbox"))
     XCTAssertEqual(
       references.mailboxLocator(for: firstMailbox),
-      MailMailboxLocator(accountIdentifier: 41, mailboxIdentifier: 501))
+      MailMailboxLocator(
+        accountIdentifier: firstIdentifier, mailboxIndex: 7, expectedName: "Project Inbox"))
 
-    _ = references.accountReference(for: 42)
-    _ = references.mailboxReference(accountIdentifier: 42, mailboxIdentifier: 502)
+    _ = references.accountReference(for: secondIdentifier)
+    _ = references.mailboxReference(
+      accountIdentifier: secondIdentifier, mailboxIndex: 2, expectedName: "Archive")
     XCTAssertNil(references.accountIdentifier(for: firstAccount))
     XCTAssertNil(references.mailboxLocator(for: firstMailbox))
     XCTAssertNil(references.accountIdentifier(for: "mailacct_unknown"))
     XCTAssertNil(references.mailboxLocator(for: "mailbox_unknown"))
+  }
+
+  func testMailNativeAccountIdentifiersAndMailboxLocatorsFailClosed() throws {
+    let references = MailAccountReferenceRegistry()
+    XCTAssertNil(references.accountReference(for: ""))
+    XCTAssertNil(references.accountReference(for: "account\nidentifier"))
+    XCTAssertNil(references.accountReference(for: String(repeating: "a", count: 201)))
+    XCTAssertNil(
+      references.mailboxReference(
+        accountIdentifier: "AB4A35A2-68F3-4E3C-8BDD-ADF94AE4844C", mailboxIndex: 0,
+        expectedName: "Inbox"))
+    XCTAssertNil(
+      references.mailboxReference(
+        accountIdentifier: "AB4A35A2-68F3-4E3C-8BDD-ADF94AE4844C", mailboxIndex: 1,
+        expectedName: "Inbox\n"))
+  }
+
+  func testMailMailboxDiscoveryUsesTextAccountIdAndEnumerationIndexWithoutMailboxId() {
+    let accountIdentifier = "AB4A35A2-68F3-4E3C-8BDD-ADF94AE4844C"
+    let accountScript = mailAccountsScript()
+    let mailboxScript = mailMailboxesScript(accountIdentifier: accountIdentifier)
+
+    XCTAssertTrue(accountScript.contains("id of accountItem as text"))
+    XCTAssertTrue(mailboxScript.contains("(id of accountItem as text) is \"\(accountIdentifier)\""))
+    XCTAssertTrue(mailboxScript.contains("set selectedCount to 100"))
+    XCTAssertTrue(mailboxScript.contains("{i, name of mailboxItem}"))
+    XCTAssertFalse(mailboxScript.contains("id of mailboxItem"))
+  }
+
+  func testMailMessageScriptFailsClosedForStaleIndexAndExpectedName() {
+    let script = mailMessagesScript(
+      locator: MailMailboxLocator(
+        accountIdentifier: "AB4A35A2-68F3-4E3C-8BDD-ADF94AE4844C", mailboxIndex: 9,
+        expectedName: "Archive"),
+      limit: 5)
+
+    XCTAssertTrue(script.contains("if (count of sourceMailboxes) < 9 then return {-1, {}}"))
+    XCTAssertTrue(
+      script.contains("if (name of targetMailbox as text) is not \"Archive\" then return {-1, {}}"))
+    XCTAssertTrue(script.contains("if targetAccount is missing value then return {-1, {}}"))
   }
 
   func testMailAccountsAndMailboxesBrokerRoutingIsBoundedAndFailClosed() throws {
