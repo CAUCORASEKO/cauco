@@ -653,6 +653,47 @@ final class HostCoreTests: XCTestCase {
     XCTAssertTrue(rules.canStop(ownedProcessExists: true))
     XCTAssertEqual(rules.stateAfterLaunchFailure(), .unavailable)
   }
+  func testOwnedCoreTerminationIsGracefulWhenProcessExitsAfterTerminate() {
+    let process = FakeOwnedCoreProcess(pid: 101)
+    process.exitOnTerminate = true
+    let terminator = OwnedCoreProcessTerminator(
+      now: { 0 }, sleep: { _ in XCTFail("Graceful exit should not poll.") },
+      forceTerminate: { _ in XCTFail("Graceful exit must not force terminate."); return false })
+
+    XCTAssertEqual(terminator.stop(process), .terminated)
+    XCTAssertEqual(process.terminateCalls, 1)
+    XCTAssertEqual(process.waitCalls, 1)
+  }
+  func testOwnedCoreTerminationEscalatesAfterBoundedGracePeriod() {
+    let process = FakeOwnedCoreProcess(pid: 202)
+    var clock = 0.0
+    var forcedPID: Int32?
+    let terminator = OwnedCoreProcessTerminator(
+      now: { clock },
+      sleep: { interval in clock += interval },
+      forceTerminate: { pid in
+        forcedPID = pid
+        process.running = false
+        return true
+      })
+
+    XCTAssertEqual(
+      terminator.stop(process, gracefulTimeout: 0.02, pollInterval: 0.01), .forceTerminated)
+    XCTAssertEqual(forcedPID, 202)
+    XCTAssertEqual(process.terminateCalls, 1)
+    XCTAssertEqual(process.waitCalls, 1)
+  }
+  func testOwnedCoreTerminationRetainsOwnershipWhenForcedSignalFails() {
+    let process = FakeOwnedCoreProcess(pid: 303)
+    var clock = 0.0
+    let terminator = OwnedCoreProcessTerminator(
+      now: { clock }, sleep: { interval in clock += interval }, forceTerminate: { _ in false })
+
+    XCTAssertEqual(
+      terminator.stop(process, gracefulTimeout: 0.01, pollInterval: 0.01), .stillRunning)
+    XCTAssertTrue(process.isRunning)
+    XCTAssertEqual(process.waitCalls, 0)
+  }
   func testBoundedDiagnosticTailsAndSanitization() {
     let text = (0..<40).map { "line\($0)\u{001b}[31m" }.joined(separator: "\n")
     XCTAssertEqual(boundedDiagnosticTail(text, maxLines: 30).count, 30)
@@ -739,6 +780,25 @@ private func connectToBroker(_ url: URL) throws -> Int32 {
   }
   guard result == 0 else { close(client); throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
   return client
+}
+
+private final class FakeOwnedCoreProcess: OwnedCoreProcess {
+  var running = true
+  var exitOnTerminate = false
+  private(set) var terminateCalls = 0
+  private(set) var waitCalls = 0
+  let processIdentifier: Int32
+
+  init(pid: Int32) { processIdentifier = pid }
+
+  var isRunning: Bool { running }
+
+  func terminate() {
+    terminateCalls += 1
+    if exitOnTerminate { running = false }
+  }
+
+  func waitUntilExit() { waitCalls += 1 }
 }
 
 private final class FakeMailMessageGateway: MailMessageGateway, @unchecked Sendable {

@@ -2,10 +2,29 @@ import AppKit
 import CaucoHostCore
 import SwiftUI
 
+@MainActor final class CaucoHostAppDelegate: NSObject, NSApplicationDelegate {
+  weak var model: HostModel?
+
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    NSApplication.shared.setActivationPolicy(.regular)
+    NSApplication.shared.activate(ignoringOtherApps: true)
+  }
+
+  func applicationWillTerminate(_ notification: Notification) {
+    model?.shutdownForHostTermination()
+  }
+}
+
 @main struct CaucoHostApp: App {
+  @NSApplicationDelegateAdaptor(CaucoHostAppDelegate.self) private var appDelegate
   @StateObject private var model = HostModel()
+
   var body: some Scene {
-    WindowGroup("Cauco") { ContentView(model: model).frame(minWidth: 520, minHeight: 360) }
+    WindowGroup("Cauco") {
+      ContentView(model: model)
+        .frame(minWidth: 520, minHeight: 360)
+        .onAppear { appDelegate.model = model }
+    }
   }
 }
 
@@ -24,13 +43,17 @@ import SwiftUI
   private var process: Process?
   private var brokerServer: NativeBrokerTransportServer?
   private let lifecycle = CoreLifecycleRules()
+  private let processTerminator = OwnedCoreProcessTerminator()
 
   init() {
     refreshContacts()
     refreshCalendar()
     refreshRepository()
   }
-  deinit { brokerServer?.stop() }
+  deinit {
+    if let process { _ = processTerminator.stop(process) }
+    brokerServer?.stop()
+  }
   func refreshContacts() { contacts = String(describing: permission.authorizationState()) }
   func requestContacts() {
     diagnostic = "Waiting for macOS Contacts decision…"
@@ -101,7 +124,8 @@ import SwiftUI
         workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
       let configuration = CoreLaunchConfiguration(
         executable: resolved.executable, repository: resolved.repository)
-      let brokerServer = try NativeBrokerTransportServer(broker: NativeCapabilityBroker(permission: permission))
+      let brokerServer = try NativeBrokerTransportServer(
+        broker: NativeCapabilityBroker(permission: permission))
       try brokerServer.start()
       self.brokerServer = brokerServer
       let p = Process()
@@ -221,14 +245,29 @@ import SwiftUI
   }
   func stopCore() {
     guard let p = process, lifecycle.canStop(ownedProcessExists: true) else { return }
-    p.terminate()
+    let result = processTerminator.stop(p)
+    brokerServer?.stop()
+    brokerServer = nil
+    if result == .stillRunning {
+      coreStatus = "unavailable"
+      launchDiagnostics?.lifecycleState = .unavailable
+      diagnostic = "Owned Core process did not stop; Host retained process ownership."
+    } else {
+      process = nil
+      hasOwnedProcess = false
+      coreStatus = "stopped"
+      launchDiagnostics?.running = false
+      launchDiagnostics?.lifecycleState = .stopped
+      diagnostic = "Owned Core process stopped."
+    }
+  }
+
+  func shutdownForHostTermination() {
+    if let process { _ = processTerminator.stop(process) }
     brokerServer?.stop()
     brokerServer = nil
     process = nil
     hasOwnedProcess = false
-    coreStatus = "stopped"
-    launchDiagnostics?.lifecycleState = .stopped
-    diagnostic = "Owned Core process stopped."
   }
   func openDashboard() { NSWorkspace.shared.open(coreURL) }
 }
