@@ -5,10 +5,15 @@ from cauco_reasoning.decision import (
     ReasoningRequirementResolver,
 )
 from cauco_reasoning.models import ReasoningRequest, ReasoningResult
-from cauco_reasoning.providers import NoOpReasoningEngine
+from cauco_reasoning.providers import (
+    DeepAgentsReasoningEngine,
+    NoOpReasoningEngine,
+    initialize_deepagents_harness,
+)
 from cauco_reasoning.service import ReasoningService
 
 __all__ = [
+    "DeepAgentsReasoningEngine",
     "NoOpReasoningEngine",
     "ReasoningDecision",
     "ReasoningEngine",
@@ -17,4 +22,5 @@ __all__ = [
     "ReasoningRequirementResolver",
     "ReasoningResult",
     "ReasoningService",
+    "initialize_deepagents_harness",
 ]

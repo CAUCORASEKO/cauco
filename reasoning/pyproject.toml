@@ -9,6 +9,7 @@ description = "Provider-neutral reasoning contracts for Cauco"
 requires-python = ">=3.11"
 
 [project.optional-dependencies]
+deepagents = ["deepagents>=0.7.8,<1"]
 dev = [
   "pytest>=8.3,<9",
   "ruff>=0.9,<1",
