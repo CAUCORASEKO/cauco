@@ -7,6 +7,7 @@ from threading import Lock
 from typing import Any, Protocol
 
 from cauco_reasoning.models import ReasoningRequest, ReasoningResult
+from cauco_reasoning.proposals import ReasoningProposal, ReasoningProposalStep
 
 logger = logging.getLogger(__name__)
 _HARNESS_LOCK = Lock()
@@ -110,6 +111,38 @@ def _response_data(response: Any) -> Mapping[str, Any]:
     return {}
 
 
+def _proposal(data: Mapping[str, Any]) -> ReasoningProposal | None:
+    raw = data.get("reasoning_proposal", data.get("proposal"))
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        raw_steps = raw.get("suggested_steps", [])
+        if not isinstance(raw_steps, (list, tuple)) or any(
+            not isinstance(step, Mapping) for step in raw_steps
+        ):
+            return None
+        steps = tuple(
+            ReasoningProposalStep(
+                description=step["description"],
+                suggested_agent_id=step.get("suggested_agent_id"),
+                suggested_intent=step.get("suggested_intent"),
+                requires_user_confirmation=step.get("requires_user_confirmation", False),
+            )
+            for step in raw_steps
+        )
+        return ReasoningProposal(
+            summary=raw["summary"],
+            rationale=tuple(raw.get("rationale", [])),
+            suggested_steps=steps,
+            assumptions=tuple(raw.get("assumptions", [])),
+            limitations=tuple(raw.get("limitations", [])),
+            confidence=raw.get("confidence"),
+            metadata=raw.get("metadata", {}),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class DeepAgentsReasoningEngine:
     """Reasoning provider backed by Deep Agents, with no Cauco tools."""
@@ -132,12 +165,14 @@ class DeepAgentsReasoningEngine:
                 reasoning_performed=False,
             )
 
+        data = _response_data(response)
         return ReasoningResult(
             provider=self.provider_name,
             model=self.model,
             text=_response_text(response),
-            structured_data={**_response_data(response), "agent_id": request.agent_id},
+            structured_data={**data, "agent_id": request.agent_id},
             reasoning_performed=True,
+            proposal=_proposal(data),
         )
 
     @staticmethod

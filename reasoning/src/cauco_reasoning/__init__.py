@@ -5,6 +5,7 @@ from cauco_reasoning.decision import (
     ReasoningRequirementResolver,
 )
 from cauco_reasoning.models import ReasoningRequest, ReasoningResult
+from cauco_reasoning.proposals import ReasoningProposal, ReasoningProposalStep
 from cauco_reasoning.providers import (
     DeepAgentsReasoningEngine,
     NoOpReasoningEngine,
@@ -17,6 +18,8 @@ __all__ = [
     "NoOpReasoningEngine",
     "ReasoningDecision",
     "ReasoningEngine",
+    "ReasoningProposal",
+    "ReasoningProposalStep",
     "ReasoningRequest",
     "ReasoningRequirement",
     "ReasoningRequirementResolver",

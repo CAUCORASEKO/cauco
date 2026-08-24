@@ -94,7 +94,12 @@ from cauco_core.perception import (
     PerceptionSourceRegistry,
 )
 from cauco_core.persistence import SQLiteDatabase
-from cauco_core.reasoning import ReasoningOrchestrationService
+from cauco_core.reasoning import (
+    ReasoningAwarePlanningService,
+    ReasoningOrchestrationService,
+    ReasoningPlanningBridge,
+    ReasoningProposalValidator,
+)
 from cauco_core.reflection.resolver import ReflectionResolver
 from cauco_core.verification import VerificationService
 from cauco_core.verification.sqlite_store import SQLiteVerificationStore
@@ -116,13 +121,17 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     from cauco_core.native_broker import NativeBrokerClient
 
     app.state.native_broker_client = NativeBrokerClient()
+    app.state.agent_registry = create_default_registry()
+    app.state.reasoning_proposal_validator = ReasoningProposalValidator(
+        app.state.agent_registry
+    )
     app.state.reasoning_requirement_resolver = ReasoningRequirementResolver()
     app.state.reasoning_service = ReasoningService(NoOpReasoningEngine())
     app.state.reasoning_orchestration_service = ReasoningOrchestrationService(
         app.state.reasoning_requirement_resolver,
         app.state.reasoning_service,
+        app.state.reasoning_proposal_validator,
     )
-    app.state.agent_registry = create_default_registry()
     app.state.tool_registry = create_default_tool_registry()
     app.state.connector_registry = ConnectorRegistry()
     app.state.connector_policy = PermissionPolicy()
@@ -191,6 +200,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
             )
         )
     app.state.agent_router = AgentRouter(app.state.agent_registry)
+    app.state.reasoning_planning_bridge = ReasoningPlanningBridge()
     app.state.memory_service = MemoryService(
         app.state.settings.resolved_brain_dir(), app.state.settings.memory_max_file_size
     )
@@ -212,6 +222,11 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.agent_router,
         app.state.agent_registry,
         app.state.agent_context_resolver,
+    )
+    app.state.reasoning_aware_planning_service = ReasoningAwarePlanningService(
+        app.state.reasoning_orchestration_service,
+        app.state.reasoning_planning_bridge,
+        app.state.agent_planning_service,
     )
     app.state.database = SQLiteDatabase(
         app.state.settings.resolved_database_path(),

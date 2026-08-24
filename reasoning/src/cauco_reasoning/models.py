@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
 
+from cauco_reasoning.proposals import ReasoningProposal
+
 ReasoningValue = str | int | float | bool | None
 
 
@@ -65,6 +67,7 @@ class ReasoningResult:
     text: str
     structured_data: Mapping[str, Any] = field(default_factory=dict)
     reasoning_performed: bool = False
+    proposal: ReasoningProposal | None = None
 
     def __post_init__(self) -> None:
         provider = self.provider.strip()

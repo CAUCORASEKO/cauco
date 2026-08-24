@@ -1,4 +1,5 @@
 from cauco_reasoning import (
+    ReasoningProposal,
     ReasoningRequest,
     ReasoningRequirement,
     ReasoningRequirementResolver,
@@ -80,6 +81,31 @@ def test_provider_failure_is_safe_and_non_executing() -> None:
     assert outcome.result is failure
     assert outcome.explanation == "Reasoning was required but the provider did not complete safely."
     assert engine.calls == 1
+
+
+def test_failed_result_proposal_is_never_validated() -> None:
+    class RejectValidation:
+        def validate(self, proposal):
+            raise AssertionError("failed provider proposal must not be validated")
+
+    failure = ReasoningResult(
+        provider="test",
+        model="test-model",
+        text="",
+        reasoning_performed=False,
+        proposal=ReasoningProposal(summary="Untrusted failed advice"),
+    )
+    engine = RecordingEngine(failure)
+    service = ReasoningOrchestrationService(
+        ReasoningRequirementResolver(),
+        ReasoningService(engine),
+        RejectValidation(),
+    )
+
+    outcome = service.assess(ReasoningRequest("compare these options"))
+
+    assert outcome.proposal is failure.proposal
+    assert outcome.validated_proposal is None
 
 
 def test_provider_exception_is_safe_and_non_executing() -> None:

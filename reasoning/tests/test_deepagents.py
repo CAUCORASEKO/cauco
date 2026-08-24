@@ -1,7 +1,11 @@
 import sys
 import types
 
-from cauco_reasoning import DeepAgentsReasoningEngine, ReasoningRequest
+from cauco_reasoning import (
+    DeepAgentsReasoningEngine,
+    ReasoningProposal,
+    ReasoningRequest,
+)
 from cauco_reasoning.providers.deepagents import (
     _EXCLUDED_TOOLS,
     _INITIALIZED_MODELS,
@@ -110,3 +114,48 @@ def test_pydantic_style_structured_response_is_json_compatible() -> None:
 
     assert result.structured_data["answer"] == "ok"
     assert result.structured_data["items"] == [1, True]
+
+
+def test_structured_response_is_dumped_once() -> None:
+    class Structured:
+        calls = 0
+
+        def model_dump(self):
+            self.calls += 1
+            return {"reasoning_proposal": {"summary": "Advice"}}
+
+    structured = Structured()
+    result = DeepAgentsReasoningEngine(
+        "model", runtime=lambda **kwargs: {"structured_response": structured}
+    ).reason(ReasoningRequest("analyze this"))
+
+    assert structured.calls == 1
+    assert result.proposal is not None
+
+
+def test_structured_advisory_proposal_is_converted() -> None:
+    result = DeepAgentsReasoningEngine(
+        "model",
+        runtime=lambda **kwargs: {
+            "structured_response": {
+                "reasoning_proposal": {
+                    "summary": "Compare options",
+                    "suggested_steps": [{"description": "Compare them"}],
+                }
+            }
+        },
+    ).reason(ReasoningRequest("analyze this"))
+
+    assert isinstance(result.proposal, ReasoningProposal)
+    assert result.proposal.summary == "Compare options"
+
+
+def test_malformed_structured_advisory_proposal_fails_closed() -> None:
+    result = DeepAgentsReasoningEngine(
+        "model",
+        runtime=lambda **kwargs: {
+            "structured_response": {"reasoning_proposal": {"summary": ""}}
+        },
+    ).reason(ReasoningRequest("analyze this"))
+
+    assert result.proposal is None
