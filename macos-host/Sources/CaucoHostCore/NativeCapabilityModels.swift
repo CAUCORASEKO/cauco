@@ -14,6 +14,9 @@ public enum NativeCapability: String, Codable, CaseIterable, Sendable {
   case mailMailboxesList = "mail.mailboxes.list"
   case mailMessagesList = "mail.messages.list"
   case mailDraftCreate = "mail.draft.create"
+  case wakewordStatus = "wakeword.status"
+  case wakewordStart = "wakeword.start"
+  case wakewordStop = "wakeword.stop"
 }
 
 public enum NativeCapabilityOrigin: String, Codable, Sendable { case localCore }

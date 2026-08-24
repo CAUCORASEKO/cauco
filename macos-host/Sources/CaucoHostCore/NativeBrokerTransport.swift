@@ -69,6 +69,7 @@ public final class NativeBrokerTransportServer: @unchecked Sendable {
   }
 
   public func stop() {
+    broker.shutdown()
     Darwin.shutdown(descriptor, SHUT_RDWR)
     close(descriptor)
     try? FileManager.default.removeItem(at: socketURL)

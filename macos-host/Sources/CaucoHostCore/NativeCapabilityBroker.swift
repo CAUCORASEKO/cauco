@@ -8,6 +8,7 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
   private let mailAccounts: MailAccountGateway
   private let mailMessages: MailMessageGateway
   private let mailDrafts: MailDraftGateway
+  private let wakeWord: WakeWordCapabilityService
   public let registry: NativeCapabilityRegistry
 
   public init(
@@ -18,6 +19,8 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     mailAccounts: MailAccountGateway? = nil,
     mailMessages: MailMessageGateway? = nil,
     mailDrafts: MailDraftGateway? = nil,
+    wakeWordDetector: WakeWordDetectorGateway = UnavailableWakeWordDetectorGateway(),
+    wakeWordEventHandler: @escaping @Sendable (WakeWordDetectedEvent) -> Void = { _ in },
     registry: NativeCapabilityRegistry = NativeCapabilityRegistry()
   ) {
     self.permission = permission
@@ -29,6 +32,8 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     self.mailMessages = mailMessages ?? NativeMailMessageGateway(
       accountReferences: mailReferences)
     self.mailDrafts = mailDrafts ?? NativeMailDraftGateway()
+    self.wakeWord = WakeWordCapabilityService(
+      detector: wakeWordDetector, eventHandler: wakeWordEventHandler)
     self.registry = registry
   }
   public func handle(_ request: NativeCapabilityRequest) -> NativeCapabilityResponse {
@@ -42,6 +47,36 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       return response(request, .rejected, nil, .invalidArguments, definition.limitations)
     }
     switch request.capability {
+    case .wakewordStatus:
+      return response(
+        request, .success, wakeWord.status().brokerResult, nil, definition.limitations)
+    case .wakewordStart:
+      guard request.explicitUserRequest else {
+        return response(
+          request, .rejected, nil, .permissionNotRequested, definition.limitations)
+      }
+      do {
+        let configuration = WakeWordDetectorConfiguration(
+          phraseKey: request.arguments["phrase_key"]!.stringValue!,
+          locale: request.arguments["locale"]!.stringValue!)
+        var result = try wakeWord.start(configuration: configuration).brokerResult
+        result["accepted"] = .boolean(true)
+        return response(
+          request, .success, result, nil, definition.limitations)
+      } catch let error as BrokerError {
+        let outcome: BrokerOutcome = error == .capabilityUnavailable ? .unavailable : .rejected
+        var result = wakeWord.status().brokerResult
+        result["accepted"] = .boolean(false)
+        return response(
+          request, outcome, result, error, definition.limitations)
+      } catch {
+        return response(
+          request, .failed, wakeWord.status().brokerResult, .internalFailure,
+          definition.limitations)
+      }
+    case .wakewordStop:
+      return response(
+        request, .success, wakeWord.stop().brokerResult, nil, definition.limitations)
     case .contactsStatus: return status(request, definition)
     case .calendarStatus: return calendarStatus(request, definition)
     case .calendarEventsGet:
@@ -170,6 +205,10 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       }
     }
   }
+
+  public func shutdown() {
+    wakeWord.stop()
+  }
   private func status(_ request: NativeCapabilityRequest, _ definition: NativeCapabilityDefinition)
     -> NativeCapabilityResponse
   {
@@ -204,8 +243,14 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     _ args: [String: BrokerJSONValue], for capability: NativeCapability
   ) throws {
     switch capability {
-    case .contactsStatus, .calendarStatus, .mailAccountsList:
+    case .contactsStatus, .calendarStatus, .mailAccountsList, .wakewordStatus, .wakewordStop:
       guard args.isEmpty else { throw BrokerError.invalidArguments }
+    case .wakewordStart:
+      guard Set(args.keys) == Set(["phrase_key", "locale"]),
+        caseString(args["phrase_key"]) == "hola_cauco",
+        let locale = caseString(args["locale"]),
+        validWakeWordLocale(locale)
+      else { throw BrokerError.invalidArguments }
     case .contactsSearch:
       guard Set(args.keys) == Set(["query", "limit"]), caseString(args["query"])?.isEmpty == false,
         caseInt(args["limit"]) != nil
@@ -288,6 +333,10 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       return Int(value)
     }
     return nil
+  }
+
+  private func validWakeWordLocale(_ locale: String) -> Bool {
+    locale.range(of: #"^es(?:-[A-Z]{2})?$"#, options: .regularExpression) != nil
   }
 }
 
