@@ -94,6 +94,7 @@ from cauco_core.perception import (
     PerceptionSourceRegistry,
 )
 from cauco_core.persistence import SQLiteDatabase
+from cauco_core.reasoning import ReasoningOrchestrationService
 from cauco_core.reflection.resolver import ReflectionResolver
 from cauco_core.verification import VerificationService
 from cauco_core.verification.sqlite_store import SQLiteVerificationStore
@@ -117,6 +118,10 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.state.native_broker_client = NativeBrokerClient()
     app.state.reasoning_requirement_resolver = ReasoningRequirementResolver()
     app.state.reasoning_service = ReasoningService(NoOpReasoningEngine())
+    app.state.reasoning_orchestration_service = ReasoningOrchestrationService(
+        app.state.reasoning_requirement_resolver,
+        app.state.reasoning_service,
+    )
     app.state.agent_registry = create_default_registry()
     app.state.tool_registry = create_default_tool_registry()
     app.state.connector_registry = ConnectorRegistry()

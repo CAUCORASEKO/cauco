@@ -5,6 +5,7 @@ from cauco_reasoning import (
 )
 
 from cauco_core.main import create_app
+from cauco_core.reasoning import ReasoningOrchestrationService
 
 
 def test_core_bootstraps_reasoning_boundary() -> None:
@@ -15,6 +16,10 @@ def test_core_bootstraps_reasoning_boundary() -> None:
         ReasoningRequirementResolver,
     )
     assert isinstance(app.state.reasoning_service, ReasoningService)
+    assert isinstance(
+        app.state.reasoning_orchestration_service,
+        ReasoningOrchestrationService,
+    )
     assert isinstance(
         app.state.reasoning_service.engine,
         NoOpReasoningEngine,
