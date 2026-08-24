@@ -39,12 +39,33 @@ class Settings(BaseSettings):
     mutation_preview_ttl_seconds: int = Field(default=600, ge=60, le=3600)
     mutation_preview_max_records: int = Field(default=100, ge=1, le=10_000)
     mutation_max_content_characters: int = Field(default=20_000, ge=1, le=100_000)
+    reasoning_enabled: bool = False
+    reasoning_provider: str = "noop"
+    reasoning_model: str | None = None
     ai_provider: str = "ollama"
     ollama_base_url: str = "http://127.0.0.1:11434"
     default_model: str = "llama3.1:latest"
     ai_request_timeout: float = Field(default=60.0, gt=0, le=600)
     ai_temperature: float | None = Field(default=0.1, ge=0, le=2)
     ai_max_output_tokens: int | None = Field(default=1024, ge=1, le=32768)
+
+    @field_validator("reasoning_provider")
+    @classmethod
+    def validate_reasoning_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"noop", "deepagents"}:
+            raise ValueError("Unsupported reasoning provider.")
+        return normalized
+
+    @field_validator("reasoning_model")
+    @classmethod
+    def validate_reasoning_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if len(normalized) > 200 or "\x00" in normalized:
+            raise ValueError("Reasoning model identifier is invalid.")
+        return normalized or None
 
     @field_validator("ai_provider")
     @classmethod

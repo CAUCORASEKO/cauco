@@ -4,6 +4,7 @@ from cauco_reasoning import (
     ReasoningService,
 )
 
+from cauco_core.config import Settings
 from cauco_core.main import create_app
 from cauco_core.reasoning import (
     ReasoningAwarePlanningService,
@@ -36,3 +37,15 @@ def test_core_bootstraps_reasoning_boundary() -> None:
         app.state.reasoning_service.engine,
         NoOpReasoningEngine,
     )
+
+
+def test_explicit_deepagents_configuration_is_bootstrapped_without_invocation() -> None:
+    app = create_app(
+        Settings(
+            reasoning_enabled=True,
+            reasoning_provider="deepagents",
+            reasoning_model="openai:test-model",
+        )
+    )
+
+    assert app.state.reasoning_service.engine.model == "openai:test-model"

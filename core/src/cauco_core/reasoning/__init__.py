@@ -1,3 +1,4 @@
+from cauco_core.reasoning.factory import build_reasoning_engine
 from cauco_core.reasoning.planning import (
     ReasoningAwarePlanningOutcome,
     ReasoningAwarePlanningService,
@@ -22,4 +23,5 @@ __all__ = [
     "ReasoningProposalValidator",
     "ValidatedReasoningProposal",
     "ValidatedReasoningProposalStep",
+    "build_reasoning_engine",
 ]

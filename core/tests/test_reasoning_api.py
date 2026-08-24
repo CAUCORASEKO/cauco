@@ -126,6 +126,26 @@ def test_reasoning_api_rejects_allow_execution(reasoning_client: TestClient) -> 
     assert response.status_code == 422
 
 
+def test_default_noop_reasoning_is_safe_when_explicitly_requested(
+    reasoning_client: TestClient,
+) -> None:
+    response = reasoning_client.post(
+        "/api/reasoning/plan",
+        json={
+            "instruction": "Analyze the Cauco project options",
+            "use_reasoning": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reasoning_requested"] is True
+    assert payload["reasoning_invoked"] is True
+    assert payload["provider"] == "noop"
+    assert payload["proposal_produced"] is False
+    assert payload["planning"]["execution_performed"] is False
+
+
 def test_reasoning_planning_response_is_proposal_only(
     reasoning_client: TestClient,
 ) -> None:

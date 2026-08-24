@@ -4,7 +4,6 @@ from datetime import timedelta
 import uvicorn
 from cauco_agents import AgentRouter, create_default_registry
 from cauco_reasoning import (
-    NoOpReasoningEngine,
     ReasoningRequirementResolver,
     ReasoningService,
 )
@@ -100,6 +99,7 @@ from cauco_core.reasoning import (
     ReasoningOrchestrationService,
     ReasoningPlanningBridge,
     ReasoningProposalValidator,
+    build_reasoning_engine,
 )
 from cauco_core.reflection.resolver import ReflectionResolver
 from cauco_core.verification import VerificationService
@@ -127,7 +127,9 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.agent_registry
     )
     app.state.reasoning_requirement_resolver = ReasoningRequirementResolver()
-    app.state.reasoning_service = ReasoningService(NoOpReasoningEngine())
+    app.state.reasoning_service = ReasoningService(
+        build_reasoning_engine(app.state.settings)
+    )
     app.state.reasoning_orchestration_service = ReasoningOrchestrationService(
         app.state.reasoning_requirement_resolver,
         app.state.reasoning_service,
