@@ -1,0 +1,21 @@
+[tool.uv.workspace]
+members = [
+  "agents",
+  "core",
+  "reasoning",
+  "scheduler",
+  "tools",
+]
+
+[tool.uv.sources]
+cauco-agents = { workspace = true }
+cauco-core = { workspace = true }
+cauco-reasoning = { workspace = true }
+cauco-scheduler = { workspace = true }
+cauco-tools = { workspace = true }
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<9",
+  "ruff>=0.9,<1",
+]

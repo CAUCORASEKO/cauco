@@ -3,6 +3,11 @@ from datetime import timedelta
 
 import uvicorn
 from cauco_agents import AgentRouter, create_default_registry
+from cauco_reasoning import (
+    NoOpReasoningEngine,
+    ReasoningRequirementResolver,
+    ReasoningService,
+)
 from cauco_tools import ToolAdapterRegistry
 from cauco_tools import create_default_registry as create_default_tool_registry
 from cauco_tools.adapters import (
@@ -110,6 +115,8 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     from cauco_core.native_broker import NativeBrokerClient
 
     app.state.native_broker_client = NativeBrokerClient()
+    app.state.reasoning_requirement_resolver = ReasoningRequirementResolver()
+    app.state.reasoning_service = ReasoningService(NoOpReasoningEngine())
     app.state.agent_registry = create_default_registry()
     app.state.tool_registry = create_default_tool_registry()
     app.state.connector_registry = ConnectorRegistry()

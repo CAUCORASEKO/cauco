@@ -9,6 +9,9 @@ description = "Local HTTP service for Cauco"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "cauco-agents>=0.1.0,<0.2.0",
+  "cauco-reasoning>=0.1.0,<0.2.0",
+  "cauco-tools>=0.1.0,<0.2.0",
   "fastapi>=0.115,<1",
   "httpx>=0.28,<1",
   "pydantic-settings>=2.7,<3",
