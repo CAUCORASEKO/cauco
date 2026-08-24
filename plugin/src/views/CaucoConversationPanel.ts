@@ -11,12 +11,19 @@ import { VoiceInputController } from "../voice/inputController";
 import { SpeechOutputController } from "../voice/outputController";
 import { SpeechTranscriptionService } from "../voice/service";
 import { SpeechOutputService, spokenPlanningResponse } from "../voice/speechOutput";
+import { WakeActivationCoordinator } from "../voice/wakeActivation";
+import { createNativeWakeWordDetector } from "../voice/nativeWakeWord";
 import type {
   SpeechOutput,
   SpeechSynthesisState,
   SpeechTranscription,
   SpeechTranscriptionState,
 } from "../voice/types";
+import {
+  WakeWordService,
+  type WakeWordControl,
+  type WakeWordState,
+} from "../voice/wakeWord";
 
 export class CaucoConversationPanel {
   private readonly history = new ConversationHistory();
@@ -29,6 +36,8 @@ export class CaucoConversationPanel {
   private voiceConversation?: VoiceConversationSession;
   private unsubscribeVoiceConversation?: () => void;
   private voiceController?: VoiceInputController;
+  private wakeActivation?: WakeActivationCoordinator;
+  private unsubscribeWakeWord?: () => void;
 
   constructor(
     private readonly client: ReasoningPlanningApiClient,
@@ -38,6 +47,9 @@ export class CaucoConversationPanel {
     private readonly output: SpeechOutput = new SpeechOutputService(
       createLocalSpeechSynthesizer(),
     ),
+    private readonly wakeWord: WakeWordControl = new WakeWordService(
+      createNativeWakeWordDetector(),
+    ),
   ) {
     this.outputController = new SpeechOutputController(output, () => this.microphoneActive());
     this.unsubscribeOutput = this.outputController.subscribe((state) =>
@@ -46,6 +58,8 @@ export class CaucoConversationPanel {
   }
 
   render(container: HTMLElement, connected: boolean): void {
+    this.wakeActivation?.dispose();
+    this.unsubscribeWakeWord?.();
     this.voiceConversation?.dispose();
     this.unsubscribeVoiceConversation?.();
     this.voiceController?.dispose();
@@ -114,6 +128,7 @@ export class CaucoConversationPanel {
       if (status === "requesting-permission" || status === "listening") {
         this.voiceController.stop();
       } else {
+        this.wakeActivation?.manualVoiceStarting();
         this.outputController.stop();
         this.voiceController.start(navigator.language || "en");
       }
@@ -140,6 +155,7 @@ export class CaucoConversationPanel {
       microphone,
       connected,
     );
+    this.renderWakeWord(section, connected);
   }
 
   entries(): readonly ConversationEntry[] {
@@ -147,6 +163,9 @@ export class CaucoConversationPanel {
   }
 
   dispose(): void {
+    this.wakeActivation?.dispose();
+    this.unsubscribeWakeWord?.();
+    this.wakeWord.dispose();
     this.voiceConversation?.dispose();
     this.unsubscribeVoiceConversation?.();
     this.voiceController?.dispose();
@@ -266,12 +285,71 @@ export class CaucoConversationPanel {
     };
     this.unsubscribeVoiceConversation = this.voiceConversation.subscribe(renderState);
     const locale = (): string => navigator.language || "en";
-    start.addEventListener("click", () => this.voiceConversation?.start(locale()));
+    start.addEventListener("click", () => {
+      this.wakeActivation?.manualVoiceStarting();
+      this.voiceConversation?.start(locale());
+    });
     stopListening.addEventListener("click", () => this.voiceConversation?.stopListening());
     stopSpeaking.addEventListener("click", () => this.voiceConversation?.stopSpeaking());
     next.addEventListener("click", () => this.voiceConversation?.next(locale()));
     cancel.addEventListener("click", () => this.voiceConversation?.stop());
     end.addEventListener("click", () => this.voiceConversation?.stop());
+  }
+
+  private renderWakeWord(container: HTMLElement, connected: boolean): void {
+    const section = container.createDiv({ cls: "cauco-wake-word" });
+    section.createEl("h3", { text: "Wake phrase" });
+    section.createEl("p", {
+      text: 'Optional local activation for one bounded voice turn. It never runs until you enable "Hola Cauco" for this session.',
+      cls: "cauco-trust-note",
+    });
+    const controls = section.createDiv({ cls: "cauco-wake-word-controls" });
+    const enable = controls.createEl("button", { text: 'Enable “Hola Cauco”' });
+    enable.setAttribute("aria-label", "Enable local Hola Cauco wake phrase for this session");
+    const disable = controls.createEl("button", { text: "Stop wake listening" });
+    disable.setAttribute("aria-label", "Stop wake phrase microphone listening");
+    const stateLabel = section.createEl("p", { cls: "cauco-wake-word-state" });
+    stateLabel.setAttribute("role", "status");
+    const microphoneState = section.createEl("p", { cls: "cauco-wake-word-microphone" });
+
+    this.wakeActivation = new WakeActivationCoordinator(
+      this.wakeWord,
+      (locale) => this.voiceConversation?.start(locale),
+      () => this.voiceConversationBusy(),
+      () => this.outputController.state.status === "speaking",
+    );
+    const renderState = (state: WakeWordState): void => {
+      stateLabel.setText(`${state.status.replaceAll("_", " ")}: ${state.message}`);
+      stateLabel.toggleClass(
+        "cauco-error",
+        state.status === "error" || state.status === "permission_denied",
+      );
+      microphoneState.setText(
+        state.microphoneActive
+          ? "Wake microphone: active (local detector only)"
+          : "Wake microphone: inactive",
+      );
+      microphoneState.toggleClass("is-active", state.microphoneActive);
+      enable.disabled =
+        !connected ||
+        state.status === "unavailable" ||
+        state.status === "starting" ||
+        state.status === "listening";
+      disable.disabled = !state.microphoneActive;
+    };
+    this.unsubscribeWakeWord = this.wakeActivation.subscribe(renderState);
+    enable.addEventListener("click", () => {
+      const started = this.wakeActivation?.enable({
+        phrase: "Hola Cauco",
+        locale: navigator.language || "es",
+        sensitivity: 0.5,
+        enabled: true,
+      });
+      if (started === false && this.wakeWord.state.status !== "unavailable") {
+        stateLabel.setText("Wake listening cannot start while voice input or speech output is active.");
+      }
+    });
+    disable.addEventListener("click", () => this.wakeActivation?.disable());
   }
 
   private renderHistory(): void {
@@ -317,6 +395,7 @@ export class CaucoConversationPanel {
         this.outputController.stop();
         return;
       }
+      this.wakeActivation?.speechOutputStarting();
       this.resetOutputControl();
       this.outputButton = speak;
       this.outputStatus = speechStatus;
@@ -381,6 +460,20 @@ export class CaucoConversationPanel {
         ["requesting-permission", "listening", "processing"].includes(
           this.voiceController.state.status,
         ),
+    );
+  }
+
+  private voiceConversationBusy(): boolean {
+    return Boolean(
+      this.voiceConversation &&
+        [
+          "requesting_permission",
+          "listening",
+          "transcribing",
+          "ready_to_submit",
+          "planning",
+          "speaking",
+        ].includes(this.voiceConversation.state.status),
     );
   }
 

@@ -15,6 +15,7 @@ const bundles = [
   "voice-input",
   "voice-output",
   "voice-conversation",
+  "wake-word",
 ];
 
 try {

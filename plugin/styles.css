@@ -165,6 +165,35 @@
   padding: var(--size-4-3);
 }
 
+.cauco-wake-word {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  margin-top: var(--size-4-4);
+  padding: var(--size-4-3);
+}
+
+.cauco-wake-word h3 {
+  margin-top: 0;
+}
+
+.cauco-wake-word-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+}
+
+.cauco-wake-word-state,
+.cauco-wake-word-microphone {
+  color: var(--text-muted);
+  margin-bottom: 0;
+}
+
+.cauco-wake-word-microphone.is-active {
+  color: var(--text-success);
+  font-weight: var(--font-semibold);
+}
+
 .cauco-voice-session h3 {
   margin-top: 0;
 }
