@@ -48,6 +48,7 @@ from cauco_core.api.memory_routes import router as memory_router
 from cauco_core.api.mutation_routes import router as mutation_router
 from cauco_core.api.native_broker_routes import router as native_broker_router
 from cauco_core.api.perception_routes import router as perception_router
+from cauco_core.api.reasoning_routes import router as reasoning_router
 from cauco_core.api.reflection_routes import router as reflection_router
 from cauco_core.api.routes import router
 from cauco_core.api.tool_routes import router as tool_router
@@ -396,6 +397,7 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.include_router(native_broker_router)
     app.include_router(learning_guidance_router)
     app.include_router(reflection_router)
+    app.include_router(reasoning_router)
     app.include_router(perception_router)
     app.include_router(ai_router)
     return app
