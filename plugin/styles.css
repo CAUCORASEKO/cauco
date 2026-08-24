@@ -94,6 +94,108 @@
   padding: var(--size-4-5);
 }
 
+.cauco-conversation {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  margin-top: var(--size-4-5);
+  padding: var(--size-4-5);
+}
+
+.cauco-conversation-history {
+  display: grid;
+  gap: var(--size-4-3);
+  margin: var(--size-4-4) 0;
+  max-height: 42rem;
+  overflow: auto;
+}
+
+.cauco-conversation-message {
+  border-radius: var(--radius-m);
+  max-width: min(52rem, 92%);
+  padding: var(--size-4-3) var(--size-4-4);
+}
+
+.cauco-conversation-message.is-user {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  justify-self: end;
+}
+
+.cauco-conversation-message.is-cauco {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  justify-self: start;
+}
+
+.cauco-conversation-input {
+  display: block;
+  min-height: 6rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.cauco-conversation-actions,
+.cauco-reasoning-toggle,
+.cauco-conversation-safety {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+}
+
+.cauco-conversation-actions {
+  justify-content: space-between;
+  margin-top: var(--size-4-3);
+}
+
+.cauco-conversation-safety {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: var(--size-4-3);
+  padding-top: var(--size-4-3);
+}
+
+.cauco-conversation-safety h4 {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.cauco-safety-flag {
+  background: var(--background-modifier-border);
+  border-radius: 999px;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  padding: 0.2rem 0.55rem;
+}
+
+.cauco-safety-flag.is-safe {
+  background: rgba(var(--color-green-rgb), 0.18);
+}
+
+.cauco-safety-flag.is-unsafe {
+  background: rgba(var(--color-red-rgb), 0.12);
+}
+
+.cauco-conversation-plan,
+.cauco-conversation-details {
+  margin-top: var(--size-4-3);
+}
+
+.cauco-conversation-details summary {
+  cursor: pointer;
+  font-weight: var(--font-semibold);
+}
+
+.cauco-conversation-details pre {
+  background: var(--background-primary);
+  border-radius: var(--radius-s);
+  max-height: 24rem;
+  overflow: auto;
+  padding: var(--size-4-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .cauco-execution-control {
   background: var(--background-primary-alt);
   border: 1px solid var(--background-modifier-border);

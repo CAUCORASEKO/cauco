@@ -8,6 +8,8 @@ import { CaucoExecutionPanel } from "./CaucoExecutionPanel";
 import { CaucoPerceptionPanel } from "./CaucoPerceptionPanel";
 import type { CognitiveCycleSnapshot } from "../cognitive/types";
 import { GuidedActionModal } from "./GuidedActionModal";
+import { ReasoningPlanningApiClient } from "../reasoning/api";
+import { CaucoConversationPanel } from "./CaucoConversationPanel";
 
 const SECTION_LABELS: Array<[keyof CaucoStatus, string]> = [
   ["runtime", "Runtime"],
@@ -19,6 +21,7 @@ const SECTION_LABELS: Array<[keyof CaucoStatus, string]> = [
 
 export class CaucoDashboardView extends ItemView {
   private checking = false;
+  private conversationPanel?: CaucoConversationPanel;
 
   constructor(leaf: WorkspaceLeaf, private readonly plugin: CaucoPlugin) {
     super(leaf);
@@ -79,6 +82,10 @@ export class CaucoDashboardView extends ItemView {
     const client = new CaucoCoreClient(this.plugin.settings.coreUrl);
     new CaucoExecutionPanel(client).render(container);
     new CaucoPerceptionPanel(this.plugin.settings.coreUrl, result.connected).render(container);
+    this.conversationPanel ??= new CaucoConversationPanel(
+      new ReasoningPlanningApiClient(this.plugin.settings.coreUrl),
+    );
+    this.conversationPanel.render(container, result.connected);
     this.renderChat(container, result);
     new CaucoMemoryPanel(
       client,

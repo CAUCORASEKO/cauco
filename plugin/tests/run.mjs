@@ -7,7 +7,7 @@ import { join } from "node:path";
 const directory = mkdtempSync(join(tmpdir(), "cauco-plugin-tests-"));
 const obsidianStub = join(directory, "obsidian-stub.mjs");
 writeFileSync(obsidianStub, "export const requestUrl = async () => { throw new Error('requestUrl should be injected in tests'); };\n");
-const bundles = ["phase6c", "phase9a5", "phase10-dashboard"];
+const bundles = ["phase6c", "phase9a5", "phase10-dashboard", "reasoning-conversation"];
 
 try {
   for (const name of bundles) {
