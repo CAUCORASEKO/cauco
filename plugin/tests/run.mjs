@@ -13,6 +13,7 @@ const bundles = [
   "phase10-dashboard",
   "reasoning-conversation",
   "voice-input",
+  "voice-output",
 ];
 
 try {

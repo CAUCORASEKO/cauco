@@ -35,3 +35,28 @@ export interface SpeechTranscription {
   subscribe(listener: (state: SpeechTranscriptionState) => void): () => void;
   subscribeToTranscript(listener: (text: string) => void): () => void;
 }
+
+export type SpeechSynthesisStatus = "idle" | "speaking" | "unavailable" | "error";
+
+export interface SpeechSynthesisRequest {
+  readonly text: string;
+  readonly locale: string;
+}
+
+export interface SpeechSynthesisState {
+  readonly status: SpeechSynthesisStatus;
+  readonly message: string;
+}
+
+export interface SpeechSynthesizer {
+  readonly available: boolean;
+  speak(request: SpeechSynthesisRequest): Promise<void>;
+  stop(): void;
+}
+
+export interface SpeechOutput {
+  readonly state: SpeechSynthesisState;
+  speak(request: SpeechSynthesisRequest): Promise<void>;
+  stop(): void;
+  subscribe(listener: (state: SpeechSynthesisState) => void): () => void;
+}

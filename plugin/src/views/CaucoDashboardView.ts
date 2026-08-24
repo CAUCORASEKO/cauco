@@ -43,6 +43,10 @@ export class CaucoDashboardView extends ItemView {
     await this.refresh();
   }
 
+  override async onClose(): Promise<void> {
+    this.conversationPanel?.dispose();
+  }
+
   private async refresh(): Promise<void> {
     if (this.checking) return;
     this.checking = true;

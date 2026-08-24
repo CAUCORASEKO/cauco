@@ -2,14 +2,26 @@ import type { ReasoningPlanningApiClient } from "../reasoning/api";
 import { ConversationHistory, responseView } from "../reasoning/conversation";
 import type { ConversationEntry, ReasoningPlanningResponse } from "../reasoning/types";
 import { createLocalSpeechTranscriber } from "../voice/browserSpeech";
+import { createLocalSpeechSynthesizer } from "../voice/browserTts";
 import { VoiceInputController } from "../voice/inputController";
+import { SpeechOutputController } from "../voice/outputController";
 import { SpeechTranscriptionService } from "../voice/service";
-import type { SpeechTranscription, SpeechTranscriptionState } from "../voice/types";
+import { SpeechOutputService, spokenPlanningResponse } from "../voice/speechOutput";
+import type {
+  SpeechOutput,
+  SpeechSynthesisState,
+  SpeechTranscription,
+  SpeechTranscriptionState,
+} from "../voice/types";
 
 export class CaucoConversationPanel {
   private readonly history = new ConversationHistory();
   private submitting = false;
   private historyElement?: HTMLElement;
+  private outputButton?: HTMLButtonElement;
+  private outputController: SpeechOutputController;
+  private outputStatus?: HTMLElement;
+  private readonly unsubscribeOutput: () => void;
   private voiceController?: VoiceInputController;
 
   constructor(
@@ -17,10 +29,19 @@ export class CaucoConversationPanel {
     private readonly speech: SpeechTranscription = new SpeechTranscriptionService(
       createLocalSpeechTranscriber(),
     ),
-  ) {}
+    output: SpeechOutput = new SpeechOutputService(createLocalSpeechSynthesizer()),
+  ) {
+    this.outputController = new SpeechOutputController(output, () => this.microphoneActive());
+    this.unsubscribeOutput = this.outputController.subscribe((state) =>
+      this.renderOutputState(state),
+    );
+  }
 
   render(container: HTMLElement, connected: boolean): void {
     this.voiceController?.dispose();
+    this.outputController.stop();
+    this.outputButton = undefined;
+    this.outputStatus = undefined;
     const section = container.createEl("section", { cls: "cauco-conversation" });
     const header = section.createDiv({ cls: "cauco-panel-header" });
     header.createEl("h2", { text: "Cauco Conversation" });
@@ -83,6 +104,7 @@ export class CaucoConversationPanel {
       if (status === "requesting-permission" || status === "listening") {
         this.voiceController.stop();
       } else {
+        this.outputController.stop();
         this.voiceController.start(navigator.language || "en");
       }
     });
@@ -103,6 +125,12 @@ export class CaucoConversationPanel {
 
   entries(): readonly ConversationEntry[] {
     return this.history.entries();
+  }
+
+  dispose(): void {
+    this.voiceController?.dispose();
+    this.outputController.dispose();
+    this.unsubscribeOutput();
   }
 
   private async submit(
@@ -176,6 +204,27 @@ export class CaucoConversationPanel {
     const card = container.createDiv({ cls: "cauco-conversation-message is-cauco" });
     card.createEl("strong", { text: "Cauco" });
     card.createEl("p", { text: response.explanation });
+    const speechControls = card.createDiv({ cls: "cauco-speech-output" });
+    const speak = speechControls.createEl("button", { text: "Speak" });
+    speak.setAttribute("aria-label", "Speak this Cauco response");
+    speak.title = "Speak this Cauco response using a local system voice";
+    const speechStatus = speechControls.createEl("span", { cls: "cauco-voice-status" });
+    speak.addEventListener("click", () => {
+      if (this.outputButton === speak && this.outputController.state.status === "speaking") {
+        this.outputController.stop();
+        return;
+      }
+      this.resetOutputControl();
+      this.outputButton = speak;
+      this.outputStatus = speechStatus;
+      const started = this.outputController.speak({
+        text: spokenPlanningResponse(response),
+        locale: navigator.language || "en",
+      });
+      if (!started) {
+        speechStatus.setText("Stop microphone input before speaking this response.");
+      }
+    });
     const summary = card.createEl("dl", { cls: "cauco-control-details" });
     const rows: Array<[string, string]> = [
       ["Planning status", view.planningStatus],
@@ -221,5 +270,32 @@ export class CaucoConversationPanel {
     const details = card.createEl("details", { cls: "cauco-conversation-details" });
     details.createEl("summary", { text: "Details / Debug" });
     details.createEl("pre", { text: JSON.stringify(response.raw, null, 2) });
+  }
+
+  private microphoneActive(): boolean {
+    return Boolean(
+      this.voiceController &&
+        ["requesting-permission", "listening", "processing"].includes(
+          this.voiceController.state.status,
+        ),
+    );
+  }
+
+  private renderOutputState(state: SpeechSynthesisState): void {
+    if (!this.outputButton || !this.outputStatus) return;
+    const speaking = state.status === "speaking";
+    this.outputButton.setText(speaking ? "Stop" : "Speak");
+    this.outputButton.setAttribute(
+      "aria-label",
+      speaking ? "Stop speaking this Cauco response" : "Speak this Cauco response",
+    );
+    this.outputStatus.setText(state.message);
+    this.outputStatus.toggleClass("cauco-error", state.status === "error");
+  }
+
+  private resetOutputControl(): void {
+    this.outputButton?.setText("Speak");
+    this.outputButton?.setAttribute("aria-label", "Speak this Cauco response");
+    this.outputStatus?.setText("");
   }
 }
