@@ -1,15 +1,26 @@
 import type { ReasoningPlanningApiClient } from "../reasoning/api";
 import { ConversationHistory, responseView } from "../reasoning/conversation";
 import type { ConversationEntry, ReasoningPlanningResponse } from "../reasoning/types";
+import { createLocalSpeechTranscriber } from "../voice/browserSpeech";
+import { VoiceInputController } from "../voice/inputController";
+import { SpeechTranscriptionService } from "../voice/service";
+import type { SpeechTranscription, SpeechTranscriptionState } from "../voice/types";
 
 export class CaucoConversationPanel {
   private readonly history = new ConversationHistory();
   private submitting = false;
   private historyElement?: HTMLElement;
+  private voiceController?: VoiceInputController;
 
-  constructor(private readonly client: ReasoningPlanningApiClient) {}
+  constructor(
+    private readonly client: ReasoningPlanningApiClient,
+    private readonly speech: SpeechTranscription = new SpeechTranscriptionService(
+      createLocalSpeechTranscriber(),
+    ),
+  ) {}
 
   render(container: HTMLElement, connected: boolean): void {
+    this.voiceController?.dispose();
     const section = container.createEl("section", { cls: "cauco-conversation" });
     const header = section.createDiv({ cls: "cauco-panel-header" });
     header.createEl("h2", { text: "Cauco Conversation" });
@@ -31,6 +42,51 @@ export class CaucoConversationPanel {
     input.id = "cauco-conversation-input";
     input.maxLength = 4000;
     input.disabled = !connected;
+
+    const voice = section.createDiv({ cls: "cauco-conversation-voice" });
+    const microphone = voice.createEl("button", { text: "Use microphone" });
+    microphone.setAttribute("aria-label", "Start local speech transcription");
+    microphone.title = "Start local speech transcription";
+    const cancelMicrophone = voice.createEl("button", { text: "Cancel" });
+    cancelMicrophone.setAttribute("aria-label", "Cancel speech transcription");
+    cancelMicrophone.title = "Cancel speech transcription without submitting";
+    const voiceStatus = voice.createEl("span", { cls: "cauco-voice-status" });
+    voiceStatus.setAttribute("role", "status");
+    const renderVoiceState = (state: SpeechTranscriptionState): void => {
+      const active = ["requesting-permission", "listening"].includes(state.status);
+      const processing = state.status === "processing";
+      microphone.setText(active ? "Stop" : "Use microphone");
+      microphone.setAttribute(
+        "aria-label",
+        active ? "Stop and transcribe speech" : "Start local speech transcription",
+      );
+      microphone.disabled = !connected || processing || state.status === "unavailable";
+      cancelMicrophone.hidden = !(active || processing);
+      voiceStatus.setText(state.message);
+      voiceStatus.toggleClass(
+        "cauco-error",
+        state.status === "permission-denied" || state.status === "error",
+      );
+    };
+    this.voiceController = new VoiceInputController(
+      this.speech,
+      () => input.value,
+      (value) => {
+        input.value = value;
+        input.focus();
+      },
+      renderVoiceState,
+    );
+    microphone.addEventListener("click", () => {
+      if (!this.voiceController) return;
+      const status = this.voiceController.state.status;
+      if (status === "requesting-permission" || status === "listening") {
+        this.voiceController.stop();
+      } else {
+        this.voiceController.start(navigator.language || "en");
+      }
+    });
+    cancelMicrophone.addEventListener("click", () => this.voiceController?.cancel());
 
     const actions = section.createDiv({ cls: "cauco-conversation-actions" });
     const toggleLabel = actions.createEl("label", { cls: "cauco-reasoning-toggle" });

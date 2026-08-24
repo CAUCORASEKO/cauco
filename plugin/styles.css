@@ -136,12 +136,22 @@
 }
 
 .cauco-conversation-actions,
+.cauco-conversation-voice,
 .cauco-reasoning-toggle,
 .cauco-conversation-safety {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: var(--size-4-2);
+}
+
+.cauco-conversation-voice {
+  margin-top: var(--size-4-2);
+}
+
+.cauco-voice-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
 }
 
 .cauco-conversation-actions {
