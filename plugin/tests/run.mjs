@@ -14,6 +14,7 @@ const bundles = [
   "reasoning-conversation",
   "voice-input",
   "voice-output",
+  "voice-conversation",
 ];
 
 try {

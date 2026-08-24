@@ -3,6 +3,10 @@ import { ConversationHistory, responseView } from "../reasoning/conversation";
 import type { ConversationEntry, ReasoningPlanningResponse } from "../reasoning/types";
 import { createLocalSpeechTranscriber } from "../voice/browserSpeech";
 import { createLocalSpeechSynthesizer } from "../voice/browserTts";
+import {
+  VoiceConversationSession,
+  type VoiceConversationState,
+} from "../voice/conversationSession";
 import { VoiceInputController } from "../voice/inputController";
 import { SpeechOutputController } from "../voice/outputController";
 import { SpeechTranscriptionService } from "../voice/service";
@@ -22,6 +26,8 @@ export class CaucoConversationPanel {
   private outputController: SpeechOutputController;
   private outputStatus?: HTMLElement;
   private readonly unsubscribeOutput: () => void;
+  private voiceConversation?: VoiceConversationSession;
+  private unsubscribeVoiceConversation?: () => void;
   private voiceController?: VoiceInputController;
 
   constructor(
@@ -29,7 +35,9 @@ export class CaucoConversationPanel {
     private readonly speech: SpeechTranscription = new SpeechTranscriptionService(
       createLocalSpeechTranscriber(),
     ),
-    output: SpeechOutput = new SpeechOutputService(createLocalSpeechSynthesizer()),
+    private readonly output: SpeechOutput = new SpeechOutputService(
+      createLocalSpeechSynthesizer(),
+    ),
   ) {
     this.outputController = new SpeechOutputController(output, () => this.microphoneActive());
     this.unsubscribeOutput = this.outputController.subscribe((state) =>
@@ -38,6 +46,8 @@ export class CaucoConversationPanel {
   }
 
   render(container: HTMLElement, connected: boolean): void {
+    this.voiceConversation?.dispose();
+    this.unsubscribeVoiceConversation?.();
     this.voiceController?.dispose();
     this.outputController.stop();
     this.outputButton = undefined;
@@ -121,6 +131,15 @@ export class CaucoConversationPanel {
     submit.addEventListener("click", () => {
       void this.submit(input, useReasoning, submit);
     });
+
+    this.renderVoiceConversation(
+      section,
+      input,
+      useReasoning,
+      submit,
+      microphone,
+      connected,
+    );
   }
 
   entries(): readonly ConversationEntry[] {
@@ -128,6 +147,8 @@ export class CaucoConversationPanel {
   }
 
   dispose(): void {
+    this.voiceConversation?.dispose();
+    this.unsubscribeVoiceConversation?.();
     this.voiceController?.dispose();
     this.outputController.dispose();
     this.unsubscribeOutput();
@@ -146,29 +167,111 @@ export class CaucoConversationPanel {
     button.disabled = true;
     button.setText("Planning…");
     try {
-      const response = await this.client.plan({
-        instruction,
-        useReasoning: useReasoning.checked,
-      });
-      this.history.add({ instruction, useReasoning: useReasoning.checked, response });
+      await this.submitInstruction(instruction, useReasoning.checked);
       input.value = "";
-    } catch (error) {
-      this.history.add({
-        instruction,
-        useReasoning: useReasoning.checked,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Advisory planning is unavailable. No action was taken.",
-      });
+    } catch {
+      // submitInstruction already rendered the bounded, user-facing error.
     } finally {
       this.submitting = false;
       input.disabled = false;
       useReasoning.disabled = false;
       button.disabled = false;
       button.setText("Plan");
-      this.renderHistory();
     }
+  }
+
+  private async submitInstruction(
+    instruction: string,
+    useReasoning: boolean,
+  ): Promise<ReasoningPlanningResponse> {
+    try {
+      const response = await this.client.plan({ instruction, useReasoning });
+      this.history.add({ instruction, useReasoning, response });
+      this.renderHistory();
+      return response;
+    } catch (error) {
+      this.history.add({
+        instruction,
+        useReasoning,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Advisory planning is unavailable. No action was taken.",
+      });
+      this.renderHistory();
+      throw error;
+    }
+  }
+
+  private renderVoiceConversation(
+    container: HTMLElement,
+    input: HTMLTextAreaElement,
+    useReasoning: HTMLInputElement,
+    submit: HTMLButtonElement,
+    microphone: HTMLButtonElement,
+    connected: boolean,
+  ): void {
+    const section = container.createDiv({ cls: "cauco-voice-session" });
+    section.createEl("h3", { text: "Voice conversation" });
+    const stateLabel = section.createEl("p", { cls: "cauco-voice-session-state" });
+    stateLabel.setAttribute("role", "status");
+    const transcript = section.createEl("p", { cls: "cauco-voice-session-transcript" });
+    const controls = section.createDiv({ cls: "cauco-voice-session-controls" });
+    const start = controls.createEl("button", { text: "Start voice conversation" });
+    const stopListening = controls.createEl("button", { text: "Stop listening" });
+    const stopSpeaking = controls.createEl("button", { text: "Stop speaking" });
+    const next = controls.createEl("button", { text: "Next voice turn" });
+    const cancel = controls.createEl("button", { text: "Cancel voice turn" });
+    const end = controls.createEl("button", { text: "End voice conversation" });
+    for (const button of [start, stopListening, stopSpeaking, next, cancel, end]) {
+      button.disabled = !connected;
+    }
+
+    this.voiceConversation = new VoiceConversationSession(
+      this.speech,
+      this.output,
+      async (instruction) => {
+        const response = await this.submitInstruction(instruction, useReasoning.checked);
+        return { spokenText: spokenPlanningResponse(response) };
+      },
+      (value) => {
+        input.value = value;
+        input.focus();
+      },
+    );
+    const renderState = (state: VoiceConversationState): void => {
+      const busy = [
+        "requesting_permission",
+        "listening",
+        "transcribing",
+        "ready_to_submit",
+        "planning",
+        "speaking",
+      ].includes(state.status);
+      stateLabel.setText(`${state.status.replaceAll("_", " ")}: ${state.message}`);
+      stateLabel.toggleClass("cauco-error", state.status === "error");
+      transcript.setText(state.transcript ? `Transcript: ${state.transcript}` : "");
+      start.hidden = !["idle", "waiting_for_user_start", "stopped", "error"].includes(
+        state.status,
+      );
+      start.disabled = !connected || state.status === "unavailable";
+      stopListening.hidden = !["requesting_permission", "listening"].includes(state.status);
+      stopSpeaking.hidden = state.status !== "speaking";
+      next.hidden = state.status !== "turn_complete";
+      cancel.hidden = !busy;
+      end.hidden = state.status !== "turn_complete";
+      submit.disabled = !connected || busy || this.submitting;
+      microphone.disabled = !connected || busy || this.speech.state.status === "unavailable";
+      useReasoning.disabled = busy;
+    };
+    this.unsubscribeVoiceConversation = this.voiceConversation.subscribe(renderState);
+    const locale = (): string => navigator.language || "en";
+    start.addEventListener("click", () => this.voiceConversation?.start(locale()));
+    stopListening.addEventListener("click", () => this.voiceConversation?.stopListening());
+    stopSpeaking.addEventListener("click", () => this.voiceConversation?.stopSpeaking());
+    next.addEventListener("click", () => this.voiceConversation?.next(locale()));
+    cancel.addEventListener("click", () => this.voiceConversation?.stop());
+    end.addEventListener("click", () => this.voiceConversation?.stop());
   }
 
   private renderHistory(): void {

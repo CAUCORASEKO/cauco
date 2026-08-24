@@ -20,6 +20,7 @@ export class SpeechTranscriptionService implements SpeechTranscription {
   private stateListeners = new Set<(state: SpeechTranscriptionState) => void>();
   private transcriptListeners = new Set<(text: string) => void>();
   private current: SpeechTranscriptionState;
+  private generation = 0;
 
   constructor(private readonly transcriber: SpeechTranscriber) {
     this.current = this.createState(transcriber.available ? "idle" : "unavailable");
@@ -34,12 +35,14 @@ export class SpeechTranscriptionService implements SpeechTranscription {
       this.update("unavailable");
       return;
     }
+    const generation = ++this.generation;
     this.update("requesting-permission");
     try {
       this.transcriber.start(locale, {
-        listening: () => this.update("listening"),
-        processing: () => this.update("processing"),
+        listening: () => this.updateIfCurrent(generation, "listening"),
+        processing: () => this.updateIfCurrent(generation, "processing"),
         transcribed: (text) => {
+          if (generation !== this.generation) return;
           const bounded = text.trim().slice(0, 4000);
           if (!bounded) {
             this.update("error");
@@ -49,6 +52,7 @@ export class SpeechTranscriptionService implements SpeechTranscription {
           this.update("completed");
         },
         failed: (code) => {
+          if (generation !== this.generation) return;
           this.update(
             code === "not-allowed" || code === "service-not-allowed"
               ? "permission-denied"
@@ -75,6 +79,7 @@ export class SpeechTranscriptionService implements SpeechTranscription {
 
   cancel(): void {
     if (!this.isActive()) return;
+    this.generation += 1;
     try {
       this.transcriber.cancel();
     } catch {
@@ -103,6 +108,13 @@ export class SpeechTranscriptionService implements SpeechTranscription {
   private update(status: SpeechTranscriptionState["status"]): void {
     this.current = this.createState(status);
     for (const listener of this.stateListeners) listener(this.current);
+  }
+
+  private updateIfCurrent(
+    generation: number,
+    status: SpeechTranscriptionState["status"],
+  ): void {
+    if (generation === this.generation) this.update(status);
   }
 
   private createState(status: SpeechTranscriptionState["status"]): SpeechTranscriptionState {

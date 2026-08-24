@@ -157,6 +157,29 @@
   margin-top: var(--size-4-2);
 }
 
+.cauco-voice-session {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  margin-top: var(--size-4-4);
+  padding: var(--size-4-3);
+}
+
+.cauco-voice-session h3 {
+  margin-top: 0;
+}
+
+.cauco-voice-session-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+}
+
+.cauco-voice-session-state,
+.cauco-voice-session-transcript {
+  color: var(--text-muted);
+}
+
 .cauco-voice-status {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
