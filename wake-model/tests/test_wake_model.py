@@ -57,6 +57,24 @@ def test_recording_metadata_supports_all_bounded_labels(tmp_path, monkeypatch, l
     assert item["label"] == label and item["phrase"] == phrase
     assert json.loads((tmp_path / "metadata/recordings.jsonl").read_text())["relative_path"] == item["relative_path"]
 
+@pytest.mark.parametrize("split", ["validation", "test"])
+def test_explicit_split_persists(tmp_path, monkeypatch, split):
+    def fake(output, _):
+        with wave.open(str(output), "wb") as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b"\0" * 16000)
+    monkeypatch.setattr("record_sample.time.sleep", lambda _: None)
+    item = record_sample(tmp_path, "target", "Hola Cauco", "s", "e", "d", 1, split=split, recorder=fake)
+    assert item["split"] == split
+
+def test_default_split_is_train(tmp_path, monkeypatch):
+    monkeypatch.setattr("record_sample.time.sleep", lambda _: None)
+    def fake(output, _):
+        with wave.open(str(output), "wb") as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b"\0" * 16000)
+    assert record_sample(tmp_path, "background", "", "s", "e", "d", 1, recorder=fake)["split"] == "train"
+
+def test_invalid_split_rejected_before_backend(tmp_path):
+    with pytest.raises(ValueError, match="unsupported split"):
+        record_sample(tmp_path, "target", "Hola Cauco", "s", "e", "d", 1, split="holdout", recorder=lambda *_: pytest.fail("backend invoked"))
+
 @pytest.mark.parametrize("duration", [0.49, 3.01])
 def test_duration_bounds_reject_without_recording(tmp_path, duration):
     with pytest.raises(ValueError): record_sample(tmp_path, "target", "Hola Cauco", "s", "e", "d", duration, recorder=lambda *_: pytest.fail("recorder invoked"))

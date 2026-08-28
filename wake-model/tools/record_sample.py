@@ -7,7 +7,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from wake_model import FIELDS, LABELS, validate_audio
+from wake_model import FIELDS, LABELS, SPLITS, validate_audio
 
 MIN_SECONDS, MAX_SECONDS = .5, 3.0
 
@@ -28,6 +28,7 @@ def append_record(root: Path, item: dict, audio: Path) -> None:
 
 def record_sample(root: Path, label: str, phrase: str, speaker: str, environment: str, device: str, duration: float, language: str = "es", accent: str = "unspecified", split: str = "train", recorder=None) -> dict:
     if label not in LABELS: raise ValueError("unsupported label")
+    if split not in SPLITS: raise ValueError("unsupported split")
     if not MIN_SECONDS <= duration <= MAX_SECONDS: raise ValueError("duration must be between 0.5 and 3 seconds")
     if label == "target" and phrase != "Hola Cauco": raise ValueError('target phrase must be "Hola Cauco"')
     if label == "background" and phrase: raise ValueError("background phrase must be empty")
