@@ -47,6 +47,7 @@ wake-model/dataset/audio/*.wav
 wake-model/dataset/metadata/recordings.jsonl
 wake-model/dataset/manifests/*.jsonl
 wake-model/local-output/
+macos-host/Resources/WakeWord/HolaCauco.mlmodelc/
 
 # Local reference repositories
 worldmonitor-main/

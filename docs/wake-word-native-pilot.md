@@ -4,8 +4,10 @@ This is an experimental, local-only macOS pilot for the `hola_cauco` phrase
 (“Hola Cauco”). It is not production-authoritative and does not claim wake-word
 quality.
 
-The path is `wakeword.start` → AVAudioEngine input tap → SNAudioStreamAnalyzer
-with a bundled Core ML `SNClassifySoundRequest` → bounded `wakeword.detected`.
+The pilot path is `wakeword.start` → AVAudioEngine input tap → bounded in-memory
+mono PCM → Swift 348D temporal features → direct Core ML `MLModel` prediction
+→ bounded `wakeword.detected`. SoundAnalysis is not used by this feature-input
+pilot classifier.
 Audio is analyzed in memory only; PCM, scores, and model internals never leave
 the native detector. No audio is written to disk or sent over the network.
 
@@ -21,9 +23,10 @@ the user explicitly enables it again. `wakeword.stop` and host shutdown are
 idempotent and stop capture.
 
 The expected local model artifact is `WakeWord/HolaCauco.mlmodelc` in the host
-bundle. No compatible artifact is currently bundled, so the runtime remains
-unavailable until one is deliberately produced and verified with
-`SNClassifySoundRequest`.
+bundle. The model is experimental and accepts engineered features rather than
+raw audio; production accuracy is not claimed. Audio, features, and
+probabilities remain local to the native detector and are not persisted or
+exposed. A future raw-audio Core ML model may use SoundAnalysis.
 
 To enable locally, place only a verified compatible pilot model in that bundle,
 launch the host, inspect `wakeword.status`, and explicitly invoke

@@ -1,89 +1,71 @@
 import AVFoundation
 import CoreML
 import Foundation
-import SoundAnalysis
 
-/// The first local detector is deliberately a bounded pilot.  It is unavailable until a
-/// verified SoundAnalysis-compatible model is placed in the host bundle.
 public struct WakeWordPilotConfiguration: Sendable {
   public static let `default` = WakeWordPilotConfiguration()
   public let phraseKey = "hola_cauco"
   public let modelLabel = "hola_cauco"
   public let confidenceThreshold = 0.85
   public let consecutiveWindows = 3
+  public let inferenceHopSamples = 2_560
 }
 
 public final class WakeWordModelProvider: @unchecked Sendable {
   private let modelURL: URL?
   public init(modelURL: URL? = Bundle.main.url(forResource: "HolaCauco", withExtension: "mlmodelc", subdirectory: "WakeWord")) { self.modelURL = modelURL }
   public var available: Bool { modelURL != nil }
-  public func load() throws -> MLModel {
-    guard let modelURL else { throw BrokerError.capabilityUnavailable }
-    return try MLModel(contentsOf: modelURL, configuration: MLModelConfiguration())
-  }
+  public func load() throws -> MLModel { guard let modelURL else { throw BrokerError.capabilityUnavailable }; return try MLModel(contentsOf: modelURL, configuration: MLModelConfiguration()) }
 }
 
+/// Local feature-input Core ML pilot. SoundAnalysis is intentionally not used.
 public final class SoundAnalysisWakeWordDetectorGateway: WakeWordDetectorGateway, @unchecked Sendable {
-  private let provider: WakeWordModelProvider
-  private let pilot: WakeWordPilotConfiguration
-  private let lock = NSLock()
-  private var engine: AVAudioEngine?
-  private var analyzer: SNAudioStreamAnalyzer?
-  private var observer: WakeObserver?
-  private var handler: (@Sendable (WakeWordDetectionSignal) -> Void)?
-  private var positives = 0
-  private var active = false
-
+  private let provider: WakeWordModelProvider; private let pilot: WakeWordPilotConfiguration; private let lock = NSLock(); private let queue = DispatchQueue(label: "cauco.wake.coreml-analysis")
+  private var engine: AVAudioEngine?; private var handler: (@Sendable (WakeWordDetectionSignal) -> Void)?; private var buffer = BoundedMonoAudioBuffer(); private var predictor: TemporalWakeModelPredictor?; private var positiveWindows = 0; private var pendingSamples = 0; private var generation = 0; private var active = false
   public init(provider: WakeWordModelProvider = WakeWordModelProvider(), pilot: WakeWordPilotConfiguration = .default) { self.provider = provider; self.pilot = pilot }
   public var availability: WakeWordDetectorAvailability {
-    let permission: WakeWordPermissionStatus
-    switch AVCaptureDevice.authorizationStatus(for: .audio) {
-    case .authorized: permission = .granted
-    case .denied: permission = .denied
-    case .restricted: permission = .restricted
-    case .notDetermined: permission = .notRequested
-    @unknown default: permission = .unavailable
-    }
-    return WakeWordDetectorAvailability(available: provider.available, backendIdentifier: "avfoundation_soundanalysis_pilot", permissionStatus: permission)
+    let p: WakeWordPermissionStatus
+    switch AVCaptureDevice.authorizationStatus(for: .audio) { case .authorized: p = .granted; case .denied: p = .denied; case .restricted: p = .restricted; case .notDetermined: p = .notRequested; @unknown default: p = .unavailable }
+    return WakeWordDetectorAvailability(available: provider.available, backendIdentifier: "coreml_temporal_features_pilot", permissionStatus: p)
   }
   public func start(configuration: WakeWordDetectorConfiguration, detectionHandler: @escaping @Sendable (WakeWordDetectionSignal) -> Void) throws {
     guard configuration.phraseKey == pilot.phraseKey else { throw BrokerError.invalidArguments }
-    guard provider.available else { throw BrokerError.capabilityUnavailable }
-    let authorization = AVCaptureDevice.authorizationStatus(for: .audio)
-    let granted: Bool
-    if authorization == .notDetermined {
-      let semaphore = DispatchSemaphore(value: 0)
-      var decision = false
-      AVCaptureDevice.requestAccess(for: .audio) { allowed in decision = allowed; semaphore.signal() }
-      _ = semaphore.wait(timeout: .now() + 30)
-      granted = decision
-    }
-    else { granted = authorization == .authorized }
+    let localPredictor = try TemporalWakeModelPredictor(model: provider.load()); let localEngine = AVAudioEngine(); let input = localEngine.inputNode; let format = input.inputFormat(forBus: 0)
+    guard format.sampleRate > 0, format.channelCount > 0, let target = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1), let converter = AVAudioConverter(from: format, to: target) else { throw BrokerError.capabilityUnavailable }
+    let auth = AVCaptureDevice.authorizationStatus(for: .audio); let granted: Bool
+    if auth == .notDetermined { let sem = DispatchSemaphore(value: 0); var decision = false; AVCaptureDevice.requestAccess(for: .audio) { decision = $0; sem.signal() }; _ = sem.wait(timeout: .now() + 30); granted = decision } else { granted = auth == .authorized }
     guard granted else { throw BrokerError.permissionDenied }
-    let model = try provider.load()
-    let request = try SNClassifySoundRequest(mlModel: model)
-    let localEngine = AVAudioEngine(); let input = localEngine.inputNode
-    let format = input.inputFormat(forBus: 0)
-    guard format.sampleRate > 0, format.channelCount > 0 else { throw BrokerError.capabilityUnavailable }
-    let localAnalyzer = SNAudioStreamAnalyzer(format: format)
-    let localObserver = WakeObserver(label: pilot.modelLabel, threshold: pilot.confidenceThreshold, consecutive: pilot.consecutiveWindows) { [weak self] signal in self?.detected(signal) }
-    try localAnalyzer.add(request, withObserver: localObserver)
-    input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, time in localAnalyzer.analyze(buffer, atAudioFramePosition: time.sampleTime) }
-    do { try localEngine.start() } catch { input.removeTap(onBus: 0); throw BrokerError.internalFailure }
-    lock.lock(); engine=localEngine; analyzer=localAnalyzer; observer=localObserver; handler=detectionHandler; positives=0; active=true; lock.unlock()
+    lock.lock(); generation += 1; let g = generation; buffer.reset(); pendingSamples = 0; positiveWindows = 0; predictor = localPredictor; handler = detectionHandler; engine = localEngine; active = true; lock.unlock()
+    input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] pcm, _ in
+      guard let self, let copy = try? Self.copyBuffer(pcm) else { return }
+      self.queue.async { self.convertAndConsume(copy, converter: converter, target: target, generation: g) }
+    }
+    do { try localEngine.start() } catch { input.removeTap(onBus: 0); stop(); throw BrokerError.internalFailure }
   }
-  public func stop() { lock.lock(); let local=engine; engine=nil; analyzer=nil; observer=nil; handler=nil; positives=0; active=false; lock.unlock(); local?.inputNode.removeTap(onBus: 0); local?.stop() }
-  private func detected(_ signal: WakeWordDetectionSignal) { lock.lock(); guard active else { lock.unlock(); return }; active=false; let callback=handler; lock.unlock(); stop(); callback?(signal) }
-}
-
-private final class WakeObserver: NSObject, SNResultsObserving {
-  let label: String; let threshold: Double; let consecutive: Int; let callback: (WakeWordDetectionSignal) -> Void; var count=0
-  init(label: String, threshold: Double, consecutive: Int, callback: @escaping (WakeWordDetectionSignal)->Void) { self.label=label; self.threshold=threshold; self.consecutive=consecutive; self.callback=callback }
-  func request(_ request: SNRequest, didProduce result: SNResult) {
-    guard let classification = result as? SNClassificationResult, let item = classification.classifications.first(where: {$0.identifier == label}) else { return }
-    count = item.confidence >= threshold ? count + 1 : 0
-    if count >= consecutive { count=0; callback(WakeWordDetectionSignal(confidence: item.confidence)) }
+  public func stop() { lock.lock(); generation += 1; active = false; let local = engine; engine = nil; predictor = nil; handler = nil; buffer.reset(); pendingSamples = 0; positiveWindows = 0; lock.unlock(); local?.inputNode.removeTap(onBus: 0); local?.stop() }
+  private static func copyBuffer(_ source: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+    guard let copy = AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: source.frameLength) else { throw BrokerError.capabilityUnavailable }
+    copy.frameLength = source.frameLength
+    copy.mutableAudioBufferList.pointee = source.audioBufferList.pointee
+    guard let sourceData = source.floatChannelData, let destinationData = copy.floatChannelData else { throw BrokerError.capabilityUnavailable }
+    for channel in 0..<Int(source.format.channelCount) { destinationData[channel].assign(from: sourceData[channel], count: Int(source.frameLength)) }
+    return copy
   }
-  func request(_ request: SNRequest, didFailWithError error: Error) { count=0 }
-  func requestDidComplete(_ request: SNRequest) { count=0 }
+  private func convertAndConsume(_ source: AVAudioPCMBuffer, converter: AVAudioConverter, target: AVAudioFormat, generation: Int) {
+    let ratio = target.sampleRate / source.format.sampleRate
+    let capacity = AVAudioFrameCount(ceil(Double(source.frameLength) * ratio)) + 16
+    guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
+    var supplied = false; var error: NSError?
+    let status = converter.convert(to: output, error: &error) { _, status in
+      if supplied { status.pointee = .endOfStream; return nil }
+      supplied = true; status.pointee = .haveData; return source
+    }
+    guard status != .error, error == nil, output.frameLength > 0, let channel = output.floatChannelData?[0] else { return }
+    let values = Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength))).map(Double.init)
+    consume(values, generation: generation)
+  }
+  private func consume(_ samples: [Double], generation: Int) {
+    lock.lock(); guard active, self.generation == generation else { lock.unlock(); return }; buffer.append(samples); pendingSamples += samples.count; let infer = pendingSamples >= pilot.inferenceHopSamples; if infer { pendingSamples = 0 }; let values = buffer.samples; let model = predictor; lock.unlock(); guard infer, values.count >= 400, let model, let features = try? TemporalWakeFeatureExtractor().extract(samples: values), let prediction = try? model.predict(features: features) else { return }
+    lock.lock(); guard active, self.generation == generation else { lock.unlock(); return }; positiveWindows = prediction.probability >= pilot.confidenceThreshold ? positiveWindows + 1 : 0; guard positiveWindows >= pilot.consecutiveWindows else { lock.unlock(); return }; active = false; self.generation += 1; let callback = handler; handler = nil; let local = engine; engine = nil; predictor = nil; buffer.reset(); positiveWindows = 0; lock.unlock(); local?.inputNode.removeTap(onBus: 0); local?.stop(); callback?(WakeWordDetectionSignal(confidence: prediction.probability))
+  }
 }
