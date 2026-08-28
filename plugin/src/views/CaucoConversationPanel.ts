@@ -48,7 +48,7 @@ export class CaucoConversationPanel {
       createLocalSpeechSynthesizer(),
     ),
     private readonly wakeWord: WakeWordControl = new WakeWordService(
-      createNativeWakeWordDetector(),
+      createNativeWakeWordDetector(client),
     ),
   ) {
     this.outputController = new SpeechOutputController(output, () => this.microphoneActive());

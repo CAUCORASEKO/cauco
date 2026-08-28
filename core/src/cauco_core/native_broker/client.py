@@ -41,6 +41,24 @@ class NativeBrokerClient:
         }
         return self.request(request)
 
+    def wakeword_status(self) -> dict[str, Any]:
+        return self._wakeword_request("wakeword.status", {}, False)
+
+    def wakeword_start(self, phrase_key: str, locale: str) -> dict[str, Any]:
+        return self._wakeword_request("wakeword.start", {"phrase_key": phrase_key, "locale": locale}, True)
+
+    def wakeword_stop(self) -> dict[str, Any]:
+        return self._wakeword_request("wakeword.stop", {}, True)
+
+    def _wakeword_request(self, capability: str, arguments: dict[str, Any], explicit: bool) -> dict[str, Any]:
+        request = {
+            "protocolVersion": "native-capability-broker-v1", "requestId": f"core-{capability.replace('.', '-')}",
+            "capability": capability, "requesterId": "core", "origin": "localCore",
+            "explicitUserRequest": explicit, "requestLocale": "en", "responseLocale": "en",
+            "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "arguments": arguments,
+        }
+        return self.request(request)
+
     def calendar_status(self) -> dict[str, Any]:
         request = {
             "protocolVersion": "native-capability-broker-v1", "requestId": "core-native-calendar-status",

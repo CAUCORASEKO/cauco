@@ -33,6 +33,10 @@ export class ReasoningPlanningApiClient {
       );
     }
   }
+
+  wakeword(path: "/api/native/wakeword/status" | "/api/native/wakeword/start" | "/api/native/wakeword/stop", body: Readonly<Record<string, unknown>> = {}): Promise<unknown> {
+    return this.transport(path, body, 3_000);
+  }
 }
 
 function createTransport(coreUrl: string): ReasoningTransport {

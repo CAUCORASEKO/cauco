@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { UnavailableNativeWakeWordDetector } from "../src/voice/nativeWakeWord";
+import { NativeWakeWordDetector, UnavailableNativeWakeWordDetector } from "../src/voice/nativeWakeWord";
 import { WakeActivationCoordinator } from "../src/voice/wakeActivation";
 import {
   WakeWordService,
@@ -220,4 +220,26 @@ test("conversation panel exposes explicit wake controls and disposes the detecto
   assert.match(panel, /this\.wakeActivation\?\.manualVoiceStarting\(\)/);
   assert.match(panel, /this\.wakeActivation\?\.speechOutputStarting\(\)/);
   assert.doesNotMatch(panel, /allowExecution|allow_execution/);
+});
+
+test("native adapter queries status and starts only an accepted active detector", async () => {
+  const calls: Array<[string, Record<string, unknown>]> = [];
+  const detector = new NativeWakeWordDetector({
+    wakeword: async (path, body = {}) => { calls.push([path, { ...body }]); return path.endsWith("status") ? { available: true, state: "stopped", active: false } : { available: true, state: "listening", active: true, accepted: true }; },
+  });
+  const observer = { started() {}, detected() {}, failed(code: string) { assert.fail(code); } };
+  detector.start(configuration, observer);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(calls, [["/api/native/wakeword/status", {}], ["/api/native/wakeword/start", { phrase_key: "hola_cauco", locale: "es-ES" }]]);
+});
+
+test("native adapter maps unavailable status and stop is bounded", async () => {
+  const calls: string[] = [];
+  const detector = new NativeWakeWordDetector({ wakeword: async (path) => { calls.push(path); return { available: false, state: "unavailable", active: false }; } });
+  let failure = "";
+  detector.start(configuration, { started() {}, detected() {}, failed(code) { failure = code; } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  detector.stop();
+  assert.equal(failure, "unavailable");
+  assert.deepEqual(calls, ["/api/native/wakeword/status", "/api/native/wakeword/stop"]);
 });
