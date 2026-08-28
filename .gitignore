@@ -42,6 +42,7 @@ JARVIS-OS-V.2-main/
 /deepagents-main/
 
 # Local wake-model recordings and dataset instances
+wake-model/.venv/
 wake-model/dataset/audio/*.wav
 wake-model/dataset/metadata/recordings.jsonl
 wake-model/dataset/manifests/*.jsonl
