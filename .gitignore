@@ -46,3 +46,6 @@ wake-model/dataset/audio/*.wav
 wake-model/dataset/metadata/recordings.jsonl
 wake-model/dataset/manifests/*.jsonl
 wake-model/local-output/
+
+# Local reference repositories
+worldmonitor-main/
