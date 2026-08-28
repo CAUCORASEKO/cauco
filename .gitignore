@@ -40,3 +40,8 @@ JARVIS-OS-V.2-main/
 
 # Local upstream research / reference code
 /deepagents-main/
+
+# Local wake-model recordings and dataset instances
+wake-model/dataset/audio/*.wav
+wake-model/dataset/metadata/recordings.jsonl
+wake-model/dataset/manifests/*.jsonl

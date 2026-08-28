@@ -31,7 +31,15 @@ python tools/wake_model.py validate-dataset dataset
 python tools/wake_model.py threshold predictions.jsonl --thresholds 0.5,0.7,0.9
 python tools/wake_model.py temporal predictions.jsonl --threshold 0.85 --consecutive 2
 python tools/wake_model.py validate-model-manifest model-manifest.json
+python tools/record_sample.py --label target --phrase "Hola Cauco" --speaker speaker_001 --environment room_001 --device macbook_builtin
 ```
+
+Recording uses the environment-specific `/opt/homebrew/bin/ffmpeg` AVFoundation
+input when available. It requests microphone access only when this command is
+explicitly run; it records one 0.5–3.0 second WAV clip directly as mono,
+16-bit, 16 kHz PCM and never records in the background. The dataset is ignored
+by git. A pilot can begin with 20–30 target, 20–30 hard-negative, and 20–30
+background clips; these are feasibility counts, not production sufficiency.
 
 Threshold selection reports precision, recall, FPR/FNR, false activations per
 hour, and hard-negative activation rate. Choose a threshold subject to a
