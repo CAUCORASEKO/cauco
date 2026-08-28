@@ -73,9 +73,9 @@ The macOS 26.5 SDK headers prove:
 The custom model requirement is also explicit in the header: the model must
 accept audio and output a classification dictionary of category probabilities.
 
-Proven locally: a custom `MLModel` can be passed to SoundAnalysis.  
+Proven locally: a custom `MLModel` can be passed to SoundAnalysis.
 Likely but unproven: a model exported by a particular Python framework will
-meet SoundAnalysis audio-input/output requirements.  
+meet SoundAnalysis audio-input/output requirements.
 Requires future validation: actual model input feature names/types, output
 shape, sample-rate contract, model metadata, `coremltools` conversion fidelity,
 and runtime behavior on macOS 13.
