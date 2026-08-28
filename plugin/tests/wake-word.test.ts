@@ -243,3 +243,30 @@ test("native adapter maps unavailable status and stop is bounded", async () => {
   assert.equal(failure, "unavailable");
   assert.deepEqual(calls, ["/api/native/wakeword/status", "/api/native/wakeword/stop"]);
 });
+
+test("native adapter opens one bounded event subscription and closes before detection", async () => {
+  let eventHandler: ((event: unknown) => void) | undefined;
+  let closed = 0;
+  let started = 0;
+  const detector = new NativeWakeWordDetector({
+    wakeword: async (path) => path.endsWith("status") ? { available: true, state: "stopped", active: false } : { available: true, state: "listening", active: true, accepted: true },
+    subscribeWakewordEvents: (handler) => { eventHandler = handler; return () => { closed += 1; }; },
+  });
+  detector.start(configuration, { started() { started += 1; }, detected() { started += 10; }, failed(code) { assert.fail(code); } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(started, 1);
+  eventHandler?.({ event_reference: "wakeevt_test", phrase_key: "hola_cauco", detected_at: "2026-08-28T10:00:00Z", confidence: 0.5 });
+  eventHandler?.({ event_reference: "wakeevt_test", phrase_key: "hola_cauco", detected_at: "2026-08-28T10:00:00Z", confidence: 0.5 });
+  assert.equal(closed, 1);
+  detector.stop();
+  assert.equal(closed, 1);
+});
+
+test("native adapter has no subscription before explicit start and closes on dispose", () => {
+  let subscriptions = 0;
+  let close: (() => void) | undefined;
+  const detector = new NativeWakeWordDetector({ wakeword: async () => ({ available: true, state: "stopped", active: false }), subscribeWakewordEvents: () => { subscriptions += 1; return close = () => { subscriptions -= 1; }; } });
+  assert.equal(subscriptions, 0);
+  detector.dispose();
+  assert.equal(subscriptions, 0);
+});

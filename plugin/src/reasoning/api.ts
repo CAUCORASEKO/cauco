@@ -10,7 +10,7 @@ export type ReasoningTransport = (
 
 export class ReasoningPlanningApiClient {
   constructor(
-    coreUrl: string,
+    private readonly coreUrl: string,
     private readonly transport: ReasoningTransport = createTransport(coreUrl),
     private readonly timeoutMs = 30_000,
   ) {}
@@ -36,6 +36,13 @@ export class ReasoningPlanningApiClient {
 
   wakeword(path: "/api/native/wakeword/status" | "/api/native/wakeword/start" | "/api/native/wakeword/stop", body: Readonly<Record<string, unknown>> = {}): Promise<unknown> {
     return this.transport(path, body, 3_000);
+  }
+
+  subscribeWakewordEvents(onEvent: (event: unknown) => void): () => void {
+    const source = new EventSource(`${this.coreUrl}/api/native/wakeword/events`);
+    source.addEventListener("wakeword.detected", (event) => { try { onEvent(JSON.parse((event as MessageEvent).data)); } catch { /* fail closed */ } });
+    source.onerror = () => source.close();
+    return () => source.close();
   }
 }
 

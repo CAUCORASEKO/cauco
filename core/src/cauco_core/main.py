@@ -1,4 +1,4 @@
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from datetime import timedelta
 
 import uvicorn
@@ -117,11 +117,23 @@ def build_ai_provider(settings: Settings) -> AIProvider:
 
 
 def create_app(settings: Settings | None = None, ai_provider: AIProvider | None = None) -> FastAPI:
-    app = FastAPI(title="Cauco Core", version="0.1.0")
-    app.state.settings = settings or Settings()
     from cauco_core.native_broker import NativeBrokerClient
+    from cauco_core.native_broker.wake_events import WakeWordEventService
+    wake_event_service = WakeWordEventService()
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        wake_event_service.start()
+        try:
+            yield
+        finally:
+            wake_event_service.stop()
+
+    app = FastAPI(title="Cauco Core", version="0.1.0", lifespan=lifespan)
+    app.state.settings = settings or Settings()
 
     app.state.native_broker_client = NativeBrokerClient()
+    app.state.wake_event_service = wake_event_service
     app.state.agent_registry = create_default_registry()
     app.state.reasoning_proposal_validator = ReasoningProposalValidator(
         app.state.agent_registry

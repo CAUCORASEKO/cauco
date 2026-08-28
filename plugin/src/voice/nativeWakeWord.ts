@@ -6,6 +6,7 @@ import type {
 
 export interface NativeWakeWordApi {
   wakeword(path: "/api/native/wakeword/status" | "/api/native/wakeword/start" | "/api/native/wakeword/stop", body?: Readonly<Record<string, unknown>>): Promise<unknown>;
+  subscribeWakewordEvents?(onEvent: (event: unknown) => void): () => void;
 }
 
 type NativeWakeWordResponse = { available: boolean; state: string; active: boolean; accepted?: boolean };
@@ -20,15 +21,16 @@ export class NativeWakeWordDetector implements WakeWordDetector {
   // Native detection events are intentionally not synthesized here; the host event seam is still pending.
   readonly available = true;
   private generation = 0;
+  private closeEvents?: () => void;
   constructor(private readonly api: NativeWakeWordApi) {}
   start(configuration: WakeWordConfiguration, observer: WakeWordObserver): void {
     const generation = ++this.generation;
     void this.api.wakeword("/api/native/wakeword/status")
       .then((statusValue) => { const status = parseResponse(statusValue); if (!status || !status.available) throw new Error("unavailable"); return this.api.wakeword("/api/native/wakeword/start", { phrase_key: "hola_cauco", locale: configuration.locale }); })
-      .then((value) => { const result = parseResponse(value); if (generation !== this.generation) return; if (!result || !result.available || result.accepted !== true || !result.active) observer.failed(result?.state === "permission_denied" ? "permission-denied" : "unavailable"); else observer.started(); })
+      .then((value) => { const result = parseResponse(value); if (generation !== this.generation) return; if (!result || !result.available || result.accepted !== true || !result.active) observer.failed(result?.state === "permission_denied" ? "permission-denied" : "unavailable"); else { this.closeEvents = this.api.subscribeWakewordEvents?.((event) => { if (generation !== this.generation) return; this.closeEvents?.(); this.closeEvents = undefined; observer.detected(); }); observer.started(); } })
       .catch(() => { if (generation === this.generation) observer.failed("unavailable"); });
   }
-  stop(): void { this.generation += 1; void this.api.wakeword("/api/native/wakeword/stop").catch(() => undefined); }
+  stop(): void { this.generation += 1; this.closeEvents?.(); this.closeEvents = undefined; void this.api.wakeword("/api/native/wakeword/stop").catch(() => undefined); }
   dispose(): void { this.stop(); }
 }
 

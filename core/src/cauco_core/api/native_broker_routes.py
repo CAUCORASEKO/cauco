@@ -1,9 +1,25 @@
+import asyncio
+import json
 from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from cauco_core.native_broker import NativeBrokerClient, NativeBrokerUnavailable
+from cauco_core.native_broker.wake_events import WakeWordEventService
 
 router = APIRouter()
+
+@router.get("/api/native/wakeword/events")
+async def wakeword_events(request: Request) -> StreamingResponse:
+    service: WakeWordEventService = request.app.state.wake_event_service
+    q, close = service.subscribe()
+    async def stream():
+        try:
+            while not await request.is_disconnected():
+                event = await asyncio.to_thread(q.get)
+                yield f"event: wakeword.detected\ndata: {json.dumps(event, separators=(',', ':'))}\n\n"
+        finally: close()
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 class WakeWordStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")

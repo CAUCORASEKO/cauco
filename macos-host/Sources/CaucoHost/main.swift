@@ -67,6 +67,7 @@ import SwiftUI
   private let calendarPermission = NativeCalendarPermissionGateway()
   private var process: Process?
   private var brokerServer: NativeBrokerTransportServer?
+  private var wakeEventTransport: CaucoWakeEventTransport?
   private let lifecycle = CoreLifecycleRules()
   private let processTerminator = OwnedCoreProcessTerminator()
 
@@ -149,10 +150,13 @@ import SwiftUI
         workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
       let configuration = CoreLaunchConfiguration(
         executable: resolved.executable, repository: resolved.repository)
+      let eventPath = FileManager.default.temporaryDirectory.appendingPathComponent("cauco-wake-events-\(UUID().uuidString).sock")
+      let eventTransport = CaucoWakeEventTransport(socketURL: eventPath)
       let brokerServer = try NativeBrokerTransportServer(
-        broker: NativeCapabilityBroker(permission: permission))
+        broker: NativeCapabilityBroker(permission: permission, wakeWordEventHandler: eventTransport.send))
       try brokerServer.start()
       self.brokerServer = brokerServer
+      self.wakeEventTransport = eventTransport
       let p = Process()
       p.executableURL = configuration.executable
       p.arguments = configuration.arguments
@@ -160,6 +164,7 @@ import SwiftUI
       var environment = ProcessInfo.processInfo.environment
       environment["CAUCO_NATIVE_BROKER_SOCKET"] = brokerServer.socketURL.path
       environment["CAUCO_NATIVE_BROKER_TOKEN"] = brokerServer.token
+      environment["CAUCO_WAKE_EVENT_SOCKET"] = eventPath.path
       p.environment = environment
       let stderr = Pipe()
       let stdout = Pipe()
