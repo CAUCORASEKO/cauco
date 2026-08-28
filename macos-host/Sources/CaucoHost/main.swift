@@ -153,7 +153,7 @@ import SwiftUI
       let eventPath = FileManager.default.temporaryDirectory.appendingPathComponent("cauco-wake-events-\(UUID().uuidString).sock")
       let eventTransport = CaucoWakeEventTransport(socketURL: eventPath)
       let brokerServer = try NativeBrokerTransportServer(
-        broker: NativeCapabilityBroker(permission: permission, wakeWordEventHandler: eventTransport.send))
+        broker: NativeCapabilityBroker(permission: permission, wakeWordDetector: SoundAnalysisWakeWordDetectorGateway(), wakeWordEventHandler: eventTransport.send))
       try brokerServer.start()
       self.brokerServer = brokerServer
       self.wakeEventTransport = eventTransport

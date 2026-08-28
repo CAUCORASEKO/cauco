@@ -78,13 +78,13 @@ public struct NativeCapabilityRegistry: Sendable {
       .init(
         capability: .wakewordStatus, permissionId: "macos.microphone.wakeword",
         accessMode: "status", exposesPersonalData: false, confirmationRequired: false,
-        implementationState: "seam_only",
+        implementationState: "pilot",
         limitations: ["metadata only", "no audio", "one-shot local detector"],
         method: "wakeword.status.v1"),
       .init(
         capability: .wakewordStart, permissionId: "macos.microphone.wakeword",
         accessMode: "activate", exposesPersonalData: false, confirmationRequired: true,
-        implementationState: "seam_only",
+        implementationState: "pilot",
         limitations: ["Hola Cauco phrase key only", "no audio", "one-shot local detector"],
         method: "wakeword.start.v1"),
       .init(

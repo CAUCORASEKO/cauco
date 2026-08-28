@@ -13,7 +13,7 @@ final class WakeEventTransportTests: XCTestCase {
       let lines = data.split(separator: 10)
       XCTAssertEqual(lines.count, 1)
       let object = try? JSONSerialization.jsonObject(with: Data(lines[0])) as? [String: Any]
-      XCTAssertEqual(Set(object?.keys ?? []), Set(["type", "event_reference", "phrase_key", "detected_at", "confidence"]))
+      XCTAssertEqual(Set(object.map { Array($0.keys) } ?? []), Set(["type", "event_reference", "phrase_key", "detected_at", "confidence"]))
       XCTAssertEqual(object?["type"] as? String, "wakeword.detected")
       XCTAssertNil(object?["audio"])
       XCTAssertNil(object?["metadata"])
