@@ -1,0 +1,9 @@
+{
+  "model_id": "hola-cauco-classifier",
+  "version": "0.1.0",
+  "target_label": "hola_cauco",
+  "other_labels": ["other"],
+  "audio_input": {"sample_rate_hz": 16000, "channels": 1, "format": "PCM"},
+  "deployment_target": "macOS 13.0",
+  "sha256": "<sha256-of-verified-model-artifact>"
+}
