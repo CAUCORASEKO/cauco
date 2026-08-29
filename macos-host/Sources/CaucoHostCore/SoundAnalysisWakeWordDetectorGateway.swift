@@ -9,6 +9,7 @@ public struct WakeWordPilotConfiguration: Sendable {
   public let confidenceThreshold = 0.85
   public let consecutiveWindows = 3
   public let inferenceHopSamples = 2_560
+  public let inferenceWindowSamples = 16_000
 }
 
 public final class WakeWordModelProvider: @unchecked Sendable {
@@ -70,15 +71,26 @@ public final class SoundAnalysisWakeWordDetectorGateway: WakeWordDetectorGateway
     guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
     var supplied = false; var error: NSError?
     let status = converter.convert(to: output, error: &error) { _, status in
-      if supplied { status.pointee = .endOfStream; return nil }
+      if supplied { status.pointee = .noDataNow; return nil }
       supplied = true; status.pointee = .haveData; return source
     }
-    guard status != .error, error == nil, output.frameLength > 0, let channel = output.floatChannelData?[0] else { return }
+    guard status != .error, error == nil, output.frameLength > 0, let channel = output.floatChannelData?[0] else {
+      return
+    }
     let values = Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength))).map(Double.init)
     consume(values, generation: generation)
   }
   private func consume(_ samples: [Double], generation: Int) {
-    lock.lock(); guard active, self.generation == generation else { lock.unlock(); return }; buffer.append(samples); pendingSamples += samples.count; let infer = pendingSamples >= pilot.inferenceHopSamples; if infer { pendingSamples = 0 }; let values = buffer.samples; let model = predictor; lock.unlock(); guard infer, values.count >= 400, let model, let features = try? TemporalWakeFeatureExtractor().extract(samples: values), let prediction = try? model.predict(features: features) else { return }
-    lock.lock(); guard active, self.generation == generation else { lock.unlock(); return }; positiveWindows = prediction.probability >= pilot.confidenceThreshold ? positiveWindows + 1 : 0; guard positiveWindows >= pilot.consecutiveWindows else { lock.unlock(); return }; active = false; self.generation += 1; let callback = handler; handler = nil; let local = engine; engine = nil; predictor = nil; buffer.reset(); positiveWindows = 0; lock.unlock(); local?.inputNode.removeTap(onBus: 0); local?.stop(); callback?(WakeWordDetectionSignal(confidence: prediction.probability))
+    lock.lock(); guard active, self.generation == generation else { lock.unlock(); return }; buffer.append(samples); pendingSamples += samples.count; let infer = pendingSamples >= pilot.inferenceHopSamples; if infer { pendingSamples = 0 }; let values = buffer.samples; let model = predictor; lock.unlock()
+    guard infer, values.count >= pilot.inferenceWindowSamples, let model else { return }
+    let startIndex = values.count - pilot.inferenceWindowSamples
+    let endIndex = values.count
+    let inferenceSamples = Array(values[startIndex..<endIndex])
+    let features: [Double]
+    do { features = try TemporalWakeFeatureExtractor().extract(samples: inferenceSamples) } catch { return }
+    let prediction: TemporalWakePrediction
+    do { prediction = try model.predict(features: features) } catch { return }
+    lock.lock(); guard active, self.generation == generation else { lock.unlock(); return }; positiveWindows = prediction.probability >= pilot.confidenceThreshold ? positiveWindows + 1 : 0; lock.unlock()
+    lock.lock(); guard active, self.generation == generation, positiveWindows >= pilot.consecutiveWindows else { lock.unlock(); return }; active = false; self.generation += 1; let callback = handler; handler = nil; let local = engine; engine = nil; predictor = nil; buffer.reset(); positiveWindows = 0; lock.unlock(); local?.inputNode.removeTap(onBus: 0); local?.stop(); callback?(WakeWordDetectionSignal(confidence: prediction.probability))
   }
 }
