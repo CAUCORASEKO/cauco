@@ -48,7 +48,10 @@ import SwiftUI
     WindowGroup("Cauco") {
       ContentView(model: model)
         .frame(minWidth: 520, minHeight: 360)
-        .onAppear { appDelegate.model = model }
+        .onAppear {
+          appDelegate.model = model
+          model.startCore()
+        }
     }
   }
 }

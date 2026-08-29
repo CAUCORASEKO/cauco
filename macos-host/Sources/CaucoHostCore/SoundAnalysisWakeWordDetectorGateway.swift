@@ -30,10 +30,23 @@ public final class SoundAnalysisWakeWordDetectorGateway: WakeWordDetectorGateway
   }
   public func start(configuration: WakeWordDetectorConfiguration, detectionHandler: @escaping @Sendable (WakeWordDetectionSignal) -> Void) throws {
     guard configuration.phraseKey == pilot.phraseKey else { throw BrokerError.invalidArguments }
-    let localPredictor = try TemporalWakeModelPredictor(model: provider.load()); let localEngine = AVAudioEngine(); let input = localEngine.inputNode; let format = input.inputFormat(forBus: 0)
+    let localPredictor: TemporalWakeModelPredictor
+    localPredictor = try TemporalWakeModelPredictor(model: provider.load())
+    let localEngine = AVAudioEngine(); let input = localEngine.inputNode; let format = input.inputFormat(forBus: 0)
     guard format.sampleRate > 0, format.channelCount > 0, let target = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1), let converter = AVAudioConverter(from: format, to: target) else { throw BrokerError.capabilityUnavailable }
     let auth = AVCaptureDevice.authorizationStatus(for: .audio); let granted: Bool
-    if auth == .notDetermined { let sem = DispatchSemaphore(value: 0); var decision = false; AVCaptureDevice.requestAccess(for: .audio) { decision = $0; sem.signal() }; _ = sem.wait(timeout: .now() + 30); granted = decision } else { granted = auth == .authorized }
+    if auth == .notDetermined {
+      let sem = DispatchSemaphore(value: 0); var decision = false
+      let request: () -> Void = {
+        AVCaptureDevice.requestAccess(for: .audio) { value in
+          decision = value; sem.signal()
+        }
+      }
+      if Thread.isMainThread { request() } else { DispatchQueue.main.async(execute: request) }
+      let result = sem.wait(timeout: .now() + 30)
+      _ = result
+      granted = decision
+    } else { granted = auth == .authorized }
     guard granted else { throw BrokerError.permissionDenied }
     lock.lock(); generation += 1; let g = generation; buffer.reset(); pendingSamples = 0; positiveWindows = 0; predictor = localPredictor; handler = detectionHandler; engine = localEngine; active = true; lock.unlock()
     input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] pcm, _ in
