@@ -5,15 +5,19 @@ import SwiftUI
 
 @MainActor final class CaucoHostAppDelegate: NSObject, NSApplicationDelegate {
   weak var model: HostModel?
+  private var windowController: NSWindowController?
   private var terminationSignalSources: [DispatchSourceSignal] = []
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApplication.shared.setActivationPolicy(.regular)
-    NSApplication.shared.activate(ignoringOtherApps: true)
     installTerminationSignalHandlers()
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    false
+  }
+
+  func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
     false
   }
 
@@ -23,6 +27,24 @@ import SwiftUI
 
   func requestQuit() {
     NSApplication.shared.terminate(nil)
+  }
+
+  func showSettingsWindow() {
+    guard let model else { return }
+    if windowController == nil {
+      let content = NSHostingController(rootView: ContentView(model: model))
+      let window = NSWindow(contentViewController: content)
+      window.title = "Cauco Settings"
+      window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+      window.setContentSize(NSSize(width: 620, height: 520))
+      window.center()
+      window.isReleasedWhenClosed = false
+      window.restorationClass = nil
+      windowController = NSWindowController(window: window)
+    }
+    windowController?.showWindow(nil)
+    windowController?.window?.makeKeyAndOrderFront(nil)
+    NSApplication.shared.activate(ignoringOtherApps: true)
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -53,28 +75,18 @@ import SwiftUI
 @main struct CaucoHostApp: App {
   @NSApplicationDelegateAdaptor(CaucoHostAppDelegate.self) private var appDelegate
   @StateObject private var model = HostModel()
-  @Environment(\.openWindow) private var openWindow
+
+  init() {
+    let residentModel = HostModel()
+    residentModel.startCore()
+    _model = StateObject(wrappedValue: residentModel)
+    appDelegate.model = residentModel
+  }
 
   var body: some Scene {
-    WindowGroup("Cauco", id: "main") {
-      ContentView(model: model)
-        .frame(minWidth: 520, minHeight: 360)
-        .onAppear {
-          appDelegate.model = model
-          model.startCore()
-        }
-    }
-    .commands {
-      CommandGroup(replacing: .appTermination) {
-        Button("Quit Cauco") { appDelegate.requestQuit() }
-          .keyboardShortcut("q")
-      }
-    }
     MenuBarExtra("Cauco", systemImage: "waveform") {
       Button("Open Cauco") {
-        openWindow(id: "main")
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        NSApp.windows.first(where: { $0.title == "Cauco" })?.makeKeyAndOrderFront(nil)
+        showCauco()
       }
       Divider()
       Text("Status: \(model.coreStatus == "online" ? "Running" : model.coreStatus.capitalized)")
@@ -88,6 +100,20 @@ import SwiftUI
       }
       Divider()
       Button("Quit Cauco") { appDelegate.requestQuit() }
+    }
+    .commands {
+      CommandGroup(replacing: .appTermination) {
+        Button("Quit Cauco") { appDelegate.requestQuit() }
+          .keyboardShortcut("q")
+      }
+    }
+  }
+
+  private func showCauco() {
+    appDelegate.showSettingsWindow()
+    NSApplication.shared.activate(ignoringOtherApps: true)
+    DispatchQueue.main.async {
+      NSApp.windows.first(where: { $0.title == "Cauco" })?.makeKeyAndOrderFront(nil)
     }
   }
 }
