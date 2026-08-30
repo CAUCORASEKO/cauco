@@ -3,13 +3,13 @@ import CaucoHostCore
 import Darwin
 import SwiftUI
 
-@MainActor final class CaucoHostAppDelegate: NSObject, NSApplicationDelegate {
+@MainActor final class CaucoHostAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   weak var model: HostModel?
   private var windowController: NSWindowController?
   private var terminationSignalSources: [DispatchSourceSignal] = []
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    NSApplication.shared.setActivationPolicy(.regular)
+    NSApplication.shared.setActivationPolicy(.accessory)
     installTerminationSignalHandlers()
   }
 
@@ -31,6 +31,7 @@ import SwiftUI
 
   func showSettingsWindow() {
     guard let model else { return }
+    NSApplication.shared.setActivationPolicy(.regular)
     if windowController == nil {
       let content = NSHostingController(rootView: ContentView(model: model))
       let window = NSWindow(contentViewController: content)
@@ -40,11 +41,17 @@ import SwiftUI
       window.center()
       window.isReleasedWhenClosed = false
       window.restorationClass = nil
+      window.delegate = self
       windowController = NSWindowController(window: window)
     }
     windowController?.showWindow(nil)
     windowController?.window?.makeKeyAndOrderFront(nil)
     NSApplication.shared.activate(ignoringOtherApps: true)
+  }
+
+  func windowWillClose(_ notification: Notification) {
+    guard notification.object as? NSWindow === windowController?.window else { return }
+    NSApplication.shared.setActivationPolicy(.accessory)
   }
 
   func applicationWillTerminate(_ notification: Notification) {
