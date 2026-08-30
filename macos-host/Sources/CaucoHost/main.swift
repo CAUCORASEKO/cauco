@@ -17,6 +17,14 @@ import SwiftUI
     false
   }
 
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    .terminateNow
+  }
+
+  func requestQuit() {
+    NSApplication.shared.terminate(nil)
+  }
+
   func applicationWillTerminate(_ notification: Notification) {
     model?.shutdownForHostTermination()
     removeTerminationSignalHandlers()
@@ -27,9 +35,7 @@ import SwiftUI
       signal(terminationSignal, SIG_IGN)
       let source = DispatchSource.makeSignalSource(signal: terminationSignal, queue: .main)
       source.setEventHandler { [weak self] in
-        guard let self else { return }
-        self.model?.shutdownForHostTermination()
-        NSApplication.shared.terminate(nil)
+        self?.requestQuit()
       }
       source.resume()
       terminationSignalSources.append(source)
@@ -60,7 +66,7 @@ import SwiftUI
     }
     .commands {
       CommandGroup(replacing: .appTermination) {
-        Button("Quit Cauco") { NSApplication.shared.terminate(nil) }
+        Button("Quit Cauco") { appDelegate.requestQuit() }
           .keyboardShortcut("q")
       }
     }
@@ -73,7 +79,7 @@ import SwiftUI
       Divider()
       Text("Status: \(model.coreStatus == "online" ? "Running" : model.coreStatus.capitalized)")
       Divider()
-      Button("Quit Cauco") { NSApplication.shared.terminate(nil) }
+      Button("Quit Cauco") { appDelegate.requestQuit() }
     }
   }
 }
