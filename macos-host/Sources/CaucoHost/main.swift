@@ -78,6 +78,14 @@ import SwiftUI
       }
       Divider()
       Text("Status: \(model.coreStatus == "online" ? "Running" : model.coreStatus.capitalized)")
+      Toggle("Launch at Login", isOn: Binding(
+        get: { model.launchAtLoginStatus == .enabled },
+        set: { model.setLaunchAtLogin($0) }))
+      if model.launchAtLoginStatus == .requiresApproval {
+        Text("Approval required in System Settings")
+      } else if model.launchAtLoginStatus == .failed {
+        Text("Launch at Login could not be changed")
+      }
       Divider()
       Button("Quit Cauco") { appDelegate.requestQuit() }
     }
@@ -91,6 +99,7 @@ import SwiftUI
   @Published var diagnostic = "Ready. No private data has been accessed."
   @Published var repositoryPath = "Not configured"
   @Published var repositoryValidation = "Repository path is not configured."
+  @Published private(set) var launchAtLoginStatus: LaunchAtLoginStatus
   @Published private(set) var hasOwnedProcess = false
   @Published var launchDiagnostics: CoreLaunchDiagnosticSnapshot?
   let coreURL = URL(string: "http://127.0.0.1:8765")!
@@ -101,11 +110,16 @@ import SwiftUI
   private var wakeEventTransport: CaucoWakeEventTransport?
   private let lifecycle = CoreLifecycleRules()
   private let processTerminator = OwnedCoreProcessTerminator()
+  private let launchAtLogin = LaunchAtLoginService()
 
   init() {
+    launchAtLoginStatus = launchAtLogin.status
     refreshContacts()
     refreshCalendar()
     refreshRepository()
+  }
+  func setLaunchAtLogin(_ enabled: Bool) {
+    launchAtLoginStatus = enabled ? launchAtLogin.enable() : launchAtLogin.disable()
   }
   deinit {
     if let process { _ = processTerminator.stop(process) }
@@ -358,6 +372,18 @@ struct ContentView: View {
               model.repositoryPath == "Not configured")
           }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
+      }
+      GroupBox("Application") {
+        VStack(alignment: .leading, spacing: 8) {
+          Toggle("Start Cauco automatically when I log in", isOn: Binding(
+            get: { model.launchAtLoginStatus == .enabled },
+            set: { model.setLaunchAtLogin($0) }))
+          if model.launchAtLoginStatus == .requiresApproval {
+            Text("macOS requires approval in System Settings.").font(.caption)
+          } else if model.launchAtLoginStatus == .failed {
+            Text("macOS did not change the Launch at Login setting.").font(.caption)
+          }
+        }
       }
       if let snapshot = model.launchDiagnostics {
         DisclosureGroup("Core Launch Diagnostics") {
