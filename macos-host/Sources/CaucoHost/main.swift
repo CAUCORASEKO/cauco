@@ -13,6 +13,10 @@ import SwiftUI
     installTerminationSignalHandlers()
   }
 
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    false
+  }
+
   func applicationWillTerminate(_ notification: Notification) {
     model?.shutdownForHostTermination()
     removeTerminationSignalHandlers()
@@ -43,15 +47,33 @@ import SwiftUI
 @main struct CaucoHostApp: App {
   @NSApplicationDelegateAdaptor(CaucoHostAppDelegate.self) private var appDelegate
   @StateObject private var model = HostModel()
+  @Environment(\.openWindow) private var openWindow
 
   var body: some Scene {
-    WindowGroup("Cauco") {
+    WindowGroup("Cauco", id: "main") {
       ContentView(model: model)
         .frame(minWidth: 520, minHeight: 360)
         .onAppear {
           appDelegate.model = model
           model.startCore()
         }
+    }
+    .commands {
+      CommandGroup(replacing: .appTermination) {
+        Button("Quit Cauco") { NSApplication.shared.terminate(nil) }
+          .keyboardShortcut("q")
+      }
+    }
+    MenuBarExtra("Cauco", systemImage: "waveform") {
+      Button("Open Cauco") {
+        openWindow(id: "main")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApp.windows.first(where: { $0.title == "Cauco" })?.makeKeyAndOrderFront(nil)
+      }
+      Divider()
+      Text("Status: \(model.coreStatus == "online" ? "Running" : model.coreStatus.capitalized)")
+      Divider()
+      Button("Quit Cauco") { NSApplication.shared.terminate(nil) }
     }
   }
 }
