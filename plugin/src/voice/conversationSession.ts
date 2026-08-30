@@ -30,6 +30,7 @@ export interface VoiceTurnResult {
 }
 
 export type VoiceTurnSubmitter = (instruction: string) => Promise<VoiceTurnResult>;
+export type VoiceTurnCompleted = (locale: string) => void;
 
 const MESSAGES: Record<VoiceConversationStatus, string> = {
   idle: "Voice conversation is idle.",
@@ -61,6 +62,7 @@ export class VoiceConversationSession {
     private readonly output: SpeechOutput,
     private readonly submit: VoiceTurnSubmitter,
     private readonly showTranscript: (text: string) => void,
+    private readonly onTurnCompleted?: VoiceTurnCompleted,
   ) {
     this.current = this.createState(
       speech.state.status === "unavailable" ? "unavailable" : "waiting_for_user_start",
@@ -183,6 +185,7 @@ export class VoiceConversationSession {
       if (!this.isCurrent(generation)) return;
       this.turnActive = false;
       this.update("turn_complete", transcript);
+      this.onTurnCompleted?.(this.locale);
     } catch {
       if (!this.isCurrent(generation)) return;
       this.turnActive = false;

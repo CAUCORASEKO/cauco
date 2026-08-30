@@ -257,6 +257,10 @@ export class CaucoConversationPanel {
         input.value = value;
         input.focus();
       },
+      (locale) => {
+        const configuration = this.wakeWord.state.configuration;
+        if (configuration?.enabled) this.wakeActivation?.voiceTurnCompleted(configuration);
+      },
     );
     const renderState = (state: VoiceConversationState): void => {
       const busy = [
