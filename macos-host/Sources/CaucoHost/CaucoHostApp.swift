@@ -107,13 +107,13 @@ import SwiftUI
 
 @main struct CaucoHostApp: App {
   @NSApplicationDelegateAdaptor(CaucoHostAppDelegate.self) private var appDelegate
-  @StateObject private var model = HostModel()
+  @StateObject private var model: HostModel
 
   init() {
-    let residentModel = HostModel()
-    residentModel.startCore()
-    _model = StateObject(wrappedValue: residentModel)
-    appDelegate.model = residentModel
+    let model = HostModel()
+    _model = StateObject(wrappedValue: model)
+    appDelegate.model = model
+    model.startCore()
   }
 
   var body: some Scene {
@@ -152,6 +152,34 @@ import SwiftUI
   }
 }
 
+private final class ProductionBrokerFactory: HostRuntimeBrokerFactory {
+  let permission: ContactsPermissionGateway
+  private(set) var server: NativeBrokerTransportServer?
+  init(permission: ContactsPermissionGateway) { self.permission = permission }
+  func makeBrokerServer(coreWakeHandler: @escaping @Sendable (WakeWordDetectedEvent) -> Void,
+                        localWakeHandler: @escaping @Sendable (WakeWordDetectedEvent) -> Void) throws -> HostRuntimeBrokerServer {
+    let broker = NativeCapabilityBroker(permission: permission, wakeWordDetector: SoundAnalysisWakeWordDetectorGateway(),
+      wakeWordEventHandler: coreWakeHandler, wakeWordLocalEventHandler: localWakeHandler)
+    let value = try NativeBrokerTransportServer(broker: broker); server = value; return value
+  }
+}
+
+private final class ProductionProcessFactory: HostRuntimeProcessFactory {
+  private weak var brokerFactory: ProductionBrokerFactory?
+  init(brokerFactory: ProductionBrokerFactory) { self.brokerFactory = brokerFactory }
+  func makeProcess(configuration: HostRuntimeConfiguration) throws -> HostRuntimeProcess {
+    let process = Process(); try process.configure(configuration: configuration)
+    var environment = configuration.environment
+    if let broker = brokerFactory?.server {
+      environment["CAUCO_NATIVE_BROKER_SOCKET"] = broker.socketURL.path
+      environment["CAUCO_NATIVE_BROKER_TOKEN"] = broker.token
+    }
+    process.environment = environment
+    process.standardError = Pipe(); process.standardOutput = Pipe()
+    return process
+  }
+}
+
 @MainActor final class HostModel: ObservableObject {
   @Published var coreStatus = "stopped"
   @Published var contacts = "not requested"
@@ -165,11 +193,7 @@ import SwiftUI
   let coreURL = URL(string: "http://127.0.0.1:8765")!
   private let permission = NativeContactsPermissionGateway()
   private let calendarPermission = NativeCalendarPermissionGateway()
-  private var process: Process?
-  private var brokerServer: NativeBrokerTransportServer?
-  private var wakeEventTransport: CaucoWakeEventTransport?
-  private let lifecycle = CoreLifecycleRules()
-  private let processTerminator = OwnedCoreProcessTerminator()
+  private var runtime: HostRuntime?
   private let launchAtLogin = LaunchAtLoginService()
 
   init() {
@@ -180,10 +204,6 @@ import SwiftUI
   }
   func setLaunchAtLogin(_ enabled: Bool) {
     launchAtLoginStatus = enabled ? launchAtLogin.enable() : launchAtLogin.disable()
-  }
-  deinit {
-    if let process { _ = processTerminator.stop(process) }
-    brokerServer?.stop()
   }
   func refreshContacts() { contacts = String(describing: permission.authorizationState()) }
   func requestContacts() {
@@ -246,163 +266,47 @@ import SwiftUI
     diagnostic = "Repository configuration cleared."
   }
   func startCore() {
-    guard lifecycle.canStart(ownedProcessExists: process != nil) else {
-      diagnostic = "Core is already owned by this host."
-      return
-    }
     do {
       let resolved = try RepositoryConfiguration.resolve(
         workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
       let configuration = CoreLaunchConfiguration(
         executable: resolved.executable, repository: resolved.repository)
-      let eventPath = FileManager.default.temporaryDirectory.appendingPathComponent("cauco-wake-events-\(UUID().uuidString).sock")
-      let eventTransport = CaucoWakeEventTransport(socketURL: eventPath)
-      let brokerServer = try NativeBrokerTransportServer(
-        broker: NativeCapabilityBroker(permission: permission, wakeWordDetector: SoundAnalysisWakeWordDetectorGateway(), wakeWordEventHandler: eventTransport.send))
-      try brokerServer.start()
-      self.brokerServer = brokerServer
-      self.wakeEventTransport = eventTransport
-      let p = Process()
-      p.executableURL = configuration.executable
-      p.arguments = configuration.arguments
-      p.currentDirectoryURL = resolved.repository
-      var environment = ProcessInfo.processInfo.environment
-      environment["CAUCO_NATIVE_BROKER_SOCKET"] = brokerServer.socketURL.path
-      environment["CAUCO_NATIVE_BROKER_TOKEN"] = brokerServer.token
-      environment["CAUCO_WAKE_EVENT_SOCKET"] = eventPath.path
-      p.environment = environment
-      let stderr = Pipe()
-      let stdout = Pipe()
-      p.standardError = stderr
-      p.standardOutput = stdout
-      p.terminationHandler = { [weak self, weak p] terminated in
-        let errorText =
-          String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let outputText =
-          String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        Task { @MainActor [weak self, weak p] in
-          guard let self, let p, self.process === p else { return }
-          self.launchDiagnostics?.running = false
-          self.launchDiagnostics?.terminationReason =
-            terminated.terminationReason == .exit ? "exit" : "uncaughtSignal"
-          self.launchDiagnostics?.terminationStatus = terminated.terminationStatus
-          self.launchDiagnostics?.exitedBeforeHealth = self.coreStatus != "online"
-          self.launchDiagnostics?.stderrTail = boundedDiagnosticTail(errorText, maxLines: 30)
-          self.launchDiagnostics?.stdoutTail = boundedDiagnosticTail(outputText, maxLines: 10)
-          let previousStatus = self.coreStatus
-          self.hasOwnedProcess = false
-          self.process = nil
-          self.brokerServer?.stop()
-          self.brokerServer = nil
-          self.coreStatus = "unavailable"
-          self.launchDiagnostics?.lifecycleState = .unavailable
-
-          if previousStatus == "starting" {
-            self.diagnostic =
-              "Core process exited before becoming healthy (exit code \(terminated.terminationStatus))."
-          } else {
-            self.diagnostic =
-              "Core process exited unexpectedly (exit code \(terminated.terminationStatus))."
-          }
-        }
+      let runtimeConfiguration = HostRuntimeConfiguration(executable: configuration.executable, arguments: configuration.arguments,
+        workingDirectory: resolved.repository, environment: ProcessInfo.processInfo.environment,
+        coreBaseURL: configuration.url)
+      if runtime == nil {
+        let brokerFactory = ProductionBrokerFactory(permission: permission)
+        runtime = HostRuntime(configuration: runtimeConfiguration,
+          processFactory: ProductionProcessFactory(brokerFactory: brokerFactory), brokerFactory: brokerFactory,
+          updateHandler: { [weak self] update in self?.applyRuntimeUpdate(update) })
       }
-      try p.run()
-      process = p
-      hasOwnedProcess = true
-      coreStatus = "starting"
-      launchDiagnostics = CoreLaunchDiagnosticSnapshot(
-        process: p, configuration: configuration, state: .starting)
-      diagnostic = "Core starting; waiting for localhost health."
-      Task { await waitForHealth(configuration.url, process: p) }
+      runtime?.start()
     } catch RepositoryResolutionError.unconfigured {
-      brokerServer?.stop()
-      brokerServer = nil
-      process = nil
       coreStatus = "stopped"
       diagnostic = "Select the Cauco repository before starting Core."
     } catch {
-      brokerServer?.stop()
-      brokerServer = nil
-      process = nil
-      hasOwnedProcess = false
       coreStatus = "unavailable"
       diagnostic = boundedDiagnostic("Unable to start Core: \(error.localizedDescription)")
     }
   }
-  private func waitForHealth(_ url: URL, process: Process) async {
-    let policy = CoreHealthPolicy()
-    let started = Date()
-    while process.isRunning {
-      var request = URLRequest(url: url.appendingPathComponent("health"))
-      request.timeoutInterval = 1.0
-      var healthy = false
-      if let (data, response) = try? await URLSession.shared.data(for: request),
-        let http = response as? HTTPURLResponse, http.statusCode == 200,
-        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-        object["status"] as? String == "ok"
-      {
-        healthy = true
-      }
-      if self.process === process {
-        launchDiagnostics?.running = process.isRunning
-        launchDiagnostics?.latestHealthCheck =
-          healthy ? "HTTP 200 status=ok" : "retry: endpoint not ready"
-      }
-      let elapsed = Int(Date().timeIntervalSince(started) * 1000)
-      switch policy.nextResult(
-        processRunning: process.isRunning, elapsedMilliseconds: elapsed, probeHealthy: healthy)
-      {
-      case .healthy:
-        if self.process === process, process.isRunning {
-          coreStatus = "online"
-          launchDiagnostics?.lifecycleState = .online
-          diagnostic = "Core is online on localhost."
-        }
-        return
-      case .processExited: return
-      case .timedOut:
-        if self.process === process, process.isRunning {
-          coreStatus = "unavailable"
-          launchDiagnostics?.lifecycleState = .unavailable
-          diagnostic = "Process is still running but the health endpoint never became ready."
-        }
-        return
-      case .retry: try? await Task.sleep(for: .milliseconds(policy.retryMilliseconds))
-      }
-    }
-    if self.process === process, coreStatus == "starting" {
-      coreStatus = "unavailable"
-      launchDiagnostics?.lifecycleState = .unavailable
-      hasOwnedProcess = false
-      self.process = nil
-      diagnostic = "Core process exited before becoming healthy."
+  private func applyRuntimeUpdate(_ update: HostRuntimeUpdate) {
+    switch update {
+    case .starting: coreStatus = "starting"; diagnostic = "Core starting; waiting for localhost health."
+    case .brokerStarted: break
+    case .processStarted(let snapshot): launchDiagnostics = snapshot; hasOwnedProcess = true
+    case .healthCheck(let snapshot, _): launchDiagnostics = snapshot
+    case .healthy(let snapshot): launchDiagnostics = snapshot; coreStatus = "online"; diagnostic = "Core is online on localhost."
+    case .processExited(let snapshot, _, let status): launchDiagnostics = snapshot; hasOwnedProcess = false; coreStatus = "unavailable"; diagnostic = "Core process exited unexpectedly (exit code \(status))."
+    case .failed(let message): hasOwnedProcess = false; coreStatus = "unavailable"; diagnostic = message
+    case .stopped: hasOwnedProcess = false; coreStatus = "stopped"; diagnostic = "Owned Core process stopped."
     }
   }
   func stopCore() {
-    guard let p = process, lifecycle.canStop(ownedProcessExists: true) else { return }
-    let result = processTerminator.stop(p)
-    brokerServer?.stop()
-    brokerServer = nil
-    if result == .stillRunning {
-      coreStatus = "unavailable"
-      launchDiagnostics?.lifecycleState = .unavailable
-      diagnostic = "Owned Core process did not stop; Host retained process ownership."
-    } else {
-      process = nil
-      hasOwnedProcess = false
-      coreStatus = "stopped"
-      launchDiagnostics?.running = false
-      launchDiagnostics?.lifecycleState = .stopped
-      diagnostic = "Owned Core process stopped."
-    }
+    runtime?.stop()
   }
 
   func shutdownForHostTermination() {
-    if let process { _ = processTerminator.stop(process) }
-    brokerServer?.stop()
-    brokerServer = nil
-    process = nil
-    hasOwnedProcess = false
+    runtime?.shutdown()
   }
   func openDashboard() { NSWorkspace.shared.open(coreURL) }
 }
