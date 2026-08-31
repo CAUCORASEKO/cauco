@@ -42,8 +42,14 @@ public protocol HostRuntimeProcessFactory: AnyObject {
   func makeProcess(configuration: HostRuntimeConfiguration) throws -> OwnedCoreProcess
 }
 
+public protocol HostRuntimeBrokerServer: AnyObject {
+  func start() throws
+  func stop()
+}
+
 public protocol HostRuntimeBrokerFactory: AnyObject {
   func makeBrokerServer(
+    coreWakeHandler: @escaping @Sendable (WakeWordDetectedEvent) -> Void,
     localWakeHandler: @escaping @Sendable (WakeWordDetectedEvent) -> Void
-  ) throws -> NativeBrokerTransportServer
+  ) throws -> HostRuntimeBrokerServer
 }

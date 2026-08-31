@@ -7,7 +7,7 @@ public struct NativeBrokerTransportEnvelope: Codable, Sendable {
   public let request: NativeCapabilityRequest
 }
 
-public final class NativeBrokerTransportServer: @unchecked Sendable {
+public final class NativeBrokerTransportServer: @unchecked Sendable, HostRuntimeBrokerServer {
   public static let maxRequestBytes = 16 * 1024
   public static let maxResponseBytes = 32 * 1024
 
