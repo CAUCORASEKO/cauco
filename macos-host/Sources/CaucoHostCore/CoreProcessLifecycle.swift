@@ -1,7 +1,13 @@
 import Darwin
 import Foundation
 
-public protocol OwnedCoreProcess: AnyObject {
+public protocol CoreProcessDiagnostics: AnyObject {
+  var isRunning: Bool { get }
+  var processIdentifier: Int32 { get }
+  var diagnosticWorkingDirectory: URL? { get }
+}
+
+public protocol OwnedCoreProcess: CoreProcessDiagnostics {
   var isRunning: Bool { get }
   var processIdentifier: Int32 { get }
   func terminate()
@@ -9,6 +15,10 @@ public protocol OwnedCoreProcess: AnyObject {
 }
 
 extension Process: OwnedCoreProcess {}
+
+extension Process {
+  public var diagnosticWorkingDirectory: URL? { currentDirectoryURL }
+}
 
 public enum OwnedCoreTerminationResult: Equatable, Sendable {
   case alreadyExited

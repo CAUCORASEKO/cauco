@@ -268,13 +268,13 @@ public struct CoreLaunchDiagnosticSnapshot: Equatable, Sendable {
   public var latestHealthCheck: String
 
   public init(
-    process: Process, configuration: CoreLaunchConfiguration, state: CoreLifecycleState,
+    process: CoreProcessDiagnostics, configuration: CoreLaunchConfiguration, state: CoreLifecycleState,
     launchedAt: Date = Date()
   ) {
     self.pid = process.processIdentifier
     self.running = process.isRunning
     self.executable = configuration.executable
-    self.workingDirectory = process.currentDirectoryURL ?? URL(fileURLWithPath: "")
+    self.workingDirectory = process.diagnosticWorkingDirectory ?? URL(fileURLWithPath: "")
     self.arguments = configuration.arguments
     self.launchedAt = launchedAt
     self.lifecycleState = state

@@ -788,6 +788,7 @@ private final class FakeOwnedCoreProcess: OwnedCoreProcess {
   private(set) var terminateCalls = 0
   private(set) var waitCalls = 0
   let processIdentifier: Int32
+  var diagnosticWorkingDirectory: URL? = nil
 
   init(pid: Int32) { processIdentifier = pid }
 
