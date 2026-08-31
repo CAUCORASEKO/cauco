@@ -80,6 +80,31 @@ class ReasoningOrchestrationService:
             explanation="Reasoning completed as an advisory result; no execution was performed.",
         )
 
+    def advisory_response(self, request: ReasoningRequest) -> ReasoningOutcome:
+        """Explicitly request provider text without changing planning semantics."""
+        try:
+            result = self.reasoning_service.reason(request)
+        except Exception:
+            logger.exception("Reasoning provider failed during advisory response")
+            return ReasoningOutcome(
+                requirement=ReasoningRequirement.REASONING_REQUIRED,
+                reasoning_invoked=True,
+                explanation="Advisory reasoning was unavailable; no execution was performed.",
+            )
+        if not result.reasoning_performed or not result.text.strip():
+            return ReasoningOutcome(
+                requirement=ReasoningRequirement.REASONING_REQUIRED,
+                reasoning_invoked=True,
+                result=result,
+                explanation="Advisory reasoning was unavailable; no execution was performed.",
+            )
+        return ReasoningOutcome(
+            requirement=ReasoningRequirement.REASONING_REQUIRED,
+            reasoning_invoked=True,
+            result=result,
+            explanation="Advisory reasoning completed; no execution was performed.",
+        )
+
     def _validate(
         self, proposal: ReasoningProposal | None
     ) -> ValidatedReasoningProposal | None:

@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor final class CaucoHostAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   weak var model: HostModel?
   private var windowController: NSWindowController?
+  private var conversationController: NSWindowController?
   private var terminationSignalSources: [DispatchSourceSignal] = []
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -49,9 +50,34 @@ import SwiftUI
     NSApplication.shared.activate(ignoringOtherApps: true)
   }
 
+  func showConversation() {
+    NSApplication.shared.setActivationPolicy(.regular)
+    if conversationController == nil {
+      let content = NSHostingController(rootView: ConversationView(coreURL: model?.coreURL ?? URL(string: "http://127.0.0.1:8765")!))
+      let window = NSWindow(contentViewController: content)
+      window.title = "Cauco Conversation"
+      window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+      window.setContentSize(NSSize(width: 480, height: 560))
+      window.center()
+      window.isReleasedWhenClosed = false
+      window.restorationClass = nil
+      window.delegate = self
+      conversationController = NSWindowController(window: window)
+    }
+    conversationController?.showWindow(nil)
+    conversationController?.window?.makeKeyAndOrderFront(nil)
+    NSApplication.shared.activate(ignoringOtherApps: true)
+  }
+
   func windowWillClose(_ notification: Notification) {
-    guard notification.object as? NSWindow === windowController?.window else { return }
-    NSApplication.shared.setActivationPolicy(.accessory)
+    guard notification.object as? NSWindow === windowController?.window ||
+      notification.object as? NSWindow === conversationController?.window else { return }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      let settingsVisible = self.windowController?.window?.isVisible == true
+      let conversationVisible = self.conversationController?.window?.isVisible == true
+      if !settingsVisible && !conversationVisible { NSApplication.shared.setActivationPolicy(.accessory) }
+    }
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -95,6 +121,7 @@ import SwiftUI
       Button("Open Cauco") {
         showCauco()
       }
+      Button("Open Conversation") { appDelegate.showConversation() }
       Divider()
       Text("Status: \(model.coreStatus == "online" ? "Running" : model.coreStatus.capitalized)")
       Toggle("Launch at Login", isOn: Binding(

@@ -20,6 +20,7 @@ from cauco_core.api.agent_routes import (
     plan_response,
 )
 from cauco_core.reasoning import ReasoningAwarePlanningOutcome
+from cauco_reasoning import ReasoningRequest
 
 router = APIRouter(prefix="/api/reasoning", tags=["reasoning"])
 
@@ -89,6 +90,80 @@ class ReasoningAwarePlanningResponse(BaseModel):
     model: str | None
     explanation: str
     planning: ReasoningPlanningDataResponse
+
+
+class ConversationResponse(BaseModel):
+    message: str
+    planning_status: str
+    plan: AgentPlanResponse | None
+    reasoning_invoked: bool
+    proposal_only: bool = True
+    execution_performed: bool = False
+    review_approved: bool = False
+    runtime_started: bool = False
+
+
+class ConversationRequest(ReasoningPlanRequest):
+    use_reasoning: StrictBool = True
+
+
+@router.post("/conversation/respond", response_model=ConversationResponse)
+def respond_to_conversation(
+    payload: ConversationRequest,
+    request: Request,
+) -> ConversationResponse:
+    context_request = AgentContextRequest(
+        instruction=payload.instruction,
+        intent=payload.intent,
+        preferred_agent_id=payload.preferred_agent_id,
+        include_context=payload.include_context,
+        max_context_items=payload.max_context_items,
+        max_excerpt_chars=payload.max_excerpt_chars,
+        allow_execution=False,
+        timezone=payload.timezone,
+        calendar_reference=payload.calendar_reference,
+        default_event_duration_minutes=payload.default_event_duration_minutes,
+        mail_account_reference=payload.mail_account_reference,
+        mailbox_reference=payload.mailbox_reference,
+    )
+    try:
+        outcome = request.app.state.reasoning_aware_planning_service.plan(
+            context_request, use_reasoning=False
+        )
+        planning = outcome.planning
+        if planning.plan is not None:
+            plan = plan_response(planning.plan)
+            message = plan.objective
+            if plan.steps:
+                message += "\n" + "\n".join(
+                    f"{index}. {step.description}"
+                    for index, step in enumerate(plan.steps, start=1)
+                )
+            return ConversationResponse(
+                message=message,
+                planning_status="planned",
+                plan=plan,
+                reasoning_invoked=False,
+            )
+        if not payload.use_reasoning:
+            raise HTTPException(status_code=503, detail="No advisory conversation provider is enabled.")
+        advisory = request.app.state.reasoning_orchestration_service.advisory_response(
+            ReasoningRequest(instruction=payload.instruction, agent_id=payload.preferred_agent_id)
+        )
+        if advisory.result is None or not advisory.result.text.strip():
+            raise HTTPException(status_code=503, detail="Advisory conversation is unavailable; no action was taken.")
+        return ConversationResponse(
+            message=advisory.result.text.strip(),
+            planning_status="no_match",
+            plan=None,
+            reasoning_invoked=advisory.reasoning_invoked,
+        )
+    except HTTPException:
+        raise
+    except UnknownPreferredAgentError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @router.post("/plan", response_model=ReasoningAwarePlanningResponse)
