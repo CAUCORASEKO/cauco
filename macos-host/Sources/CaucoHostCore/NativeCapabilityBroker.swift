@@ -21,6 +21,7 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
     mailDrafts: MailDraftGateway? = nil,
     wakeWordDetector: WakeWordDetectorGateway = UnavailableWakeWordDetectorGateway(),
     wakeWordEventHandler: @escaping @Sendable (WakeWordDetectedEvent) -> Void = { _ in },
+    wakeWordLocalEventHandler: @escaping @Sendable (WakeWordDetectedEvent) -> Void = { _ in },
     registry: NativeCapabilityRegistry = NativeCapabilityRegistry()
   ) {
     self.permission = permission
@@ -33,7 +34,8 @@ public final class NativeCapabilityBroker: @unchecked Sendable {
       accountReferences: mailReferences)
     self.mailDrafts = mailDrafts ?? NativeMailDraftGateway()
     self.wakeWord = WakeWordCapabilityService(
-      detector: wakeWordDetector, eventHandler: wakeWordEventHandler)
+      detector: wakeWordDetector, eventHandler: wakeWordEventHandler,
+      localEventHandler: wakeWordLocalEventHandler)
     self.registry = registry
   }
   public func handle(_ request: NativeCapabilityRequest) -> NativeCapabilityResponse {

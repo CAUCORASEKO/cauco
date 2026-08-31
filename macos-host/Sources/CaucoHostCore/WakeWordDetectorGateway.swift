@@ -109,6 +109,7 @@ public struct WakeWordCapabilitySnapshot: Equatable, Sendable {
 public final class WakeWordCapabilityService: @unchecked Sendable {
   private let detector: WakeWordDetectorGateway
   private let eventHandler: @Sendable (WakeWordDetectedEvent) -> Void
+  private let localEventHandler: @Sendable (WakeWordDetectedEvent) -> Void
   private let makeEventReference: @Sendable () -> String
   private let now: @Sendable () -> Date
   private let lock = NSLock()
@@ -121,6 +122,7 @@ public final class WakeWordCapabilityService: @unchecked Sendable {
   public init(
     detector: WakeWordDetectorGateway = UnavailableWakeWordDetectorGateway(),
     eventHandler: @escaping @Sendable (WakeWordDetectedEvent) -> Void = { _ in },
+    localEventHandler: @escaping @Sendable (WakeWordDetectedEvent) -> Void = { _ in },
     now: @escaping @Sendable () -> Date = { Date() },
     makeEventReference: @escaping @Sendable () -> String = {
       "wakeevt_\(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: ""))"
@@ -128,6 +130,7 @@ public final class WakeWordCapabilityService: @unchecked Sendable {
   ) {
     self.detector = detector
     self.eventHandler = eventHandler
+    self.localEventHandler = localEventHandler
     self.now = now
     self.makeEventReference = makeEventReference
     state = detector.availability.available ? .disabled : .unavailable
@@ -205,10 +208,11 @@ public final class WakeWordCapabilityService: @unchecked Sendable {
     // One-shot capture is stopped before any event can leave the native detector boundary.
     detector.stop()
     let confidence = signal.confidence.flatMap { (0...1).contains($0) ? $0 : nil }
-    eventHandler(
-      WakeWordDetectedEvent(
+    let event = WakeWordDetectedEvent(
         eventReference: makeEventReference(), phraseKey: detectedPhraseKey,
-        detectedAt: now(), confidence: confidence))
+        detectedAt: now(), confidence: confidence)
+    eventHandler(event)
+    localEventHandler(event)
   }
 
   private func snapshotLocked() -> WakeWordCapabilitySnapshot {
