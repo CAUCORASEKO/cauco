@@ -38,8 +38,14 @@ public enum HostRuntimeUpdate {
   case stopped
 }
 
+public protocol HostRuntimeProcess: OwnedCoreProcess {
+  func configure(configuration: HostRuntimeConfiguration) throws
+  func onTermination(_ handler: @escaping @Sendable () -> Void)
+  func launch() throws
+}
+
 public protocol HostRuntimeProcessFactory: AnyObject {
-  func makeProcess(configuration: HostRuntimeConfiguration) throws -> OwnedCoreProcess
+  func makeProcess(configuration: HostRuntimeConfiguration) throws -> HostRuntimeProcess
 }
 
 public protocol HostRuntimeBrokerServer: AnyObject {

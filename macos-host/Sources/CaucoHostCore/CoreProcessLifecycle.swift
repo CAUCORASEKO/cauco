@@ -14,7 +14,20 @@ public protocol OwnedCoreProcess: CoreProcessDiagnostics {
   func waitUntilExit()
 }
 
-extension Process: OwnedCoreProcess {}
+extension Process: HostRuntimeProcess {
+  public func configure(configuration: HostRuntimeConfiguration) throws {
+    executableURL = configuration.executable
+    arguments = configuration.arguments
+    currentDirectoryURL = configuration.workingDirectory
+    environment = configuration.environment
+  }
+
+  public func onTermination(_ handler: @escaping @Sendable () -> Void) {
+    terminationHandler = { _ in handler() }
+  }
+
+  public func launch() throws { try run() }
+}
 
 extension Process {
   public var diagnosticWorkingDirectory: URL? { currentDirectoryURL }
