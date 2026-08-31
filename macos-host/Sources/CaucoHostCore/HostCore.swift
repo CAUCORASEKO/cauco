@@ -285,6 +285,25 @@ public struct CoreLaunchDiagnosticSnapshot: Equatable, Sendable {
     self.stdoutTail = []
     self.latestHealthCheck = "not started"
   }
+
+  public init(
+    process: CoreProcessDiagnostics, executable: URL, arguments: [String],
+    workingDirectory: URL, state: CoreLifecycleState, launchedAt: Date = Date()
+  ) {
+    self.pid = process.processIdentifier
+    self.running = process.isRunning
+    self.executable = executable
+    self.workingDirectory = process.diagnosticWorkingDirectory ?? workingDirectory
+    self.arguments = arguments
+    self.launchedAt = launchedAt
+    self.lifecycleState = state
+    self.terminationReason = nil
+    self.terminationStatus = nil
+    self.exitedBeforeHealth = false
+    self.stderrTail = []
+    self.stdoutTail = []
+    self.latestHealthCheck = "not started"
+  }
 }
 
 public enum HealthProbeResult: Equatable, Sendable { case retry, healthy, processExited, timedOut }

@@ -15,6 +15,7 @@ public protocol OwnedCoreProcess: CoreProcessDiagnostics {
 }
 
 extension Process: HostRuntimeProcess {
+  public var diagnosticTerminationReason: String { terminationReason == .uncaughtSignal ? "uncaughtSignal" : "exit" }
   public func configure(configuration: HostRuntimeConfiguration) throws {
     executableURL = configuration.executable
     arguments = configuration.arguments

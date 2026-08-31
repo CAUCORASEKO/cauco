@@ -44,6 +44,11 @@ public protocol HostRuntimeProcess: OwnedCoreProcess {
   func launch() throws
 }
 
+public extension HostRuntimeProcess {
+  var terminationStatus: Int32 { 0 }
+  var diagnosticTerminationReason: String { "exit" }
+}
+
 public protocol HostRuntimeProcessFactory: AnyObject {
   func makeProcess(configuration: HostRuntimeConfiguration) throws -> HostRuntimeProcess
 }
