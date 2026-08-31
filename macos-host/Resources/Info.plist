@@ -6,4 +6,5 @@
 <key>LSMinimumSystemVersion</key><string>13.0</string><key>NSContactsUsageDescription</key><string>Cauco uses Contacts only when you explicitly ask it to find contact information.</string><key>NSCalendarsFullAccessUsageDescription</key><string>Cauco accesses your calendars only when you explicitly ask it to read or manage calendar information.</string>
 <key>NSAppleEventsUsageDescription</key><string>Cauco uses macOS Automation only when you explicitly ask it to prepare content in applications such as Mail.</string>
 <key>NSMicrophoneUsageDescription</key><string>Cauco uses the microphone only when you explicitly enable local voice activation.</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>Cauco uses speech recognition only after you explicitly start a local voice turn.</string>
 </dict></plist>
