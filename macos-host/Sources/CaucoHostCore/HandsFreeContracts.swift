@@ -21,6 +21,7 @@ public enum NativeHandsFreeStateMachine {
          (.thinking, .speaking),
          (.speaking, .rearming),
          (.rearming, .waitingForWake),
+         (.waitingForWake, .disabled),
          (_, .error),
          (.wakeDetected, .disabled), (.requestingSpeechPermission, .disabled),
          (.listening, .disabled), (.transcribing, .disabled), (.thinking, .disabled),
