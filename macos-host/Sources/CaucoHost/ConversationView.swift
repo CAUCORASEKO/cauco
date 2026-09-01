@@ -36,10 +36,23 @@ struct URLSessionConversationTransport: ConversationTransport {
     request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try JSONSerialization.data(withJSONObject: ["instruction": instruction, "use_reasoning": useReasoning])
     let (data, response) = try await URLSession.shared.data(for: request)
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+    guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+    guard (200..<300).contains(http.statusCode) else {
+      struct ErrorBody: Decodable { let detail: String? }
+      let detail = (try? JSONDecoder().decode(ErrorBody.self, from: data).detail)
+      throw ConversationTransportError.server(status: http.statusCode, detail: detail ?? "Advisory conversation is unavailable; no action was taken.")
+    }
     let payload = try JSONDecoder().decode(ConversationResponse.self, from: data)
     guard !payload.message.isEmpty else { throw URLError(.cannotParseResponse) }
     return payload.message
+  }
+}
+
+enum ConversationTransportError: LocalizedError {
+  case server(status: Int, detail: String)
+  var errorDescription: String? {
+    if case let .server(_, detail) = self { return detail }
+    return nil
   }
 }
 

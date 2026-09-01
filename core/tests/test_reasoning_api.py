@@ -217,15 +217,50 @@ def test_conversation_uses_deterministic_plan_without_reasoning(
     assert payload["runtime_started"] is False
 
 
-def test_conversation_no_match_without_provider_fails_clearly(
+@pytest.mark.parametrize(
+    "instruction",
+    [
+        "What can you do?",
+        "What you can do",
+        "WHAT DO YOU DO!",
+        "What can Cauco do?",
+        "How can you help me?",
+        "  what can you help me with...  ",
+    ],
+)
+def test_conversation_meta_variants_use_deterministic_fallback_without_provider(
     reasoning_client: TestClient,
+    instruction: str,
 ) -> None:
     response = reasoning_client.post(
         "/api/reasoning/conversation/respond",
-        json={"instruction": "What can you do?", "use_reasoning": False},
+        json={"instruction": instruction, "use_reasoning": False},
     )
-    assert response.status_code == 503
-    assert response.json()["detail"] == "No advisory conversation provider is enabled."
+    assert response.status_code == 200
+    payload = response.json()
+    assert "advisory" in payload["message"]
+    assert payload["planning_status"] == "no_match"
+    assert payload["reasoning_invoked"] is False
+    assert payload["proposal_only"] is True
+    assert payload["execution_performed"] is False
+    assert payload["review_approved"] is False
+    assert payload["runtime_started"] is False
+
+
+@pytest.mark.parametrize(
+    "instruction",
+    ["Check what I can do on my calendar tomorrow", "What can you do with my calendar tomorrow?"],
+)
+def test_operational_requests_do_not_use_meta_fallback(
+    reasoning_client: TestClient, instruction: str
+) -> None:
+    response = reasoning_client.post(
+        "/api/reasoning/conversation/respond",
+        json={"instruction": instruction, "use_reasoning": False},
+    )
+    assert response.status_code == 200
+    assert response.json()["planning_status"] == "planned"
+    assert response.json()["message"] != "Cauco can help plan and explain tasks in an advisory way. It does not execute actions or change your system from this conversation."
 
 
 def test_conversation_no_match_uses_advisory_reasoning_without_execution(

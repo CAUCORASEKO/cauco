@@ -65,7 +65,7 @@ import Foundation
     transition(to: .requestingSpeechPermission)
     transcriber.start(locale: Locale(identifier: locale), onTranscript: { [weak self] text in
       Task { @MainActor [weak self] in self?.transcript(text, token: turnToken) }
-    }, onError: { [weak self] _ in
+    }, onError: { [weak self] error in
       Task { @MainActor [weak self] in self?.fail(token: turnToken) }
     })
     transition(to: .listening)
@@ -92,7 +92,7 @@ import Foundation
       transition(to: .speaking); presentation.updateHandsFree(state: .speaking, transcript: nil, response: value)
       synthesizer.speak(value, locale: Locale(identifier: locale), onComplete: { [weak self] in
         Task { @MainActor [weak self] in self?.speechFinished(token: token) }
-      }, onError: { [weak self] _ in
+      }, onError: { [weak self] error in
         Task { @MainActor [weak self] in self?.fail(token: token) }
       })
     }

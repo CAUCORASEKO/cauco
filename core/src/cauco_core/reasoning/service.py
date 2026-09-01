@@ -31,6 +31,7 @@ class ReasoningOutcome:
     mutation_performed: bool = False
     proposal: ReasoningProposal | None = None
     validated_proposal: ValidatedReasoningProposal | None = None
+    provider_failed: bool = False
 
 
 class ReasoningOrchestrationService:
@@ -90,6 +91,7 @@ class ReasoningOrchestrationService:
                 requirement=ReasoningRequirement.REASONING_REQUIRED,
                 reasoning_invoked=True,
                 explanation="Advisory reasoning was unavailable; no execution was performed.",
+                provider_failed=True,
             )
         if not result.reasoning_performed or not result.text.strip():
             return ReasoningOutcome(

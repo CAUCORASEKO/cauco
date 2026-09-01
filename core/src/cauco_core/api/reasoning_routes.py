@@ -107,6 +107,28 @@ class ConversationRequest(ReasoningPlanRequest):
     use_reasoning: StrictBool = True
 
 
+def _deterministic_conversation_fallback(instruction: str) -> str | None:
+    normalized = " ".join(instruction.casefold().split())
+    normalized = normalized.replace("’", "'").rstrip("?.!,;:")
+    meta_questions = {
+        "what can you do",
+        "what you can do",
+        "what do you do",
+        "what are you able to do",
+        "what can cauco do",
+        "what does cauco do",
+        "tell me what you can do",
+        "how can you help me",
+        "what can you help me with",
+    }
+    if normalized in meta_questions:
+        return (
+            "Cauco can help plan and explain tasks in an advisory way. "
+            "It does not execute actions or change your system from this conversation."
+        )
+    return None
+
+
 @router.post("/conversation/respond", response_model=ConversationResponse)
 def respond_to_conversation(
     payload: ConversationRequest,
@@ -146,11 +168,27 @@ def respond_to_conversation(
                 reasoning_invoked=False,
             )
         if not payload.use_reasoning:
+            fallback = _deterministic_conversation_fallback(payload.instruction)
+            if fallback is not None:
+                return ConversationResponse(
+                    message=fallback,
+                    planning_status="no_match",
+                    plan=None,
+                    reasoning_invoked=False,
+                )
             raise HTTPException(status_code=503, detail="No advisory conversation provider is enabled.")
         advisory = request.app.state.reasoning_orchestration_service.advisory_response(
             ReasoningRequest(instruction=payload.instruction, agent_id=payload.preferred_agent_id)
         )
         if advisory.result is None or not advisory.result.text.strip():
+            fallback = _deterministic_conversation_fallback(payload.instruction)
+            if fallback is not None and not advisory.provider_failed and request.app.state.settings.reasoning_provider == "noop":
+                return ConversationResponse(
+                    message=fallback,
+                    planning_status="no_match",
+                    plan=None,
+                    reasoning_invoked=False,
+                )
             raise HTTPException(status_code=503, detail="Advisory conversation is unavailable; no action was taken.")
         return ConversationResponse(
             message=advisory.result.text.strip(),
