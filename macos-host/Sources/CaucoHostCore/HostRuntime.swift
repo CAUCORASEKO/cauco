@@ -38,7 +38,6 @@ import Foundation
         coreWakeHandler: transport.send, localWakeHandler: localWakeHandler)
       try server.start(); broker = server; wakeTransport = transport; updateHandler(.brokerStarted)
       let child = try processFactory.makeProcess(configuration: configuration)
-      try child.configure(configuration: configuration)
       child.onTermination { [weak self] in
         Task { @MainActor [weak self] in self?.terminated(token: token) }
       }
