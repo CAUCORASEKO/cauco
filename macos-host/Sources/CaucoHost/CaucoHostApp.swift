@@ -70,6 +70,13 @@ import SwiftUI
     NSApplication.shared.activate(ignoringOtherApps: true)
   }
 
+  func configureHandsFree(for model: HostModel) {
+    model.handsFreeService = HostHandsFreeService(
+      presentation: model.conversationPresentation,
+      conversation: model.conversationInteraction,
+      showConversation: { [weak self] in self?.showConversation() })
+  }
+
   func windowWillClose(_ notification: Notification) {
     guard notification.object as? NSWindow === windowController?.window ||
       notification.object as? NSWindow === conversationController?.window else { return }
@@ -114,6 +121,7 @@ import SwiftUI
     let model = HostModel()
     _model = StateObject(wrappedValue: model)
     appDelegate.model = model
+    appDelegate.configureHandsFree(for: model)
     model.startCore()
   }
 
@@ -194,6 +202,7 @@ private final class ProductionProcessFactory: HostRuntimeProcessFactory {
   let coreURL = URL(string: "http://127.0.0.1:8765")!
   let conversationPresentation = ConversationPresentationModel()
   lazy var conversationInteraction = ConversationInteractionController(coreURL: coreURL, presentation: conversationPresentation)
+  var handsFreeService: HostHandsFreeService?
   private let permission = NativeContactsPermissionGateway()
   private let calendarPermission = NativeCalendarPermissionGateway()
   private var runtime: HostRuntime?

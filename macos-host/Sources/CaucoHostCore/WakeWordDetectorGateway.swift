@@ -84,6 +84,9 @@ public struct WakeWordDetectedEvent: Equatable, Sendable {
   public let phraseKey: String
   public let detectedAt: Date
   public let confidence: Double?
+  public init(eventReference: String, phraseKey: String, detectedAt: Date, confidence: Double?) {
+    self.eventReference = eventReference; self.phraseKey = phraseKey; self.detectedAt = detectedAt; self.confidence = confidence
+  }
 }
 
 public struct WakeWordCapabilitySnapshot: Equatable, Sendable {

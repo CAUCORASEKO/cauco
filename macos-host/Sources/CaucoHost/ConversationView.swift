@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import CaucoHostCore
 
 @MainActor final class ConversationPresentationModel: ObservableObject {
   enum State: String { case idle, thinking, complete, error }
@@ -42,7 +43,7 @@ struct URLSessionConversationTransport: ConversationTransport {
   }
 }
 
-@MainActor final class ConversationInteractionController {
+@MainActor final class ConversationInteractionController: ConversationResponding {
   let presentation: ConversationPresentationModel
   private let transport: ConversationTransport
   private var requestTask: Task<Void, Never>?
@@ -54,8 +55,15 @@ struct URLSessionConversationTransport: ConversationTransport {
   convenience init(coreURL: URL, presentation: ConversationPresentationModel) {
     self.init(presentation: presentation, transport: URLSessionConversationTransport(coreURL: coreURL))
   }
-  func submit() {
-    let value = presentation.inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+  func submit() { submit(instruction: presentation.inputText, completion: nil) }
+
+  func respond(instruction: String, useReasoning: Bool, completion: @escaping (Result<String, Error>) -> Void) {
+    guard useReasoning else { completion(.failure(URLError(.badURL))); return }
+    submit(instruction: instruction, completion: completion)
+  }
+
+  private func submit(instruction: String, completion: ((Result<String, Error>) -> Void)?) {
+    let value = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !value.isEmpty, presentation.state != .thinking else { return }
     requestTask?.cancel(); generation += 1; let token = generation
     presentation.state = .thinking; presentation.response = ""; presentation.error = ""
@@ -64,9 +72,11 @@ struct URLSessionConversationTransport: ConversationTransport {
         let response = try await self?.transport.respond(instruction: value, useReasoning: true)
         guard let self, let response, self.generation == token, !Task.isCancelled else { return }
         self.presentation.inputText = ""; self.presentation.response = response; self.presentation.state = .complete
+        completion?(.success(response))
       } catch {
         guard let self, self.generation == token, !Task.isCancelled else { return }
         self.presentation.error = "Advisory planning is unavailable. No action was taken."; self.presentation.state = .error
+        completion?(.failure(error))
       }
     }
   }
