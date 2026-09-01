@@ -53,7 +53,8 @@ import SwiftUI
   func showConversation() {
     NSApplication.shared.setActivationPolicy(.regular)
     if conversationController == nil {
-      let content = NSHostingController(rootView: ConversationView(coreURL: model?.coreURL ?? URL(string: "http://127.0.0.1:8765")!))
+      guard let model else { return }
+      let content = NSHostingController(rootView: ConversationView(presentation: model.conversationPresentation, controller: model.conversationInteraction))
       let window = NSWindow(contentViewController: content)
       window.title = "Cauco Conversation"
       window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -191,6 +192,8 @@ private final class ProductionProcessFactory: HostRuntimeProcessFactory {
   @Published private(set) var hasOwnedProcess = false
   @Published var launchDiagnostics: CoreLaunchDiagnosticSnapshot?
   let coreURL = URL(string: "http://127.0.0.1:8765")!
+  let conversationPresentation = ConversationPresentationModel()
+  lazy var conversationInteraction = ConversationInteractionController(coreURL: coreURL, presentation: conversationPresentation)
   private let permission = NativeContactsPermissionGateway()
   private let calendarPermission = NativeCalendarPermissionGateway()
   private var runtime: HostRuntime?

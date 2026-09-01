@@ -12,5 +12,6 @@ let package = Package(
         .target(name: "CaucoHostCore"),
         .executableTarget(name: "CaucoHost", dependencies: ["CaucoHostCore"]),
         .testTarget(name: "CaucoHostCoreTests", dependencies: ["CaucoHostCore"])
+        , .testTarget(name: "CaucoHostTests", dependencies: ["CaucoHost"])
     ]
 )
