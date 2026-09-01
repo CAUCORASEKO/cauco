@@ -202,7 +202,7 @@ private final class ProductionProcessFactory: HostRuntimeProcessFactory {
   let coreURL = URL(string: "http://127.0.0.1:8765")!
   let conversationPresentation = ConversationPresentationModel()
   lazy var conversationInteraction = ConversationInteractionController(coreURL: coreURL, presentation: conversationPresentation)
-  var handsFreeService: HostHandsFreeService?
+  @Published var handsFreeService: HostHandsFreeService?
   private let permission = NativeContactsPermissionGateway()
   private let calendarPermission = NativeCalendarPermissionGateway()
   private var runtime: HostRuntime?
@@ -359,6 +359,16 @@ struct ContentView: View {
           } else if model.launchAtLoginStatus == .failed {
             Text("macOS did not change the Launch at Login setting.").font(.caption)
           }
+        }
+      }
+      if let handsFree = model.handsFreeService {
+        GroupBox("Hands-free") {
+          VStack(alignment: .leading, spacing: 8) {
+            Toggle("Hands-free", isOn: Binding(
+              get: { handsFree.isEnabled },
+              set: { enabled in if enabled { handsFree.enable() } else { handsFree.disable() } }))
+            Text("State: \(handsFree.state.rawValue.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression).capitalized)").font(.caption).foregroundStyle(.secondary)
+          }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
         }
       }
       if let snapshot = model.launchDiagnostics {
