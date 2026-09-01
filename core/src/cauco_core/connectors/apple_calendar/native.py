@@ -42,9 +42,36 @@ class BrokerCalendarGateway:
         try: return CalendarEventSummary(**result)
         except (TypeError, ValueError) as error: raise NativeBrokerUnavailable("native calendar event invalid") from error
 
+
+class DynamicBrokerCalendarGateway:
+    """Select the authenticated broker at call time, failing closed otherwise."""
+    def __init__(self, client):
+        self.client = client
+
+    def _gateway(self):
+        return BrokerCalendarGateway(self.client) if self.client.configured else UnavailableCalendarGateway()
+
+    def authorization_state(self):
+        return self._gateway().authorization_state()
+
+    def list(self, limit):
+        return self._gateway().list(limit)
+
+    def events_range(self, start, end, limit, calendar_reference=None):
+        return self._gateway().events_range(start, end, limit, calendar_reference)
+
+    def event_get(self, reference):
+        return self._gateway().event_get(reference)
+
+    def event_create(self, **kwargs):
+        return self._gateway().event_create(**kwargs)
+
 class UnavailableCalendarGateway:
     def authorization_state(self): return PermissionState.UNAVAILABLE
+    def list(self, limit): raise NativeBrokerUnavailable("native calendar unavailable")
+    def events_range(self, start, end, limit, calendar_reference=None): raise NativeBrokerUnavailable("native calendar unavailable")
     def event_get(self, reference): raise NativeBrokerUnavailable("native calendar unavailable")
+    def event_create(self, **kwargs): raise NativeBrokerUnavailable("native calendar unavailable")
 
 class CalendarEventNotFound(Exception):
     pass

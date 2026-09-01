@@ -2,23 +2,37 @@ import sys
 from threading import Lock
 from cauco_core.connectors.models import (CapabilityDefinition, ConnectorAccessMode, ConnectorAvailability,
     ConnectorHealth, ConnectorIdentity, ConnectorPlatform, ConnectorRiskLevel)
-from .native import BrokerCalendarGateway, UnavailableCalendarGateway
+from .native import DynamicBrokerCalendarGateway, UnavailableCalendarGateway
 from .permissions import CALENDAR_PERMISSION_ID, permission_definition
 
 class AppleCalendarConnector:
     def __init__(self, gateway=None, broker_client=None):
-        self.gateway = (BrokerCalendarGateway(broker_client) if broker_client is not None and broker_client.configured
+        self._broker_client = broker_client
+        self.gateway = (DynamicBrokerCalendarGateway(broker_client) if broker_client is not None
                         else (gateway or UnavailableCalendarGateway()))
+        self._gateway_is_dynamic = broker_client is not None
         self._metadata = ConnectorIdentity("apple_calendar.local", "apple_calendar", "1.0",
-            ConnectorAvailability.AVAILABLE if sys.platform == "darwin" and isinstance(self.gateway, BrokerCalendarGateway)
-            else ConnectorAvailability.UNAVAILABLE, ConnectorHealth.UNKNOWN, ConnectorPlatform.MACOS, True,
+            ConnectorAvailability.UNAVAILABLE, ConnectorHealth.UNKNOWN, ConnectorPlatform.MACOS, True,
             application_bundle_id="com.apple.iCal", name_message_key="apple_calendar.name",
             description_message_key="apple_calendar.description",
             capability_ids=("calendar.calendars.list", "calendar.events.range", "calendar.events.get", "calendar.events.create"),
             limitations=("Status reads no calendar data.", "Event creation requires an explicit confirmed request; no background writes.",))
         self._create_lock = Lock(); self._created = {}
     @property
-    def metadata(self): return self._metadata
+    def metadata(self):
+        if not self._gateway_is_dynamic:
+            return self._metadata
+        availability = (ConnectorAvailability.AVAILABLE
+                         if sys.platform == "darwin" and self._broker_client.configured
+                         else ConnectorAvailability.UNAVAILABLE)
+        return ConnectorIdentity(
+            self._metadata.connector_id, self._metadata.provider_id, self._metadata.version,
+            availability, self._metadata.health, self._metadata.platform, self._metadata.local,
+            priority=self._metadata.priority, application_bundle_id=self._metadata.application_bundle_id,
+            name_message_key=self._metadata.name_message_key,
+            description_message_key=self._metadata.description_message_key,
+            capability_ids=self._metadata.capability_ids, limitations=self._metadata.limitations,
+            diagnostics=self._metadata.diagnostics)
     def capabilities(self):
         definitions = []
         for item in self.metadata.capability_ids:
