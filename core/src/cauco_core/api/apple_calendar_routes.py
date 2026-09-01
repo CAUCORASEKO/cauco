@@ -26,8 +26,8 @@ def connector_status(request: Request) -> dict[str, Any]:
         "method": "calendar.status.v1", "limitations": list(connector.metadata.limitations)}
 
 @router.get("/calendars")
-def list_calendars(request: Request, limit: int = Query(50, ge=1, le=50), request_id: str = Query(...), requester_id: str = Query(...), explicit_user_request: bool = True):
-    runtime_request = ConnectorRequest(request_id, "calendar.calendars.list", None, requester_id, "en", "en", "en", explicit_user_request=explicit_user_request, created_at=datetime.now().astimezone())
+def list_calendars(request: Request, limit: int = Query(50, ge=1, le=50), request_id: str = Query(...), requester_id: str = Query(...), explicit_user_request: bool = True, confirmation_request_id: str | None = Query(None)):
+    runtime_request = ConnectorRequest(request_id, "calendar.calendars.list", None, requester_id, "en", "en", "en", explicit_user_request=explicit_user_request, confirmation_request_id=confirmation_request_id, created_at=datetime.now().astimezone())
     if not request.app.state.connector_runtime.resolve(runtime_request).executable:
         raise HTTPException(status_code=403, detail="Calendar list is not eligible.")
     try: result = request.app.state.apple_calendar_connector.list_calendars(limit)
