@@ -51,3 +51,8 @@ macos-host/Resources/WakeWord/HolaCauco.mlmodelc/
 
 # Local reference repositories
 worldmonitor-main/
+
+# Local wake-model diagnostic and capture data
+wake-model/live-negative/
+wake-model/runtime-audit/
+wake-model/windowed-positive/
