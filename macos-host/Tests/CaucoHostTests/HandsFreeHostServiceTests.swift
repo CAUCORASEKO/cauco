@@ -4,6 +4,13 @@ import CaucoHostCore
 
 @MainActor
 final class HandsFreeHostServiceTests: XCTestCase {
+  func testVoiceActivationRuntimeStatusMappingIsIndependentOfPreference() {
+    XCTAssertEqual(VoiceActivationRuntimeStatus.forState(.disabled).title, "Off")
+    XCTAssertEqual(VoiceActivationRuntimeStatus.forState(.waitingForWake).detail, "Waiting for \"Hola Cauco\"")
+    XCTAssertEqual(VoiceActivationRuntimeStatus.forState(.error).title, "Error")
+    XCTAssertEqual(VoiceActivationRuntimeStatus.forState(.error).detail, "Wake listening stopped because of an error.")
+  }
+
   func testServiceIsDisabledAndSideEffectFreeByDefault() {
     let fakes = Fixtures()
     let service = fakes.service()

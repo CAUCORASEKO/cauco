@@ -17,11 +17,12 @@ public struct TemporalWakeFeatureConfiguration: Sendable, Equatable {
 public enum TemporalWakeFeatureError: Error { case empty, tooLong, invalidLength }
 
 /// Swift counterpart of wake-model/tools/train_temporal_acoustic.py.
-public struct TemporalWakeFeatureExtractor: Sendable {
+public struct TemporalWakeFeatureExtractor: @unchecked Sendable {
   public let configuration: TemporalWakeFeatureConfiguration
   private let window: [Double]
   private let melBank: [[Double]]
   private let dct: [[Double]]
+  private let dftSetup: vDSP_DFT_SetupD
 
   public init(configuration: TemporalWakeFeatureConfiguration = .init()) {
     self.configuration = configuration
@@ -44,6 +45,8 @@ public struct TemporalWakeFeatureExtractor: Sendable {
         return scale * cos(.pi * Double(k) * (Double(n) + 0.5) / Double(configuration.melBands))
       }
     }
+    guard let setup = vDSP_DFT_zop_CreateSetupD(nil, vDSP_Length(configuration.fftSize), vDSP_DFT_Direction.FORWARD) else { fatalError("Unable to create DFT setup") }
+    dftSetup = setup
   }
 
   public func extract(samples: [Double]) throws -> [Double] {
@@ -58,15 +61,13 @@ public struct TemporalWakeFeatureExtractor: Sendable {
       let start = frame * configuration.hopLength
       var real = Array(audio[start..<(start + configuration.frameLength)])
       vDSP_vmulD(real, 1, window, 1, &real, 1, vDSP_Length(configuration.frameLength))
+      real += Array(repeating: 0, count: configuration.fftSize - configuration.frameLength)
       var power = Array(repeating: 0.0, count: configuration.fftSize / 2 + 1)
-      for k in 0...configuration.fftSize / 2 {
-        var re = 0.0, im = 0.0
-        for n in 0..<configuration.frameLength {
-          let angle = -2 * Double.pi * Double(k * n) / Double(configuration.fftSize)
-          re += real[n] * cos(angle); im += real[n] * sin(angle)
-        }
-        power[k] = (re * re + im * im) / Double(configuration.fftSize)
-      }
+      var imaginary = Array(repeating: 0.0, count: configuration.fftSize)
+      var outputReal = Array(repeating: 0.0, count: configuration.fftSize)
+      var outputImaginary = Array(repeating: 0.0, count: configuration.fftSize)
+      vDSP_DFT_ExecuteD(dftSetup, real, imaginary, &outputReal, &outputImaginary)
+      for k in 0...configuration.fftSize / 2 { power[k] = (outputReal[k] * outputReal[k] + outputImaginary[k] * outputImaginary[k]) / Double(configuration.fftSize) }
       for b in 0..<configuration.melBands {
         let energy = max(zip(power, melBank[b]).reduce(0.0) { $0 + $1.0 * $1.1 }, 1e-12)
         logMel[frame][b] = log(energy)

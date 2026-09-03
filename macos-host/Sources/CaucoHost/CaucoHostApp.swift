@@ -75,6 +75,7 @@ import SwiftUI
       presentation: model.conversationPresentation,
       conversation: model.conversationInteraction,
       showConversation: { [weak self] in self?.showConversation() })
+    model.handsFreeService?.restorePersistedWakeListening()
   }
 
   func windowWillClose(_ notification: Notification) {
@@ -325,6 +326,9 @@ private final class ProductionProcessFactory: HostRuntimeProcessFactory {
 
 struct ContentView: View {
   @ObservedObject var model: HostModel
+  private func statusColor(_ tone: VoiceActivationStatusTone) -> Color {
+    switch tone { case .neutral: return .secondary; case .active: return .green; case .error: return .red }
+  }
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text("Cauco Host").font(.largeTitle.bold())
@@ -362,12 +366,23 @@ struct ContentView: View {
         }
       }
       if let handsFree = model.handsFreeService {
-        GroupBox("Hands-free") {
+        GroupBox("Voice activation") {
           VStack(alignment: .leading, spacing: 8) {
-            Toggle("Hands-free", isOn: Binding(
-              get: { handsFree.isEnabled },
-              set: { enabled in if enabled { handsFree.enable() } else { handsFree.disable() } }))
-            Text("State: \(handsFree.state.rawValue.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression).capitalized)").font(.caption).foregroundStyle(.secondary)
+            Toggle("Listen for \"Hola Cauco\"", isOn: Binding(
+              get: { handsFree.isWakeListeningEnabled },
+              set: { enabled in if enabled { handsFree.enableWakeListening() } else { handsFree.disableWakeListening() } }))
+              .toggleStyle(.switch)
+            let status = VoiceActivationRuntimeStatus.forState(handsFree.state)
+            VStack(alignment: .leading, spacing: 5) {
+              Text("Status").font(.headline)
+              Label(status.title, systemImage: status.symbolName).font(.body.weight(.medium)).foregroundStyle(statusColor(status.tone))
+              Text(status.detail).font(.caption).foregroundStyle(.secondary)
+            }
+            Picker("Speech language", selection: Binding(
+              get: { handsFree.speechLanguage },
+              set: { handsFree.setSpeechLanguage($0) })) {
+              ForEach(HostSpeechLanguage.allCases) { language in Text(language.title).tag(language) }
+            }
           }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
         }
       }

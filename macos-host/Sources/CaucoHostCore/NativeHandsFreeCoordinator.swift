@@ -2,7 +2,9 @@ import Foundation
 
 @MainActor public final class NativeHandsFreeCoordinator: NativeHandsFreeCoordinating {
   public private(set) var state: NativeHandsFreeState = .disabled
-  public private(set) var handsFreeEnabled = false
+  /// Whether the local wake listener is armed. This is separate from turnActive.
+  public private(set) var wakeListeningEnabled = false
+  public var handsFreeEnabled: Bool { wakeListeningEnabled }
 
   private let wake: NativeWakeListener
   private let transcriber: SpeechTranscriber
@@ -11,6 +13,7 @@ import Foundation
   private let presentation: HandsFreePresentation
   private let generation = NativeHandsFreeGeneration()
   private var locale = "en-US"
+  private var speechLocale = Locale(identifier: "es-ES")
   private var transcriptAccepted = false
   private var turnActive = false
 
@@ -28,24 +31,25 @@ import Foundation
     self.presentation = presentation
   }
 
-  public func enable(locale: String) {
-    guard !handsFreeEnabled else { return }
-    handsFreeEnabled = true; self.locale = locale; startWake()
+  public func enableWakeListening(locale: String) {
+    guard !wakeListeningEnabled else { return }
+    wakeListeningEnabled = true; self.locale = locale; startWake()
   }
+  public func setSpeechLocale(_ locale: Locale) { speechLocale = locale }
 
-  public func disable() {
-    guard handsFreeEnabled || state != .disabled else { return }
-    handsFreeEnabled = false; generation.advance(); cancelComponents(); turnActive = false; transcriptAccepted = false
+  public func disableWakeListening() {
+    guard wakeListeningEnabled || state != .disabled else { return }
+    wakeListeningEnabled = false; generation.advance(); cancelComponents(); turnActive = false; transcriptAccepted = false
     transition(to: .disabled)
   }
 
   public func shutdown() {
-    handsFreeEnabled = false; generation.advance(); cancelComponents(); turnActive = false; transcriptAccepted = false
+    wakeListeningEnabled = false; generation.advance(); cancelComponents(); turnActive = false; transcriptAccepted = false
     state = .disabled
   }
 
   private func startWake() {
-    guard handsFreeEnabled, !turnActive else { return }
+    guard wakeListeningEnabled, !turnActive else { return }
     let token = generation.current()
     do {
       try wake.start(locale: locale) { [weak self] event in
@@ -56,14 +60,14 @@ import Foundation
   }
 
   private func wakeDetected(_ event: WakeWordDetectedEvent, token: Int) {
-    guard generation.isCurrent(token), handsFreeEnabled, state == .waitingForWake, !turnActive else { return }
+    guard generation.isCurrent(token), wakeListeningEnabled, state == .waitingForWake, !turnActive else { return }
     turnActive = true; transcriptAccepted = false; generation.advance()
     let turnToken = generation.current()
     // Stop is deliberately synchronous and precedes both presentation and microphone start.
     wake.stop()
     transition(to: .wakeDetected); presentation.showConversation()
     transition(to: .requestingSpeechPermission)
-    transcriber.start(locale: Locale(identifier: locale), onTranscript: { [weak self] text in
+    transcriber.start(locale: speechLocale, onTranscript: { [weak self] text in
       Task { @MainActor [weak self] in self?.transcript(text, token: turnToken) }
     }, onError: { [weak self] error in
       Task { @MainActor [weak self] in self?.fail(token: turnToken) }
@@ -101,9 +105,14 @@ import Foundation
   private func speechFinished(token: Int) {
     guard generation.isCurrent(token), turnActive, state == .speaking else { return }
     turnActive = false; transcriptAccepted = false
-    guard handsFreeEnabled else { transition(to: .disabled); return }
+    guard wakeListeningEnabled else { transition(to: .disabled); return }
     transition(to: .rearming); generation.advance(); startWake()
   }
+
+  // Compatibility aliases keep the existing native contract stable while the
+  // product-facing meaning is now explicitly wake-listening.
+  public func enable(locale: String) { enableWakeListening(locale: locale) }
+  public func disable() { disableWakeListening() }
 
   private func fail(token: Int) {
     guard generation.isCurrent(token) else { return }

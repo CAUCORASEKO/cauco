@@ -24,4 +24,15 @@ final class TemporalWakeFeatureParityTests: XCTestCase {
     XCTAssertLessThan(errors.max() ?? .infinity, 1e-8)
     XCTAssertLessThan(errors.reduce(0, +) / Double(errors.count), 1e-9)
   }
+
+  func testDeterministicWindowBenchmark() throws {
+    let samples = (0..<16_000).map { i -> Double in
+      let t = Double(i) / 16_000
+      return 0.18 * sin(2 * Double.pi * 440 * t) + 0.07 * sin(2 * Double.pi * 997 * t + 0.31)
+    }
+    let extractor = TemporalWakeFeatureExtractor(); _ = try extractor.extract(samples: samples)
+    let started = ProcessInfo.processInfo.systemUptime
+    for _ in 0..<5 { _ = try extractor.extract(samples: samples) }
+    print("optimized 1-second feature average_ms=\((ProcessInfo.processInfo.systemUptime - started) * 200)")
+  }
 }

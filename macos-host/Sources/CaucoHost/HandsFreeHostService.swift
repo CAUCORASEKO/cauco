@@ -2,6 +2,37 @@ import CaucoHostCore
 import Foundation
 import Combine
 
+enum HostSpeechLanguage: String, CaseIterable, Identifiable {
+  case spanish = "es-ES", english = "en-US", finnish = "fi-FI"
+  var id: String { rawValue }
+  var title: String { switch self { case .spanish: return "Español"; case .english: return "English"; case .finnish: return "Suomi" } }
+}
+
+struct VoiceActivationRuntimeStatus: Equatable {
+  let title: String
+  let detail: String
+  let symbolName: String
+  let tone: VoiceActivationStatusTone
+
+  static func forState(_ state: NativeHandsFreeState) -> Self {
+    switch state {
+    case .disabled: return .init(title: "Off", detail: "Voice activation is disabled.", symbolName: "circle", tone: .neutral)
+    case .waitingForWake: return .init(title: "Listening", detail: "Waiting for \"Hola Cauco\"", symbolName: "mic", tone: .active)
+    case .wakeDetected, .requestingSpeechPermission: return .init(title: "Activating", detail: "Wake phrase detected.", symbolName: "waveform", tone: .active)
+    case .listening, .transcribing: return .init(title: "Listening to you", detail: "Speech recognition is active.", symbolName: "mic.fill", tone: .active)
+    case .thinking: return .init(title: "Thinking", detail: "Preparing a response.", symbolName: "sparkles", tone: .active)
+    case .speaking: return .init(title: "Speaking", detail: "Cauco is responding.", symbolName: "speaker.wave.2.fill", tone: .active)
+    case .rearming: return .init(title: "Rearming", detail: "Preparing wake listening.", symbolName: "arrow.clockwise", tone: .active)
+    case .error: return .init(title: "Error", detail: "Wake listening stopped because of an error.", symbolName: "exclamationmark.triangle.fill", tone: .error)
+    }
+  }
+}
+
+enum VoiceActivationStatusTone { case neutral, active, error }
+
+private let wakeListeningPreferenceKey = "cauco.voiceActivation.enabled"
+private let speechLanguagePreferenceKey = "cauco.speechLanguage"
+
 @MainActor
 final class NativeWakeListenerAdapter: NativeWakeListener {
   private let detector: SoundAnalysisWakeWordDetectorGateway
@@ -34,6 +65,8 @@ final class HostHandsFreeService: ObservableObject {
   let coordinator: NativeHandsFreeCoordinator
   @Published private(set) var state: NativeHandsFreeState = .disabled
   @Published private(set) var isEnabled = false
+  var isWakeListeningEnabled: Bool { coordinator.wakeListeningEnabled }
+  @Published private(set) var speechLanguage: HostSpeechLanguage
   init(presentation: ConversationPresentationModel, conversation: ConversationResponding, showConversation: @escaping () -> Void,
        wake: NativeWakeListener? = nil, transcriber: SpeechTranscriber? = nil,
        synthesizer: SpeechSynthesizer? = nil, handsFreePresentation: HandsFreePresentation? = nil) {
@@ -42,11 +75,21 @@ final class HostHandsFreeService: ObservableObject {
     coordinator = NativeHandsFreeCoordinator(
       wake: wake ?? NativeWakeListenerAdapter(), transcriber: transcriber ?? AppleSpeechTranscriber(), conversation: conversation,
       synthesizer: synthesizer ?? AppleSpeechSynthesizer(), presentation: hostPresentation)
+    speechLanguage = HostSpeechLanguage(rawValue: UserDefaults.standard.string(forKey: speechLanguagePreferenceKey) ?? "") ?? .spanish
+    coordinator.setSpeechLocale(Locale(identifier: speechLanguage.rawValue))
     sink.owner = self
   }
-  func enable(locale: String = "en-US") { coordinator.enable(locale: locale); isEnabled = coordinator.handsFreeEnabled; state = coordinator.state }
-  func disable() { coordinator.disable(); isEnabled = coordinator.handsFreeEnabled; state = coordinator.state }
-  func shutdown() { coordinator.shutdown(); isEnabled = coordinator.handsFreeEnabled; state = coordinator.state }
+  func restorePersistedWakeListening(locale: String = "en-US") {
+    guard UserDefaults.standard.bool(forKey: wakeListeningPreferenceKey) else { refresh(); return }
+    coordinator.enableWakeListening(locale: locale); refresh()
+  }
+  func enableWakeListening(locale: String = "en-US") { UserDefaults.standard.set(true, forKey: wakeListeningPreferenceKey); coordinator.enableWakeListening(locale: locale); refresh() }
+  func disableWakeListening() { UserDefaults.standard.set(false, forKey: wakeListeningPreferenceKey); coordinator.disableWakeListening(); refresh() }
+  func setSpeechLanguage(_ language: HostSpeechLanguage) { speechLanguage = language; UserDefaults.standard.set(language.rawValue, forKey: speechLanguagePreferenceKey); coordinator.setSpeechLocale(Locale(identifier: language.rawValue)) }
+  func enable(locale: String = "en-US") { enableWakeListening(locale: locale) }
+  func disable() { disableWakeListening() }
+  func shutdown() { coordinator.shutdown(); refresh() }
+  private func refresh() { isEnabled = coordinator.wakeListeningEnabled; state = coordinator.state; objectWillChange.send() }
 }
 
 @MainActor private final class HandsFreeStateSink {
