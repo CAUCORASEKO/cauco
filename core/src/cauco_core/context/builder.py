@@ -6,6 +6,7 @@ from cauco_core.context.analyzer import IntentAnalyzer
 from cauco_core.context.models import ContextIntent, ContextPackage
 from cauco_core.memory.engine import MemoryEngine
 from cauco_core.memory.models import MemoryKind, MemoryLayer, MemoryObjectSummary
+from cauco_core.memory.search import MemorySearch
 
 
 @dataclass(frozen=True)
@@ -77,25 +78,36 @@ class ContextBuilder:
         self,
         memory_engine: MemoryEngine,
         analyzer: IntentAnalyzer | None = None,
+        memory_search: MemorySearch | None = None,
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.memory_engine = memory_engine
         self.analyzer = analyzer or IntentAnalyzer()
+        self.memory_search = memory_search or MemorySearch(memory_engine.memory_service)
         self.clock = clock or (lambda: datetime.now(tz=UTC))
 
     def build(self, question: str) -> ContextPackage:
         normalized_question = question.strip()
         analysis = self.analyzer.analyze(normalized_question)
         rule = SELECTION_RULES[analysis.intent]
-        selected = [
+        candidates = [
             memory
             for memory in self.memory_engine.list_objects()
             if memory.kind in rule.kinds and memory.layer in rule.layers
         ]
+        try:
+            relevant_paths = {
+                result.relative_path for result in self.memory_search.search(normalized_question)
+            }
+        except Exception:
+            relevant_paths = set()
+        selected = [memory for memory in candidates if memory.relative_path in relevant_paths]
         reasoning = [self._intent_reason(analysis.intent, analysis.matched_keywords)]
         reasoning.extend(rule.reasons)
-        if not selected:
+        if candidates and not selected:
+            reasoning.append("No selected memory matched the question terms.")
+        elif not selected:
             reasoning.append("No classified memory objects matched the selection rules.")
         return ContextPackage(
             question=normalized_question,

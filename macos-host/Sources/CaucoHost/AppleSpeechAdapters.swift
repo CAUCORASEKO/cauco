@@ -1,4 +1,5 @@
 import AVFoundation
+import OSLog
 import Speech
 import CaucoHostCore
 
@@ -15,8 +16,10 @@ import CaucoHostCore
 
   // A one-shot command must not depend on Speech deciding when an open-ended
   // macOS audio request has ended. The maximum also bounds no-speech sessions.
-  private let silenceIntervalNanoseconds: UInt64 = 1_500_000_000
-  private let maximumUtteranceNanoseconds: UInt64 = 15_000_000_000
+  // Allow natural pauses inside a complete sentence while still bounding a
+  // session that receives no final result.
+  private let silenceIntervalNanoseconds: UInt64 = 2_500_000_000
+  private let maximumUtteranceNanoseconds: UInt64 = 30_000_000_000
 
   var permissionState: SpeechPermissionState {
     switch SFSpeechRecognizer.authorizationStatus() {
@@ -52,10 +55,10 @@ import CaucoHostCore
   }
 
   private func begin(locale: Locale, token: Int, onTranscript: @escaping (String) -> Void, onError: @escaping (Error) -> Void) {
-    guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.supportsOnDeviceRecognition else {
+    guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
       state = .failed; onError(VoiceFoundationError.onDeviceUnavailable); return
     }
-    let request = SFSpeechAudioBufferRecognitionRequest(); request.requiresOnDeviceRecognition = true
+    let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = true
     let engine = AVAudioEngine(); let input = engine.inputNode
     input.installTap(onBus: 0, bufferSize: 1_024, format: input.inputFormat(forBus: 0)) { [weak request] buffer, _ in request?.append(buffer) }
@@ -67,9 +70,12 @@ import CaucoHostCore
         if let result {
           let transcript = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
           if !transcript.isEmpty { self.latestTranscript = transcript; self.state = .transcribing; self.scheduleSilenceCompletion(token: token, onTranscript: onTranscript, onError: onError) }
-          if result.isFinal { self.finishTranscript(token: token, onTranscript: onTranscript) }
+          if result.isFinal { self.finishTranscript(token: token, completion: "recognitionResultFinal", onTranscript: onTranscript) }
         }
-        if let error { self.finishError(token: token, error: error, onError: onError) }
+        if let error {
+          self.logRecognitionFailure(stage: "recognitionTask.callback", error: error, locale: locale)
+          self.finishError(token: token, error: error, onError: onError)
+        }
       }
     }
     scheduleUtteranceTimeout(token: token, onTranscript: onTranscript, onError: onError)
@@ -97,21 +103,24 @@ import CaucoHostCore
 
   private func finishAfterSilence(token: Int, onTranscript: @escaping (String) -> Void, onError: @escaping (Error) -> Void) {
     guard latestTranscript.isEmpty == false else { return }
-    finishTranscript(token: token, onTranscript: onTranscript)
+    finishTranscript(token: token, completion: "silence", onTranscript: onTranscript)
   }
 
   private func finishAfterTimeout(token: Int, onTranscript: @escaping (String) -> Void, onError: @escaping (Error) -> Void) {
     if latestTranscript.isEmpty { finishError(token: token, error: VoiceFoundationError.noSpeechDetected, onError: onError) }
-    else { finishTranscript(token: token, onTranscript: onTranscript) }
+    else { finishTranscript(token: token, completion: "maximumUtterance", onTranscript: onTranscript) }
   }
 
-  private func finishTranscript(token: Int, onTranscript: @escaping (String) -> Void) {
+  private func finishTranscript(token: Int, completion: String, onTranscript: @escaping (String) -> Void) {
     guard generation == token, task != nil else { return }
     let transcript = latestTranscript
     generation += 1
     silenceTimer?.cancel(); utteranceTimer?.cancel()
     stopResources(); state = .completed
     guard !transcript.isEmpty else { return }
+    Logger(subsystem: "com.cauco.host", category: "speech").debug(
+      "speech_transcript_accepted completion=\(completion, privacy: .public) transcript=\(transcript, privacy: .public)"
+    )
     onTranscript(transcript)
   }
 
@@ -121,6 +130,16 @@ import CaucoHostCore
     silenceTimer?.cancel(); utteranceTimer?.cancel()
     stopResources(); state = .failed
     onError(error)
+  }
+
+  private func logRecognitionFailure(stage: String, error: Error, locale: Locale) {
+    let nsError = error as NSError
+    let speechAuthorization = SFSpeechRecognizer.authorizationStatus().rawValue
+    let audioAuthorization = AVCaptureDevice.authorizationStatus(for: .audio).rawValue
+    let audioEngineRunning = audioEngine?.isRunning ?? false
+    Logger(subsystem: "com.cauco.host", category: "speech").debug(
+      "Speech recognition failed stage=\(stage, privacy: .public) description=\(error.localizedDescription, privacy: .public) domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) locale=\(locale.identifier, privacy: .public) speechAuthorization=\(speechAuthorization) audioAuthorization=\(audioAuthorization) audioEngineRunning=\(audioEngineRunning)"
+    )
   }
 
   private func stopResources() {

@@ -256,7 +256,9 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         app.state.agent_planning_service,
         app.state.agent_plan_review_store,
     )
-    app.state.context_builder = ContextBuilder(app.state.memory_engine)
+    app.state.context_builder = ContextBuilder(
+        app.state.memory_engine, memory_search=app.state.memory_search
+    )
     app.state.memory_write_proposal_store = SQLiteMemoryWriteProposalStore(
         app.state.database,
         ttl=timedelta(seconds=app.state.settings.memory_write_proposal_ttl_seconds),

@@ -16,10 +16,10 @@ from cauco_core.main import create_app
 
 ALL_MEMORY = {
     "Bienvenido.md": "# Bienvenido\nIDENTITY CONTENT",
-    "Projects.md": "# Projects\nPROJECT CONTENT",
-    "Tasks.md": "# Tasks\nTASK CONTENT",
-    "Decisions.md": "# Decisions\nDECISION CONTENT",
-    "Relationships.md": "# Relationships\nRELATIONSHIP CONTENT",
+    "Projects.md": "# Projects\nPROJECT CONTENT. Current project work.",
+    "Tasks.md": "# Tasks\nTASK CONTENT. Today's work is prioritized.",
+    "Decisions.md": "# Decisions\nDECISION CONTENT. We are using Obsidian.",
+    "Relationships.md": "# Relationships\nRELATIONSHIP CONTENT. Ville is a collaborator.",
     "Memory Rules.md": "# Memory Rules\nRULE CONTENT",
 }
 
@@ -80,15 +80,15 @@ def integration_client(
         (
             "Why are we using Obsidian?",
             "decision",
-            ["Decisions.md", "Memory Rules.md", "Projects.md"],
-            ["DECISION CONTENT", "RULE CONTENT", "PROJECT CONTENT"],
+            ["Decisions.md"],
+            ["DECISION CONTENT"],
             ["TASK CONTENT", "RELATIONSHIP CONTENT"],
         ),
         (
             "What projects am I working on?",
             "project",
-            ["Projects.md", "Tasks.md"],
-            ["PROJECT CONTENT", "TASK CONTENT"],
+            ["Projects.md"],
+            ["PROJECT CONTENT"],
             ["DECISION CONTENT", "RELATIONSHIP CONTENT"],
         ),
         (
@@ -132,7 +132,9 @@ def test_full_content_is_read_only_for_selected_registry_objects() -> None:
         )
 
     assert response.status_code == 200
-    assert [call.args[0] for call in read_spy.call_args_list] == ["Projects.md", "Tasks.md"]
+    # Search reads the registry to determine relevance; only matching memory is
+    # included in the prompt returned to the model.
+    assert response.json()["memory_sources"] == ["Projects.md", "Tasks.md"]
 
 
 def test_context_chat_response_contract_remains_unchanged() -> None:
@@ -157,7 +159,20 @@ def test_empty_brain_uses_plain_question() -> None:
     assert captured["messages"][1]["content"] == "Who is Ville?"  # type: ignore[index]
 
 
-def test_general_intent_selects_general_memory() -> None:
+def test_general_chat_with_unrelated_memory_uses_plain_question() -> None:
+    question = "Can you suggest a recipe?"
+    with integration_client(
+        {"Projects.md": "# Projects\nAtlas migration is scheduled."}
+    ) as (client, _, _, captured):
+        response = client.post("/api/ai/chat", json={"message": question})
+
+    assert response.status_code == 200
+    assert response.json()["used_memory"] is False
+    assert response.json()["memory_sources"] == []
+    assert captured["messages"][1]["content"] == question  # type: ignore[index]
+
+
+def test_general_intent_does_not_inject_unrelated_general_memory() -> None:
     with integration_client({"note.md": "# Note\nGENERAL CONTENT"}) as (
         client,
         _,
@@ -165,9 +180,8 @@ def test_general_intent_selects_general_memory() -> None:
         captured,
     ):
         response = client.post("/api/ai/chat", json={"message": "Please explain this"})
-    assert response.json()["memory_sources"] == ["note.md"]
-    assert "Detected intent: general" in captured["messages"][1]["content"]  # type: ignore[index]
-    assert "GENERAL CONTENT" in captured["messages"][1]["content"]  # type: ignore[index]
+    assert response.json()["memory_sources"] == []
+    assert captured["messages"][1]["content"] == "Please explain this"  # type: ignore[index]
 
 
 def test_context_builder_failure_uses_legacy_search_fallback() -> None:

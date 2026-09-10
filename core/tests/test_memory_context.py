@@ -64,3 +64,16 @@ def test_context_returns_empty_when_nothing_is_relevant(tmp_path: Path) -> None:
     context = builder(brain).build("project")
     assert context.text == ""
     assert context.sources == []
+
+
+def test_context_rejects_unrelated_memory(tmp_path: Path) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+    (brain / "projects.md").write_text(
+        "# Projects\nAtlas migration is scheduled.", encoding="utf-8"
+    )
+
+    context = builder(brain).build("Can you suggest a recipe?")
+
+    assert context.text == ""
+    assert context.sources == []

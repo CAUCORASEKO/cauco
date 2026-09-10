@@ -2,7 +2,7 @@ import Foundation
 
 public enum NativeHandsFreeState: String, Equatable, Sendable {
   case disabled, waitingForWake, wakeDetected, requestingSpeechPermission
-  case listening, transcribing, thinking, speaking, rearming, error
+  case listening, transcribing, thinking, speaking, confirmingClose, rearming, error
 }
 
 public enum NativeHandsFreeTransitionError: Error, Equatable {
@@ -13,12 +13,19 @@ public enum NativeHandsFreeStateMachine {
   public static func canTransition(from: NativeHandsFreeState, to: NativeHandsFreeState) -> Bool {
     switch (from, to) {
     case (.disabled, .waitingForWake),
+         (.disabled, .requestingSpeechPermission),
          (.waitingForWake, .wakeDetected),
          (.wakeDetected, .requestingSpeechPermission),
          (.requestingSpeechPermission, .listening),
          (.listening, .transcribing),
          (.transcribing, .thinking),
          (.thinking, .speaking),
+         (.listening, .confirmingClose),
+         (.transcribing, .confirmingClose),
+         (.speaking, .confirmingClose),
+         (.speaking, .listening),
+         (.confirmingClose, .listening),
+         (.confirmingClose, .speaking),
          (.speaking, .rearming),
          (.rearming, .waitingForWake),
          (.waitingForWake, .disabled),

@@ -101,22 +101,46 @@ enum ConversationTransportError: LocalizedError {
 
 struct ConversationView: View {
   @ObservedObject private var presentation: ConversationPresentationModel
+  @ObservedObject private var handsFree: HostHandsFreeService
   private let controller: ConversationInteractionController
-  init(presentation: ConversationPresentationModel, controller: ConversationInteractionController) {
+  private let showSettings: () -> Void
+  init(presentation: ConversationPresentationModel, controller: ConversationInteractionController, handsFree: HostHandsFreeService?, showSettings: @escaping () -> Void) {
     self.presentation = presentation; self.controller = controller
+    precondition(handsFree != nil, "The main conversation requires the configured hands-free service.")
+    self.handsFree = handsFree!
+    self.showSettings = showSettings
   }
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Label("Cauco Conversation", systemImage: "bubble.left.and.bubble.right.fill").font(.title2.bold())
-      Text("Advisory planning only. Cauco will not execute or mutate anything from this window.").font(.callout).foregroundStyle(.secondary)
-      Text("State: \(presentation.state.rawValue.capitalized)").font(.headline)
-      if !presentation.response.isEmpty { message("Cauco", presentation.response) }
-      if !presentation.error.isEmpty { Text(presentation.error).foregroundStyle(.red) }
-      TextEditor(text: $presentation.inputText).frame(minHeight: 130).overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
-      HStack { Spacer(); Button(presentation.state == .thinking ? "Planning…" : "Plan", action: controller.submit).keyboardShortcut(.return, modifiers: [.command]).disabled(presentation.state == .thinking) }
-      Spacer()
-    }.padding(24).frame(minWidth: 420, minHeight: 500)
+    VStack(spacing: 14) {
+      HStack {
+        Label("Cauco", systemImage: "bubble.left.and.bubble.right.fill").font(.title2.bold())
+        Spacer()
+        Picker("Idioma", selection: Binding(get: { handsFree.speechLanguage }, set: { handsFree.setSpeechLanguage($0) })) {
+          ForEach(HostSpeechLanguage.allCases) { Text($0.title).tag($0) }
+        }.labelsHidden().frame(width: 120)
+        Button(action: showSettings) { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
+      }
+      HStack {
+        let status = VoiceActivationRuntimeStatus.forState(handsFree.state)
+        Label(status.title, systemImage: status.symbolName).foregroundStyle(statusColor(status.tone))
+        Text(status.detail).font(.caption).foregroundStyle(.secondary)
+        Spacer()
+        Button(handsFree.state == .disabled ? "Chat de voz" : "Cerrar chat de voz") {
+          handsFree.state == .disabled ? handsFree.startVoiceSession() : handsFree.endVoiceSession()
+        }.buttonStyle(.borderedProminent)
+      }
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          if presentation.response.isEmpty && presentation.error.isEmpty { Text("¿En qué puedo ayudarte?").foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 280, alignment: .center) }
+          if !presentation.response.isEmpty { message("Cauco", presentation.response) }
+          if !presentation.error.isEmpty { Text(presentation.error).foregroundStyle(.red) }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+      }
+      TextEditor(text: $presentation.inputText).frame(minHeight: 100).overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
+      HStack { Text("Advisory planning only.").font(.caption).foregroundStyle(.secondary); Spacer(); Button(presentation.state == .thinking ? "Pensando…" : "Enviar", action: controller.submit).keyboardShortcut(.return, modifiers: [.command]).disabled(presentation.state == .thinking) }
+    }.padding(20).frame(minWidth: 580, minHeight: 620)
   }
+  private func statusColor(_ tone: VoiceActivationStatusTone) -> Color { tone == .error ? .red : tone == .active ? .green : .secondary }
   private func message(_ label: String, _ text: String) -> some View {
     VStack(alignment: .leading, spacing: 5) { Text(label).font(.caption.bold()); Text(text).textSelection(.enabled) }.padding(12).background(.quaternary.opacity(0.35)).clipShape(RoundedRectangle(cornerRadius: 10))
   }

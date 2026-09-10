@@ -22,6 +22,7 @@ struct VoiceActivationRuntimeStatus: Equatable {
     case .listening, .transcribing: return .init(title: "Listening to you", detail: "Speech recognition is active.", symbolName: "mic.fill", tone: .active)
     case .thinking: return .init(title: "Thinking", detail: "Preparing a response.", symbolName: "sparkles", tone: .active)
     case .speaking: return .init(title: "Speaking", detail: "Cauco is responding.", symbolName: "speaker.wave.2.fill", tone: .active)
+    case .confirmingClose: return .init(title: "Confirming", detail: "Do you want to close the voice chat or ask more questions?", symbolName: "questionmark.bubble", tone: .active)
     case .rearming: return .init(title: "Rearming", detail: "Preparing wake listening.", symbolName: "arrow.clockwise", tone: .active)
     case .error: return .init(title: "Error", detail: "Wake listening stopped because of an error.", symbolName: "exclamationmark.triangle.fill", tone: .error)
     }
@@ -85,6 +86,8 @@ final class HostHandsFreeService: ObservableObject {
   }
   func enableWakeListening(locale: String = "en-US") { UserDefaults.standard.set(true, forKey: wakeListeningPreferenceKey); coordinator.enableWakeListening(locale: locale); refresh() }
   func disableWakeListening() { UserDefaults.standard.set(false, forKey: wakeListeningPreferenceKey); coordinator.disableWakeListening(); refresh() }
+  func startVoiceSession() { coordinator.startVoiceSession(); refresh() }
+  func endVoiceSession() { coordinator.endVoiceSession(); refresh() }
   func setSpeechLanguage(_ language: HostSpeechLanguage) { speechLanguage = language; UserDefaults.standard.set(language.rawValue, forKey: speechLanguagePreferenceKey); coordinator.setSpeechLocale(Locale(identifier: language.rawValue)) }
   func enable(locale: String = "en-US") { enableWakeListening(locale: locale) }
   func disable() { disableWakeListening() }

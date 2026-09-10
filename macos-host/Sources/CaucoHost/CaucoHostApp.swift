@@ -5,13 +5,14 @@ import SwiftUI
 
 @MainActor final class CaucoHostAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   weak var model: HostModel?
-  private var windowController: NSWindowController?
-  private var conversationController: NSWindowController?
+  private var settingsController: NSWindowController?
+  private var mainController: NSWindowController?
   private var terminationSignalSources: [DispatchSourceSignal] = []
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    NSApplication.shared.setActivationPolicy(.accessory)
+    NSApplication.shared.setActivationPolicy(.regular)
     installTerminationSignalHandlers()
+    showMainWindow()
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -33,8 +34,8 @@ import SwiftUI
   func showSettingsWindow() {
     guard let model else { return }
     NSApplication.shared.setActivationPolicy(.regular)
-    if windowController == nil {
-      let content = NSHostingController(rootView: ContentView(model: model))
+    if settingsController == nil {
+      let content = NSHostingController(rootView: SettingsView(model: model))
       let window = NSWindow(contentViewController: content)
       window.title = "Cauco Settings"
       window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -43,30 +44,34 @@ import SwiftUI
       window.isReleasedWhenClosed = false
       window.restorationClass = nil
       window.delegate = self
-      windowController = NSWindowController(window: window)
+      settingsController = NSWindowController(window: window)
     }
-    windowController?.showWindow(nil)
-    windowController?.window?.makeKeyAndOrderFront(nil)
+    settingsController?.showWindow(nil)
+    settingsController?.window?.makeKeyAndOrderFront(nil)
     NSApplication.shared.activate(ignoringOtherApps: true)
   }
 
-  func showConversation() {
+  func showMainWindow() {
     NSApplication.shared.setActivationPolicy(.regular)
-    if conversationController == nil {
+    if mainController == nil {
       guard let model else { return }
-      let content = NSHostingController(rootView: ConversationView(presentation: model.conversationPresentation, controller: model.conversationInteraction))
+      let content = NSHostingController(rootView: ConversationView(
+        presentation: model.conversationPresentation,
+        controller: model.conversationInteraction,
+        handsFree: model.handsFreeService,
+        showSettings: { [weak self] in self?.showSettingsWindow() }))
       let window = NSWindow(contentViewController: content)
-      window.title = "Cauco Conversation"
+      window.title = "Cauco"
       window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-      window.setContentSize(NSSize(width: 480, height: 560))
+      window.setContentSize(NSSize(width: 720, height: 700))
       window.center()
       window.isReleasedWhenClosed = false
       window.restorationClass = nil
       window.delegate = self
-      conversationController = NSWindowController(window: window)
+      mainController = NSWindowController(window: window)
     }
-    conversationController?.showWindow(nil)
-    conversationController?.window?.makeKeyAndOrderFront(nil)
+    mainController?.showWindow(nil)
+    mainController?.window?.makeKeyAndOrderFront(nil)
     NSApplication.shared.activate(ignoringOtherApps: true)
   }
 
@@ -74,18 +79,17 @@ import SwiftUI
     model.handsFreeService = HostHandsFreeService(
       presentation: model.conversationPresentation,
       conversation: model.conversationInteraction,
-      showConversation: { [weak self] in self?.showConversation() })
-    model.handsFreeService?.restorePersistedWakeListening()
+      showConversation: { [weak self] in self?.showMainWindow() })
   }
 
   func windowWillClose(_ notification: Notification) {
-    guard notification.object as? NSWindow === windowController?.window ||
-      notification.object as? NSWindow === conversationController?.window else { return }
+    guard notification.object as? NSWindow === settingsController?.window ||
+      notification.object as? NSWindow === mainController?.window else { return }
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      let settingsVisible = self.windowController?.window?.isVisible == true
-      let conversationVisible = self.conversationController?.window?.isVisible == true
-      if !settingsVisible && !conversationVisible { NSApplication.shared.setActivationPolicy(.accessory) }
+      let settingsVisible = self.settingsController?.window?.isVisible == true
+      let mainVisible = self.mainController?.window?.isVisible == true
+      if !settingsVisible && !mainVisible { NSApplication.shared.setActivationPolicy(.accessory) }
     }
   }
 
@@ -131,17 +135,8 @@ import SwiftUI
       Button("Open Cauco") {
         showCauco()
       }
-      Button("Open Conversation") { appDelegate.showConversation() }
       Divider()
       Text("Status: \(model.coreStatus == "online" ? "Running" : model.coreStatus.capitalized)")
-      Toggle("Launch at Login", isOn: Binding(
-        get: { model.launchAtLoginStatus == .enabled },
-        set: { model.setLaunchAtLogin($0) }))
-      if model.launchAtLoginStatus == .requiresApproval {
-        Text("Approval required in System Settings")
-      } else if model.launchAtLoginStatus == .failed {
-        Text("Launch at Login could not be changed")
-      }
       Divider()
       Button("Quit Cauco") { appDelegate.requestQuit() }
     }
@@ -154,7 +149,7 @@ import SwiftUI
   }
 
   private func showCauco() {
-    appDelegate.showSettingsWindow()
+    appDelegate.showMainWindow()
     NSApplication.shared.activate(ignoringOtherApps: true)
     DispatchQueue.main.async {
       NSApp.windows.first(where: { $0.title == "Cauco" })?.makeKeyAndOrderFront(nil)
@@ -324,7 +319,7 @@ private final class ProductionProcessFactory: HostRuntimeProcessFactory {
   func openDashboard() { NSWorkspace.shared.open(coreURL) }
 }
 
-struct ContentView: View {
+struct SettingsView: View {
   @ObservedObject var model: HostModel
   private func statusColor(_ tone: VoiceActivationStatusTone) -> Color {
     switch tone { case .neutral: return .secondary; case .active: return .green; case .error: return .red }
@@ -352,39 +347,6 @@ struct ContentView: View {
               model.repositoryPath == "Not configured")
           }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
-      }
-      GroupBox("Application") {
-        VStack(alignment: .leading, spacing: 8) {
-          Toggle("Start Cauco automatically when I log in", isOn: Binding(
-            get: { model.launchAtLoginStatus == .enabled },
-            set: { model.setLaunchAtLogin($0) }))
-          if model.launchAtLoginStatus == .requiresApproval {
-            Text("macOS requires approval in System Settings.").font(.caption)
-          } else if model.launchAtLoginStatus == .failed {
-            Text("macOS did not change the Launch at Login setting.").font(.caption)
-          }
-        }
-      }
-      if let handsFree = model.handsFreeService {
-        GroupBox("Voice activation") {
-          VStack(alignment: .leading, spacing: 8) {
-            Toggle("Listen for \"Hola Cauco\"", isOn: Binding(
-              get: { handsFree.isWakeListeningEnabled },
-              set: { enabled in if enabled { handsFree.enableWakeListening() } else { handsFree.disableWakeListening() } }))
-              .toggleStyle(.switch)
-            let status = VoiceActivationRuntimeStatus.forState(handsFree.state)
-            VStack(alignment: .leading, spacing: 5) {
-              Text("Status").font(.headline)
-              Label(status.title, systemImage: status.symbolName).font(.body.weight(.medium)).foregroundStyle(statusColor(status.tone))
-              Text(status.detail).font(.caption).foregroundStyle(.secondary)
-            }
-            Picker("Speech language", selection: Binding(
-              get: { handsFree.speechLanguage },
-              set: { handsFree.setSpeechLanguage($0) })) {
-              ForEach(HostSpeechLanguage.allCases) { language in Text(language.title).tag(language) }
-            }
-          }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
-        }
       }
       if let snapshot = model.launchDiagnostics {
         DisclosureGroup("Core Launch Diagnostics") {

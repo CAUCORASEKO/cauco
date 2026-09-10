@@ -17,9 +17,9 @@ def populated_engine(tmp_path: Path) -> MemoryEngine:
     brain.mkdir()
     documents = {
         "Bienvenido.md": "# Bienvenido\nLocal identity.",
-        "Projects.md": "# Projects\nCauco.",
-        "Tasks.md": "# Tasks\n- [ ] Context builder.",
-        "Decisions.md": "# Decisions\nUse Obsidian for local notes.",
+        "Projects.md": "# Projects\nCurrent project work.",
+        "Tasks.md": "# Tasks\n- [ ] Today's work: Context builder.",
+        "Decisions.md": "# Decisions\nWe are using Obsidian for local notes.",
         "Relationships.md": "# Relationships\nVille is a collaborator.",
         "Memory Rules.md": "# Memory Rules\nMemory stays local.",
         "note.md": "# A note\nUnclassified context.",
@@ -73,15 +73,15 @@ def test_planning_selects_tasks_and_projects_with_reasoning(tmp_path: Path) -> N
 @pytest.mark.parametrize(
     ("question", "expected_paths"),
     [
-        ("What projects am I working on?", ["Projects.md", "Tasks.md"]),
+        ("What projects am I working on?", ["Projects.md"]),
         ("Who is Ville?", ["Relationships.md"]),
         (
             "Why are we using Obsidian?",
-            ["Decisions.md", "Memory Rules.md", "Projects.md"],
+            ["Decisions.md"],
         ),
-        ("How does memory work?", ["Decisions.md", "Memory Rules.md", "Projects.md"]),
-        ("Who am I?", ["Bienvenido.md"]),
-        ("Please explain this", ["note.md"]),
+        ("How does memory work?", ["Memory Rules.md", "Projects.md"]),
+        ("Who am I?", []),
+        ("Please explain this", []),
     ],
 )
 def test_memory_selection_by_intent(
@@ -110,3 +110,24 @@ def test_no_match_is_explained(tmp_path: Path) -> None:
     package = ContextBuilder(engine).build("Who is Ville?")
     assert package.selected_memory_objects == []
     assert package.reasoning[-1] == "No classified memory objects matched the selection rules."
+
+
+def test_classified_memory_without_query_matches_is_not_selected(tmp_path: Path) -> None:
+    package = ContextBuilder(populated_engine(tmp_path)).build("Tell me a joke about penguins")
+
+    assert package.selected_memory_objects == []
+    assert package.reasoning[-1] == "No selected memory matched the question terms."
+
+
+def test_unrelated_question_does_not_select_classified_memory(tmp_path: Path) -> None:
+    brain = tmp_path / "brain"
+    brain.mkdir()
+    (brain / "Projects.md").write_text(
+        "# Projects\nAtlas migration is scheduled.", encoding="utf-8"
+    )
+    engine = MemoryEngine(brain)
+    engine.refresh()
+
+    package = ContextBuilder(engine).build("Can you help me plan a recipe?")
+
+    assert package.selected_memory_objects == []

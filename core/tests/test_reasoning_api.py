@@ -11,6 +11,8 @@ from cauco_reasoning import (
 )
 from fastapi.testclient import TestClient
 
+from cauco_core.ai.exceptions import ProviderUnavailableError
+from cauco_core.ai.service import AIChatResult
 from cauco_core.config import Settings
 from cauco_core.main import create_app
 
@@ -23,6 +25,23 @@ class RecordingEngine:
     def reason(self, request: ReasoningRequest) -> ReasoningResult:
         self.calls += 1
         return self.result
+
+
+class RecordingAIService:
+    def __init__(self, response: str = "", error: Exception | None = None) -> None:
+        self.response = response
+        self.error = error
+        self.calls = 0
+
+    def chat(self, message: str, model: str | None = None, *, use_memory: bool = True) -> AIChatResult:
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        return AIChatResult(
+            provider="fake",
+            model="fake-model",
+            response=self.response,
+        )
 
 
 @pytest.fixture
@@ -272,6 +291,8 @@ def test_conversation_no_match_uses_advisory_reasoning_without_execution(
         )
     )
     reasoning_client.app.state.reasoning_orchestration_service.reasoning_service = ReasoningService(engine)
+    ai_service = RecordingAIService(response="AI fallback should not run")
+    reasoning_client.app.state.ai_service = ai_service
     response = reasoning_client.post(
         "/api/reasoning/conversation/respond",
         json={"instruction": "What can you do?", "use_reasoning": True},
@@ -286,6 +307,47 @@ def test_conversation_no_match_uses_advisory_reasoning_without_execution(
     assert payload["review_approved"] is False
     assert payload["runtime_started"] is False
     assert engine.calls == 1
+    assert ai_service.calls == 0
+
+
+def test_conversation_noop_uses_existing_ai_service_fallback(
+    reasoning_client: TestClient,
+) -> None:
+    ai_service = RecordingAIService(response="Local AI advisory response.")
+    reasoning_client.app.state.ai_service = ai_service
+
+    response = reasoning_client.post(
+        "/api/reasoning/conversation/respond",
+        json={"instruction": "Tell me a short joke", "use_reasoning": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["message"] == "Local AI advisory response."
+    assert payload["planning_status"] == "no_match"
+    assert payload["plan"] is None
+    assert payload["reasoning_invoked"] is True
+    assert payload["execution_performed"] is False
+    assert ai_service.calls == 1
+
+
+def test_conversation_empty_reasoning_and_unavailable_ai_returns_503(
+    reasoning_client: TestClient,
+) -> None:
+    reasoning_client.app.state.reasoning_orchestration_service.reasoning_service = ReasoningService(
+        RecordingEngine(ReasoningResult(provider="test", model="m", text="", reasoning_performed=True))
+    )
+    ai_service = RecordingAIService(error=ProviderUnavailableError("offline"))
+    reasoning_client.app.state.ai_service = ai_service
+
+    response = reasoning_client.post(
+        "/api/reasoning/conversation/respond",
+        json={"instruction": "Tell me a short joke", "use_reasoning": True},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Advisory conversation is unavailable; no action was taken."
+    assert ai_service.calls == 1
 
 
 def test_conversation_reasoning_failure_is_bounded(
@@ -296,6 +358,9 @@ def test_conversation_reasoning_failure_is_bounded(
             raise RuntimeError("provider secret")
 
     reasoning_client.app.state.reasoning_orchestration_service.reasoning_service = ReasoningService(FailingEngine())
+    reasoning_client.app.state.ai_service = RecordingAIService(
+        error=ProviderUnavailableError("offline")
+    )
     response = reasoning_client.post(
         "/api/reasoning/conversation/respond",
         json={"instruction": "What can you do?", "use_reasoning": True},

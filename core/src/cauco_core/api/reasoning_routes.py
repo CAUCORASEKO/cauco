@@ -19,6 +19,12 @@ from cauco_core.api.agent_routes import (
     match_response,
     plan_response,
 )
+from cauco_core.ai.exceptions import (
+    MalformedProviderResponseError,
+    ModelNotFoundError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
 from cauco_core.reasoning import ReasoningAwarePlanningOutcome
 from cauco_reasoning import ReasoningRequest
 
@@ -129,6 +135,19 @@ def _deterministic_conversation_fallback(instruction: str) -> str | None:
     return None
 
 
+def _ai_conversation_fallback(request: Request, instruction: str) -> str | None:
+    try:
+        response = request.app.state.ai_service.chat(instruction).response.strip()
+    except (
+        MalformedProviderResponseError,
+        ModelNotFoundError,
+        ProviderTimeoutError,
+        ProviderUnavailableError,
+    ):
+        return None
+    return response or None
+
+
 @router.post("/conversation/respond", response_model=ConversationResponse)
 def respond_to_conversation(
     payload: ConversationRequest,
@@ -181,13 +200,13 @@ def respond_to_conversation(
             ReasoningRequest(instruction=payload.instruction, agent_id=payload.preferred_agent_id)
         )
         if advisory.result is None or not advisory.result.text.strip():
-            fallback = _deterministic_conversation_fallback(payload.instruction)
-            if fallback is not None and not advisory.provider_failed and request.app.state.settings.reasoning_provider == "noop":
+            fallback = _ai_conversation_fallback(request, payload.instruction)
+            if fallback is not None:
                 return ConversationResponse(
                     message=fallback,
                     planning_status="no_match",
                     plan=None,
-                    reasoning_invoked=False,
+                    reasoning_invoked=advisory.reasoning_invoked,
                 )
             raise HTTPException(status_code=503, detail="Advisory conversation is unavailable; no action was taken.")
         return ConversationResponse(

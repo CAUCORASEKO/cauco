@@ -94,14 +94,18 @@ class MemorySearch:
                 if not line.lstrip().startswith("#")
             ).casefold()
             matched = [
-                term for term in terms if term in title_text or term in headings or term in body
+                term
+                for term in terms
+                if self._term_count(title_text, term)
+                or self._term_count(headings, term)
+                or self._term_count(body, term)
             ]
             if not matched:
                 continue
             score = sum(
-                title_text.count(term) * 10
-                + headings.count(term) * 5
-                + body.count(term)
+                self._term_count(title_text, term) * 10
+                + self._term_count(headings, term) * 5
+                + self._term_count(body, term)
                 for term in matched
             )
             results.append(
@@ -121,6 +125,10 @@ class MemorySearch:
             )
         )
         return results[:limit]
+
+    @staticmethod
+    def _term_count(text: str, term: str) -> int:
+        return sum(match.group(0).casefold() == term for match in TOKEN_PATTERN.finditer(text))
 
     @staticmethod
     def _excerpt(content: str, terms: list[str]) -> str:
