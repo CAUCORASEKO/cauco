@@ -57,6 +57,7 @@ from cauco_core.application_connector_matching import (
     ApplicationConnectorResolver,
     ProviderMappingRegistry,
 )
+from cauco_core.capabilities import CapabilitySummaryService
 from cauco_core.application_inventory import ApplicationInventoryService, ApplicationScanner
 from cauco_core.cognitive_cycle.resolver import CognitiveCycleResolver
 from cauco_core.config import Settings
@@ -378,6 +379,14 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
         context_builder=app.state.context_builder,
         memory_engine=app.state.memory_engine,
         max_context_characters=app.state.settings.memory_context_max_characters,
+    )
+    app.state.capability_summary_service = CapabilitySummaryService(
+        app.state.tool_registry,
+        app.state.tool_adapter_registry,
+        app.state.connector_registry,
+        app.state.agent_registry,
+        native_broker_configured=app.state.native_broker_client.configured,
+        memory_runtime_available=app.state.memory_service is not None,
     )
 
     # Obsidian's desktop shell may use an app:// or localhost origin. These explicit

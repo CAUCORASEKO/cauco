@@ -7,9 +7,16 @@ from cauco_agents import (
     AgentContextRequest,
     UnknownPreferredAgentError,
 )
+from cauco_reasoning import ReasoningRequest
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
+from cauco_core.ai.exceptions import (
+    MalformedProviderResponseError,
+    ModelNotFoundError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
 from cauco_core.api.agent_routes import (
     AgentContextResponse,
     AgentMatchResponse,
@@ -19,14 +26,8 @@ from cauco_core.api.agent_routes import (
     match_response,
     plan_response,
 )
-from cauco_core.ai.exceptions import (
-    MalformedProviderResponseError,
-    ModelNotFoundError,
-    ProviderTimeoutError,
-    ProviderUnavailableError,
-)
+from cauco_core.capability_inquiry import is_capability_inquiry
 from cauco_core.reasoning import ReasoningAwarePlanningOutcome
-from cauco_reasoning import ReasoningRequest
 
 router = APIRouter(prefix="/api/reasoning", tags=["reasoning"])
 
@@ -153,6 +154,13 @@ def respond_to_conversation(
     payload: ConversationRequest,
     request: Request,
 ) -> ConversationResponse:
+    if is_capability_inquiry(payload.instruction):
+        return ConversationResponse(
+            message=request.app.state.capability_summary_service.response(payload.instruction),
+            planning_status="capability_summary",
+            plan=None,
+            reasoning_invoked=False,
+        )
     context_request = AgentContextRequest(
         instruction=payload.instruction,
         intent=payload.intent,

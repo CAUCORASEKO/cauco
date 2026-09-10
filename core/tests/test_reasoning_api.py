@@ -239,7 +239,6 @@ def test_conversation_uses_deterministic_plan_without_reasoning(
 @pytest.mark.parametrize(
     "instruction",
     [
-        "What can you do?",
         "What you can do",
         "WHAT DO YOU DO!",
         "What can Cauco do?",
@@ -268,6 +267,31 @@ def test_conversation_meta_variants_use_deterministic_fallback_without_provider(
 
 @pytest.mark.parametrize(
     "instruction",
+    ["¿Qué puedes hacer?", "¿Qué sabes hacer?", "¿Cuáles son tus capacidades?", "Dime qué puedes hacer", "What can you do?", "What are your capabilities?"],
+)
+def test_conversation_capability_inquiry_uses_summary_without_reasoning_or_ai(
+    reasoning_client: TestClient, instruction: str
+) -> None:
+    class FailingEngine:
+        def reason(self, request: ReasoningRequest) -> ReasoningResult:
+            raise AssertionError("Reasoning must not run for capability inquiry")
+
+    reasoning_client.app.state.reasoning_orchestration_service.reasoning_service = ReasoningService(FailingEngine())
+    ai_service = RecordingAIService(response="must not be used")
+    reasoning_client.app.state.ai_service = ai_service
+
+    response = reasoning_client.post(
+        "/api/reasoning/conversation/respond",
+        json={"instruction": instruction, "use_reasoning": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["planning_status"] == "capability_summary"
+    assert response.json()["reasoning_invoked"] is False
+    assert ai_service.calls == 0
+
+
+@pytest.mark.parametrize(
+    "instruction",
     ["Check what I can do on my calendar tomorrow", "What can you do with my calendar tomorrow?"],
 )
 def test_operational_requests_do_not_use_meta_fallback(
@@ -282,7 +306,7 @@ def test_operational_requests_do_not_use_meta_fallback(
     assert response.json()["message"] != "Cauco can help plan and explain tasks in an advisory way. It does not execute actions or change your system from this conversation."
 
 
-def test_conversation_no_match_uses_advisory_reasoning_without_execution(
+def test_conversation_capability_inquiry_does_not_use_advisory_reasoning(
     reasoning_client: TestClient,
 ) -> None:
     engine = RecordingEngine(
@@ -299,14 +323,13 @@ def test_conversation_no_match_uses_advisory_reasoning_without_execution(
     )
     assert response.status_code == 200
     payload = response.json()
-    assert payload["message"] == "I can explain Cauco's capabilities."
-    assert payload["planning_status"] == "no_match"
-    assert payload["reasoning_invoked"] is True
+    assert payload["planning_status"] == "capability_summary"
+    assert payload["reasoning_invoked"] is False
     assert payload["plan"] is None
     assert payload["execution_performed"] is False
     assert payload["review_approved"] is False
     assert payload["runtime_started"] is False
-    assert engine.calls == 1
+    assert engine.calls == 0
     assert ai_service.calls == 0
 
 
@@ -350,7 +373,7 @@ def test_conversation_empty_reasoning_and_unavailable_ai_returns_503(
     assert ai_service.calls == 1
 
 
-def test_conversation_reasoning_failure_is_bounded(
+def test_capability_inquiry_does_not_depend_on_reasoning_or_ai_availability(
     reasoning_client: TestClient,
 ) -> None:
     class FailingEngine:
@@ -365,6 +388,6 @@ def test_conversation_reasoning_failure_is_bounded(
         "/api/reasoning/conversation/respond",
         json={"instruction": "What can you do?", "use_reasoning": True},
     )
-    assert response.status_code == 503
-    assert response.json()["detail"] == "Advisory conversation is unavailable; no action was taken."
+    assert response.status_code == 200
+    assert response.json()["planning_status"] == "capability_summary"
     assert "provider secret" not in response.text
