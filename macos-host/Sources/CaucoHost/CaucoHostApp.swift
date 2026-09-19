@@ -80,6 +80,8 @@ import SwiftUI
       presentation: model.conversationPresentation,
       conversation: model.conversationInteraction,
       showConversation: { [weak self] in self?.showMainWindow() })
+    // This arms only the local wake detector. Speech recognition starts after wake.
+    model.handsFreeService?.restorePersistedWakeListening()
   }
 
   func windowWillClose(_ notification: Notification) {

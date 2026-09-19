@@ -56,3 +56,6 @@ worldmonitor-main/
 wake-model/live-negative/
 wake-model/runtime-audit/
 wake-model/windowed-positive/
+
+# Local Cauco workspace / generated drafts
+workspace/

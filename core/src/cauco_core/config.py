@@ -15,6 +15,10 @@ def default_database_path() -> Path:
     return Path(__file__).resolve().parents[3] / "data" / "cauco-dev.db"
 
 
+def default_workspace_directory() -> Path:
+    return Path(__file__).resolve().parents[3] / "workspace"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CAUCO_", extra="ignore")
 
@@ -29,7 +33,7 @@ class Settings(BaseSettings):
     memory_write_proposal_ttl_seconds: int = Field(default=1800, ge=60, le=86_400)
     agent_plan_review_ttl_seconds: int = Field(default=1800, ge=60, le=86_400)
     agent_plan_review_max_records: int = Field(default=100, ge=1, le=10_000)
-    workspace_dir: Path | None = None
+    workspace_dir: Path | None = Field(default_factory=default_workspace_directory)
     execution_max_records: int = Field(default=100, ge=1, le=10_000)
     verification_max_records: int = Field(default=100, ge=1, le=10_000)
     experience_max_records: int = Field(default=100, ge=1, le=10_000)

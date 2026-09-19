@@ -4,6 +4,7 @@ import Speech
 import CaucoHostCore
 
 @MainActor final class AppleSpeechTranscriber: NSObject, CaucoHostCore.SpeechTranscriber {
+  private static let runtimeLogger = Logger(subsystem: "com.cauco.host", category: "hands-free-runtime")
   private var recognizer: SFSpeechRecognizer?
   private var audioEngine: AVAudioEngine?
   private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -78,6 +79,7 @@ import CaucoHostCore
         }
       }
     }
+    Self.runtimeLogger.debug("stt_restart_success layer=apple_speech token=\(token, privacy: .public) generation=\(self.generation, privacy: .public)")
     scheduleUtteranceTimeout(token: token, onTranscript: onTranscript, onError: onError)
   }
 
@@ -150,10 +152,12 @@ import CaucoHostCore
 }
 
 @MainActor final class AppleSpeechSynthesizer: NSObject, CaucoHostCore.SpeechSynthesizer, AVSpeechSynthesizerDelegate {
+  private static let runtimeLogger = Logger(subsystem: "com.cauco.host", category: "hands-free-runtime")
   private let synthesizer = AVSpeechSynthesizer(); private var generation = 0; private(set) var state: SpeechSynthesisState = .idle
   override init() { super.init(); synthesizer.delegate = self }
   func speak(_ text: String, locale: Locale, onComplete: @escaping () -> Void, onError: @escaping (Error) -> Void) {
-    guard !text.isEmpty, !synthesizer.isSpeaking else { onError(VoiceFoundationError.busy); return }
+    Self.runtimeLogger.debug("tts_start layer=apple_speech isSpeaking=\(self.synthesizer.isSpeaking, privacy: .public) generation=\(self.generation, privacy: .public)")
+    guard !text.isEmpty, !synthesizer.isSpeaking else { Self.runtimeLogger.debug("tts_error layer=apple_speech reason=busy isSpeaking=\(self.synthesizer.isSpeaking, privacy: .public) generation=\(self.generation, privacy: .public)"); onError(VoiceFoundationError.busy); return }
     generation += 1; let token = generation; let utterance = AVSpeechUtterance(string: text); utterance.voice = AVSpeechSynthesisVoice(language: locale.identifier) ?? AVSpeechSynthesisVoice(language: "en-US"); state = .speaking
     synthesizer.speak(utterance); completion = { [weak self] in guard let self, self.generation == token else { return }; self.state = .completed; onComplete() }
   }
@@ -161,5 +165,3 @@ import CaucoHostCore
   private var completion: (() -> Void)?
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { completion?(); completion = nil }
 }
-
-public enum VoiceFoundationError: Error { case permissionDenied, onDeviceUnavailable, busy, noSpeechDetected }

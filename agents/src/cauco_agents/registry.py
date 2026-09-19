@@ -2,6 +2,7 @@ from cauco_agents.base import Agent, AgentMetadata
 from cauco_agents.builtin import (
     CalendarAgent,
     EmailAgent,
+    FilesystemAgent,
     GitAgent,
     ProjectAgent,
     ResearchAgent,
@@ -38,6 +39,7 @@ def create_default_registry() -> AgentRegistry:
     registry = AgentRegistry()
     registry.register(CalendarAgent())
     registry.register(EmailAgent())
+    registry.register(FilesystemAgent())
     registry.register(ProjectAgent())
     registry.register(GitAgent())
     registry.register(ResearchAgent())

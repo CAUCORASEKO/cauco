@@ -22,7 +22,7 @@ struct VoiceActivationRuntimeStatus: Equatable {
     case .listening, .transcribing: return .init(title: "Listening to you", detail: "Speech recognition is active.", symbolName: "mic.fill", tone: .active)
     case .thinking: return .init(title: "Thinking", detail: "Preparing a response.", symbolName: "sparkles", tone: .active)
     case .speaking: return .init(title: "Speaking", detail: "Cauco is responding.", symbolName: "speaker.wave.2.fill", tone: .active)
-    case .confirmingClose: return .init(title: "Confirming", detail: "Do you want to close the voice chat or ask more questions?", symbolName: "questionmark.bubble", tone: .active)
+    case .confirmingClose: return .init(title: "Closing", detail: "Ending the voice chat.", symbolName: "xmark.bubble", tone: .active)
     case .rearming: return .init(title: "Rearming", detail: "Preparing wake listening.", symbolName: "arrow.clockwise", tone: .active)
     case .error: return .init(title: "Error", detail: "Wake listening stopped because of an error.", symbolName: "exclamationmark.triangle.fill", tone: .error)
     }
@@ -67,6 +67,8 @@ final class HostHandsFreeService: ObservableObject {
   @Published private(set) var state: NativeHandsFreeState = .disabled
   @Published private(set) var isEnabled = false
   var isWakeListeningEnabled: Bool { coordinator.wakeListeningEnabled }
+  var isVoiceSessionActive: Bool { coordinator.isVoiceSessionActive }
+  var voiceSessionButtonTitle: String { isVoiceSessionActive ? "Cerrar chat de voz" : "Chat de voz" }
   @Published private(set) var speechLanguage: HostSpeechLanguage
   init(presentation: ConversationPresentationModel, conversation: ConversationResponding, showConversation: @escaping () -> Void,
        wake: NativeWakeListener? = nil, transcriber: SpeechTranscriber? = nil,
@@ -75,13 +77,15 @@ final class HostHandsFreeService: ObservableObject {
     let hostPresentation = handsFreePresentation ?? HostHandsFreePresentation(presentation: presentation, show: showConversation, stateChanged: { state in sink.owner?.state = state })
     coordinator = NativeHandsFreeCoordinator(
       wake: wake ?? NativeWakeListenerAdapter(), transcriber: transcriber ?? AppleSpeechTranscriber(), conversation: conversation,
-      synthesizer: synthesizer ?? AppleSpeechSynthesizer(), presentation: hostPresentation)
+      synthesizer: synthesizer ?? Self.defaultSynthesizer(), presentation: hostPresentation)
     speechLanguage = HostSpeechLanguage(rawValue: UserDefaults.standard.string(forKey: speechLanguagePreferenceKey) ?? "") ?? .spanish
     coordinator.setSpeechLocale(Locale(identifier: speechLanguage.rawValue))
     sink.owner = self
   }
+  private static func defaultSynthesizer() -> SpeechSynthesizer {
+    QwenSpeechSynthesizer()
+  }
   func restorePersistedWakeListening(locale: String = "en-US") {
-    guard UserDefaults.standard.bool(forKey: wakeListeningPreferenceKey) else { refresh(); return }
     coordinator.enableWakeListening(locale: locale); refresh()
   }
   func enableWakeListening(locale: String = "en-US") { UserDefaults.standard.set(true, forKey: wakeListeningPreferenceKey); coordinator.enableWakeListening(locale: locale); refresh() }

@@ -2,6 +2,7 @@ from cauco_agents.base import Agent, AgentMetadata, BaseAgent, PlanningAgent
 from cauco_agents.builtin import (
     CalendarAgent,
     EmailAgent,
+    FilesystemAgent,
     GitAgent,
     ProjectAgent,
     ResearchAgent,
@@ -90,6 +91,7 @@ __all__ = [
     "AgentToolReference",
     "CalendarAgent",
     "EmailAgent",
+    "FilesystemAgent",
     "CalendarCreateEventInput",
     "CalendarListEventsInput",
     "EmailDraftInput",

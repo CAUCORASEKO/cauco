@@ -2,93 +2,143 @@ import XCTest
 @testable import CaucoHostCore
 
 @MainActor final class NativeHandsFreeCoordinatorTests: XCTestCase {
-  func testCloseIntentDecisionNormalizesSpanishAndEnglishVariants() {
-    let closeRequests = ["¡Cierra el chat!", "termina la conversación", "para de escuchar", "close voice chat", "Stop the voice chat."]
-    let confirmations = ["Sí, cierra", "CIÉRRALO", "confirmo", "yes close it", "Close it!"]
-    let declines = ["No", "continúa", "Tengo más preguntas", "continue", "I have more questions"]
-    for value in closeRequests { XCTAssertEqual(NativeHandsFreeCoordinator.closeIntentDecision(value), .asksToClose) }
-    for value in confirmations { XCTAssertEqual(NativeHandsFreeCoordinator.closeIntentDecision(value), .confirmsClose) }
-    for value in declines { XCTAssertEqual(NativeHandsFreeCoordinator.closeIntentDecision(value), .declinesClose) }
-    XCTAssertEqual(NativeHandsFreeCoordinator.closeIntentDecision("¿qué tiempo hará mañana?"), .none)
+  func testWakeArmsWithoutStartingConversationalSTT() {
+    let f = Fixtures(); let c = f.coordinator()
+    c.enableWakeListening(locale: "en-US")
+    XCTAssertTrue(c.wakeListeningEnabled); XCTAssertTrue(c.wakeListenerArmed)
+    XCTAssertFalse(c.isVoiceSessionActive); XCTAssertEqual(c.state, .waitingForWake)
+    XCTAssertEqual(f.wake.starts, 1); XCTAssertEqual(f.transcriber.starts, 0)
   }
 
-  func testCloseConfirmationClosesOnlyAfterExplicitSpanishOrEnglishConfirmation() async {
-    for (request, confirmation) in [("cierra el chat", "sí"), ("close the voice chat", "yes")] {
-      let f = Fixtures(); let c = f.coordinator(); c.startVoiceSession()
-      f.transcriber.emit(request); await Task.yield()
-      XCTAssertEqual(c.state, .speaking); XCTAssertEqual(f.conversation.requests, 0)
-      f.synthesizer.finish(); await Task.yield()
-      XCTAssertEqual(c.state, .listening)
-      f.transcriber.emit(confirmation); await Task.yield()
-      XCTAssertEqual(c.state, .speaking); XCTAssertEqual(f.conversation.requests, 0)
-      f.synthesizer.finish(); await Task.yield()
-      XCTAssertEqual(c.state, .disabled); XCTAssertEqual(f.transcriber.stops, 1)
+  func testWakeStopsBeforeStartingVoiceSessionSTT() async {
+    let f = Fixtures(); let c = f.coordinator(); c.enableWakeListening(locale: "en-US")
+    f.wake.emit(); await Task.yield()
+    XCTAssertEqual(f.events, ["wake.start", "wake.stop", "presentation", "stt.start"])
+    XCTAssertTrue(c.isVoiceSessionActive); XCTAssertFalse(c.wakeListenerArmed)
+    XCTAssertEqual(c.state, .listening); XCTAssertEqual(f.transcriber.starts, 1)
+  }
+
+  func testVoiceSessionContinuesFromTTSBackToSTTWithoutRearmingWake() async {
+    let f = Fixtures(); let c = f.coordinator(); c.enableWakeListening(locale: "en-US"); f.wake.emit(); await Task.yield()
+    f.transcriber.emit("hola"); await Task.yield(); f.conversation.succeed("respuesta"); await Task.yield()
+    XCTAssertEqual(c.state, .speaking); XCTAssertEqual(f.wake.starts, 1)
+    f.synthesizer.finish(); await Task.yield()
+    XCTAssertTrue(c.isVoiceSessionActive); XCTAssertEqual(c.state, .listening)
+    XCTAssertEqual(f.transcriber.starts, 2); XCTAssertEqual(f.wake.starts, 1)
+  }
+
+  func testCloseIntentClosesDirectlyWithoutTTSOrBackendAndRearmsWake() async {
+    for phrase in ["Cerrar Chat de voz", "Cerrar el Chat de voz"] {
+      let f = Fixtures(); let c = f.coordinator(); c.enableWakeListening(locale: "en-US"); f.wake.emit(); await Task.yield()
+      f.transcriber.emit(phrase); await settle()
+      XCTAssertFalse(c.isVoiceSessionActive); XCTAssertTrue(c.wakeListenerArmed)
+      XCTAssertEqual(c.state, .waitingForWake); XCTAssertEqual(f.conversation.requests, 0)
+      XCTAssertEqual(f.synthesizer.starts, 0); XCTAssertEqual(f.wake.starts, 2)
     }
   }
 
-  func testCloseConfirmationDeclineKeepsSessionListeningWithoutCallingLLM() async {
-    let f = Fixtures(); let c = f.coordinator(); c.startVoiceSession()
-    f.transcriber.emit("stop listening"); await Task.yield(); f.synthesizer.finish(); await Task.yield()
-    f.transcriber.emit("tengo más preguntas"); await Task.yield()
-    XCTAssertEqual(c.state, .listening); XCTAssertEqual(f.conversation.requests, 0)
+  func testSecondWakeStartsSecondVoiceSessionAfterDirectClose() async {
+    let f = Fixtures(); let c = f.coordinator(); c.enableWakeListening(locale: "en-US")
+    f.wake.emit(); await Task.yield(); f.transcriber.emit("Cerrar chat de voz"); await settle()
+    XCTAssertEqual(c.state, .waitingForWake); XCTAssertFalse(c.isVoiceSessionActive)
+    f.wake.emit(); await Task.yield()
+    XCTAssertTrue(c.isVoiceSessionActive); XCTAssertEqual(c.state, .listening); XCTAssertEqual(f.transcriber.starts, 2)
   }
 
-  func testNewQuestionDuringCloseConfirmationCancelsCloseAndUsesConversation() async {
-    let f = Fixtures(); let c = f.coordinator(); c.startVoiceSession()
-    f.transcriber.emit("cierra el chat de voz"); await Task.yield(); f.synthesizer.finish(); await Task.yield()
-    f.transcriber.emit("¿Qué tiempo hará mañana?"); await Task.yield()
-    XCTAssertEqual(c.state, .thinking); XCTAssertEqual(f.conversation.requests, 1)
-  }
-
-  func testVoiceSessionStartsSTTWithoutStartingWakeListener() {
-    let f = Fixtures(); let c = f.coordinator()
+  func testManualCloseDefersWakeRearmUntilAfterClosingStack() async {
+    let f = Fixtures(); let c = f.coordinator(); c.enableWakeListening(locale: "en-US")
     c.startVoiceSession()
-    XCTAssertEqual(f.wake.starts, 0)
-    XCTAssertEqual(f.transcriber.starts, 1)
-    XCTAssertEqual(c.state, .listening)
+    XCTAssertEqual(f.events, ["wake.start", "wake.stop", "stt.start"])
+    XCTAssertTrue(c.isVoiceSessionActive); XCTAssertFalse(c.wakeListenerArmed)
     c.endVoiceSession()
-    XCTAssertEqual(f.wake.stops, 1)
-    XCTAssertEqual(f.transcriber.stops, 1)
+    XCTAssertFalse(c.isVoiceSessionActive); XCTAssertFalse(c.wakeListenerArmed)
+    XCTAssertEqual(c.state, .disabled); XCTAssertEqual(f.wake.starts, 1)
+    await settle()
+    XCTAssertTrue(c.wakeListenerArmed)
+    XCTAssertEqual(c.state, .waitingForWake); XCTAssertEqual(f.wake.starts, 2)
   }
 
-  func testSelectedSpeechLocaleIsUsedForVoiceOutput() async {
-    let f = Fixtures(); let c = f.coordinator(); c.setSpeechLocale(Locale(identifier: "es-ES")); c.startVoiceSession()
-    f.transcriber.emit("hola"); await Task.yield(); f.conversation.succeed("respuesta"); await Task.yield()
-    XCTAssertEqual(f.synthesizer.lastLocale?.identifier, "es-ES")
+  func testPendingWakeRearmIsInvalidatedByANewManualVoiceSession() async {
+    let f = Fixtures(); let c = f.coordinator(); c.enableWakeListening(locale: "en-US")
+    c.startVoiceSession(); c.endVoiceSession()
+    c.startVoiceSession()
+    await settle()
+    XCTAssertTrue(c.isVoiceSessionActive); XCTAssertFalse(c.wakeListenerArmed)
+    XCTAssertEqual(c.state, .listening); XCTAssertEqual(f.wake.starts, 1)
   }
 
-  func testEnableAndWakeToThinkingUsesOneTurn() async throws {
-    let f = Fixtures(); let c = f.coordinator()
-    c.enable(locale: "en-US"); XCTAssertEqual(c.state, .waitingForWake); XCTAssertEqual(f.wake.starts, 1)
-    f.wake.emit(); await Task.yield(); XCTAssertEqual(f.wake.stops, 1); XCTAssertEqual(f.presentation.shows, 1); XCTAssertEqual(f.transcriber.starts, 1)
-    f.transcriber.emit("hello"); await Task.yield(); XCTAssertEqual(c.state, .thinking); XCTAssertEqual(f.conversation.requests, 1)
-    f.transcriber.emit("duplicate"); await Task.yield(); XCTAssertEqual(f.conversation.requests, 1)
+  func testManualCloseWithoutWakeEnabledStaysDisabled() async {
+    let f = Fixtures(); let c = f.coordinator(); c.startVoiceSession(); c.endVoiceSession()
+    await settle()
+    XCTAssertFalse(c.wakeListeningEnabled); XCTAssertFalse(c.wakeListenerArmed)
+    XCTAssertEqual(c.state, .disabled); XCTAssertEqual(f.wake.starts, 0)
   }
 
-  func testResponseThenTTSThenRearm() async {
-    let f = Fixtures(); let c = f.coordinator(); c.enable(locale: "en-US"); f.wake.emit(); await Task.yield(); f.transcriber.emit("hello"); await Task.yield()
-    XCTAssertEqual(f.synthesizer.starts, 0); f.conversation.succeed("answer"); await Task.yield(); XCTAssertEqual(f.synthesizer.starts, 1)
-    XCTAssertEqual(f.wake.starts, 1); f.synthesizer.finish(); await Task.yield(); XCTAssertEqual(f.wake.starts, 2); XCTAssertEqual(c.state, .waitingForWake)
+  func testNoSpeechDetectedEndsSessionAndRearmsWakeWithoutBackendOrTTS() async {
+    let f = Fixtures(); let c = f.coordinator(); c.enableWakeListening(locale: "en-US")
+    f.wake.emit(); await Task.yield()
+    f.transcriber.emitError(VoiceFoundationError.noSpeechDetected)
+    await settle()
+    XCTAssertFalse(c.isVoiceSessionActive)
+    XCTAssertEqual(c.state, .waitingForWake)
+    XCTAssertTrue(c.wakeListenerArmed)
+    XCTAssertEqual(f.wake.starts, 2)
+    XCTAssertEqual(f.conversation.requests, 0)
+    XCTAssertEqual(f.synthesizer.starts, 0)
   }
 
-  func testDisableInvalidatesStaleCallbacksAndCancelsAll() {
-    let f = Fixtures(); let c = f.coordinator(); c.enable(locale: "en-US"); let stale = f.wake.callback!; c.disable()
-    stale(WakeWordDetectedEvent(eventReference: "stale", phraseKey: "hola_cauco", detectedAt: Date(), confidence: nil))
-    XCTAssertEqual(c.state, .disabled); XCTAssertEqual(f.presentation.shows, 0); XCTAssertEqual(f.transcriber.stops, 1); XCTAssertEqual(f.conversation.cancels, 1); XCTAssertEqual(f.synthesizer.stops, 1)
+  func testStaleNoSpeechDetectedDoesNotAlterCurrentVoiceSession() async {
+    let f = Fixtures(); let c = f.coordinator(); c.enableWakeListening(locale: "en-US")
+    f.wake.emit(); await Task.yield()
+    f.transcriber.emit("Cerrar chat de voz"); await settle()
+    f.wake.emit(); await Task.yield()
+    f.transcriber.emitError(VoiceFoundationError.noSpeechDetected, at: 0)
+    await settle()
+    XCTAssertTrue(c.isVoiceSessionActive)
+    XCTAssertEqual(c.state, .listening)
+    XCTAssertEqual(f.wake.starts, 2)
   }
 
-  func testProviderFailureDoesNotRearm() async {
-    let f = Fixtures(); let c = f.coordinator(); c.enable(locale: "en-US"); f.wake.emit(); await Task.yield(); f.transcriber.emit("hello"); await Task.yield(); f.conversation.fail(); await Task.yield()
-    XCTAssertEqual(c.state, .error); XCTAssertEqual(f.wake.starts, 1)
+  func testCurrentNonTimeoutSTTErrorRemainsFatal() async {
+    let f = Fixtures(); let c = f.coordinator(); c.enableWakeListening(locale: "en-US")
+    f.wake.emit(); await Task.yield()
+    f.transcriber.emitError(NSError(domain: "speech-test", code: 42))
+    await settle()
+    XCTAssertFalse(c.isVoiceSessionActive)
+    XCTAssertEqual(c.state, .error)
+    XCTAssertEqual(f.wake.starts, 1)
+  }
+
+  func testTimeoutThenSecondWakeStartsANewVoiceSession() async {
+    let f = Fixtures(); let c = f.coordinator(); c.enableWakeListening(locale: "en-US")
+    f.wake.emit(); await Task.yield()
+    f.transcriber.emitError(VoiceFoundationError.noSpeechDetected)
+    await settle()
+    f.wake.emit(); await Task.yield()
+    XCTAssertTrue(c.isVoiceSessionActive)
+    XCTAssertEqual(c.state, .listening)
+    XCTAssertEqual(f.transcriber.starts, 2)
+  }
+
+  func testCloseIntentOnlyMatchesVoiceChatCommands() {
+    for value in ["apaga el chat de voz", "cierra chat de voz", "termina el chat de voz"] {
+      XCTAssertEqual(NativeHandsFreeCoordinator.closeIntentDecision(value), .asksToClose)
+    }
+    XCTAssertEqual(NativeHandsFreeCoordinator.closeIntentDecision("apaga la luz"), .none)
+  }
+
+  private func settle() async {
+    for _ in 0..<3 { await Task.yield() }
   }
 }
 
 @MainActor private final class Fixtures {
-  let wake = FakeWake(); let transcriber = FakeTranscriber(); let conversation = FakeConversation(); let synthesizer = FakeSynthesizer(); let presentation = FakePresentation()
+  let wake = FakeWake(); let transcriber = FakeTranscriber(); let conversation = FakeConversation(); let synthesizer = FakeSynthesizer(); let presentation = FakePresentation(); var events: [String] = []
+  init() { wake.events = { [weak self] in self?.events.append($0) }; transcriber.events = { [weak self] in self?.events.append($0) }; presentation.events = { [weak self] in self?.events.append($0) } }
   func coordinator() -> NativeHandsFreeCoordinator { NativeHandsFreeCoordinator(wake: wake, transcriber: transcriber, conversation: conversation, synthesizer: synthesizer, presentation: presentation) }
 }
-@MainActor private final class FakeWake: NativeWakeListener { var starts = 0; var stops = 0; var callback: ((WakeWordDetectedEvent) -> Void)?; func start(locale: String, onDetection: @escaping (WakeWordDetectedEvent) -> Void) throws { starts += 1; callback = onDetection }; func stop() { stops += 1; callback = nil }; func emit() { callback?(WakeWordDetectedEvent(eventReference: "e", phraseKey: "hola_cauco", detectedAt: Date(), confidence: nil)) } }
-@MainActor private final class FakeTranscriber: SpeechTranscriber { var permissionState: SpeechPermissionState = .authorized; var onDeviceAvailable = true; var state: SpeechTranscriptionState = .idle; var starts = 0; var stops = 0; var callback: ((String) -> Void)?; func start(locale: Locale, onTranscript: @escaping (String) -> Void, onError: @escaping (Error) -> Void) { starts += 1; callback = onTranscript; state = .listening }; func stop() { stops += 1; callback = nil; state = .stopped }; func emit(_ text: String) { callback?(text) } }
-@MainActor private final class FakeConversation: ConversationResponding { var requests = 0; var cancels = 0; var completion: ((Result<String, Error>) -> Void)?; func respond(instruction: String, useReasoning: Bool, completion: @escaping (Result<String, Error>) -> Void) { requests += 1; self.completion = completion }; func cancel() { cancels += 1; completion = nil }; func succeed(_ text: String) { completion?(.success(text)); completion = nil }; func fail() { completion?(.failure(NSError(domain: "test", code: 1))); completion = nil } }
-@MainActor private final class FakeSynthesizer: SpeechSynthesizer { var state: SpeechSynthesisState = .idle; var starts = 0; var stops = 0; var lastLocale: Locale?; var completion: (() -> Void)?; func speak(_ text: String, locale: Locale, onComplete: @escaping () -> Void, onError: @escaping (Error) -> Void) { starts += 1; lastLocale = locale; state = .speaking; completion = onComplete }; func stop() { stops += 1; completion = nil; state = .stopped }; func finish() { completion?(); completion = nil; state = .completed } }
-@MainActor private final class FakePresentation: HandsFreePresentation { var shows = 0; func showConversation() { shows += 1 }; func updateHandsFree(state: NativeHandsFreeState, transcript: String?, response: String?) {} }
+@MainActor private final class FakeWake: NativeWakeListener { var starts = 0; var callback: ((WakeWordDetectedEvent) -> Void)?; var events: ((String) -> Void)?; func start(locale: String, onDetection: @escaping (WakeWordDetectedEvent) -> Void) throws { starts += 1; events?("wake.start"); callback = onDetection }; func stop() { events?("wake.stop"); callback = nil }; func emit() { callback?(WakeWordDetectedEvent(eventReference: "e", phraseKey: "hola_cauco", detectedAt: Date(), confidence: nil)) } }
+@MainActor private final class FakeTranscriber: SpeechTranscriber { var permissionState: SpeechPermissionState = .authorized; var onDeviceAvailable = true; var state: SpeechTranscriptionState = .idle; var starts = 0; var callback: ((String) -> Void)?; var errorCallbacks: [(Error) -> Void] = []; var events: ((String) -> Void)?; func start(locale: Locale, onTranscript: @escaping (String) -> Void, onError: @escaping (Error) -> Void) { starts += 1; events?("stt.start"); callback = onTranscript; errorCallbacks.append(onError); state = .listening }; func stop() { callback = nil; state = .stopped }; func emit(_ text: String) { callback?(text) }; func emitError(_ error: Error, at index: Int? = nil) { errorCallbacks[index ?? (errorCallbacks.count - 1)](error) } }
+@MainActor private final class FakeConversation: ConversationResponding { var requests = 0; var completion: ((Result<String, Error>) -> Void)?; func respond(instruction: String, useReasoning: Bool, completion: @escaping (Result<String, Error>) -> Void) { requests += 1; self.completion = completion }; func cancel() { completion = nil }; func succeed(_ text: String) { completion?(.success(text)); completion = nil } }
+@MainActor private final class FakeSynthesizer: SpeechSynthesizer { var state: SpeechSynthesisState = .idle; var starts = 0; var completion: (() -> Void)?; func speak(_ text: String, locale: Locale, onComplete: @escaping () -> Void, onError: @escaping (Error) -> Void) { starts += 1; completion = onComplete; state = .speaking }; func stop() { completion = nil; state = .stopped }; func finish() { completion?(); completion = nil; state = .completed } }
+@MainActor private final class FakePresentation: HandsFreePresentation { var events: ((String) -> Void)?; func showConversation() { events?("presentation") }; func updateHandsFree(state: NativeHandsFreeState, transcript: String?, response: String?) {} }

@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager, suppress
 from datetime import timedelta
+from threading import Lock
 
 import uvicorn
 from cauco_agents import AgentRouter, create_default_registry
@@ -67,6 +68,7 @@ from cauco_core.connectors.apple_contacts import AppleContactsConnector
 from cauco_core.connectors.apple_mail import EmailToolRuntimeAdapter
 from cauco_core.context.builder import ContextBuilder
 from cauco_core.execution.policy import WorkspacePolicy
+from cauco_core.filesystem_drafts import FilesystemDraftStore
 from cauco_core.execution.runtime import TaskRuntime
 from cauco_core.execution.service import ExecutionService
 from cauco_core.execution.sqlite_store import SQLiteExecutionStore
@@ -180,10 +182,13 @@ def create_app(settings: Settings | None = None, ai_provider: AIProvider | None 
     app.state.tool_adapter_registry.register(
         EmailToolRuntimeAdapter(app.state.native_broker_client)
     )
+    app.state.filesystem_draft_store = None
+    app.state.filesystem_draft_lock = Lock()
     app.state.workspace_policy = None
     workspace = app.state.settings.resolved_workspace_dir()
     if workspace is not None:
         app.state.workspace_policy = WorkspacePolicy(workspace)
+        app.state.filesystem_draft_store = FilesystemDraftStore(app.state.workspace_policy.root)
         app.state.tool_adapter_registry.register(
             FilesystemAdapter(
                 app.state.workspace_policy.root,

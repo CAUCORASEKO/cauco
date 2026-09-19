@@ -3,6 +3,7 @@ import Foundation
 public enum SpeechPermissionState: String, Sendable { case notDetermined, denied, restricted, authorized, unavailable }
 public enum SpeechTranscriptionState: Equatable, Sendable { case idle, requestingPermission, listening, transcribing, completed, stopped, failed }
 public enum SpeechSynthesisState: Equatable, Sendable { case idle, speaking, completed, stopped, failed }
+public enum VoiceFoundationError: Error { case permissionDenied, onDeviceUnavailable, busy, noSpeechDetected }
 
 @MainActor public protocol SpeechTranscriber: AnyObject {
   var permissionState: SpeechPermissionState { get }

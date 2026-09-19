@@ -4,6 +4,16 @@ import CaucoHostCore
 
 @MainActor
 final class HandsFreeHostServiceTests: XCTestCase {
+  func testGeminiTTSConfigurationUsesCharonAndExpectedModel() {
+    XCTAssertEqual(GeminiTTSConfiguration.model, "gemini-3.1-flash-tts-preview")
+    XCTAssertEqual(GeminiTTSConfiguration.voice, "Charon")
+  }
+
+  func testGeminiTTSConfigurationRequiresNonEmptyEnvironmentKey() {
+    XCTAssertNil(GeminiTTSConfiguration.environment([:]))
+    XCTAssertNil(GeminiTTSConfiguration.environment(["GEMINI_API_KEY": "  "]))
+    XCTAssertEqual(GeminiTTSConfiguration.environment(["GEMINI_API_KEY": " key "])?.apiKey, "key")
+  }
   func testVoiceActivationRuntimeStatusMappingIsIndependentOfPreference() {
     XCTAssertEqual(VoiceActivationRuntimeStatus.forState(.disabled).title, "Off")
     XCTAssertEqual(VoiceActivationRuntimeStatus.forState(.waitingForWake).detail, "Waiting for \"Hola Cauco\"")
@@ -20,6 +30,22 @@ final class HandsFreeHostServiceTests: XCTestCase {
     XCTAssertEqual(fakes.synthesizer.speaks, 0); XCTAssertEqual(fakes.presentation.shows, 0)
   }
 
+  func testStartupWakeRestoreArmsWakeWithoutStartingSpeechRecognition() {
+    let fakes = Fixtures(); let service = fakes.service()
+    service.restorePersistedWakeListening()
+    XCTAssertEqual(service.state, .waitingForWake)
+    XCTAssertTrue(service.isWakeListeningEnabled); XCTAssertFalse(service.isVoiceSessionActive)
+    XCTAssertEqual(fakes.wake.starts, 1); XCTAssertEqual(fakes.transcriber.starts, 0)
+  }
+
+  func testVoiceButtonTitleUsesVoiceSessionRatherThanWakeState() {
+    let fakes = Fixtures(); let service = fakes.service(); service.enable()
+    XCTAssertEqual(service.state, .waitingForWake)
+    XCTAssertEqual(service.voiceSessionButtonTitle, "Chat de voz")
+    service.startVoiceSession()
+    XCTAssertEqual(service.voiceSessionButtonTitle, "Cerrar chat de voz")
+  }
+
   func testWakePresentationAndSTTOrdering() async {
     let fakes = Fixtures(); let service = fakes.service(); service.enable()
     fakes.wake.fire(); await waitUntil { fakes.transcriber.starts == 1 }
@@ -34,12 +60,13 @@ final class HandsFreeHostServiceTests: XCTestCase {
     XCTAssertEqual(fakes.synthesizer.speaks, 0)
   }
 
-  func testSuccessfulCycleSpeaksThenRearmsOnlyWhileEnabled() async {
+  func testSuccessfulCycleContinuesSpeechWithoutRearmingWake() async {
     let fakes = Fixtures(); let service = fakes.service(); service.enable(); fakes.wake.fire(); await waitUntil { fakes.transcriber.starts == 1 }; fakes.transcriber.emit("hello"); await waitUntil { fakes.conversation.requests.count == 1 }
     fakes.conversation.complete("advice"); await waitUntil { fakes.synthesizer.speaks == 1 }
     XCTAssertEqual(fakes.events, ["wake.start", "wake.stop", "presentation", "stt.start", "conversation", "tts"])
-    fakes.synthesizer.complete(); await Task.yield(); XCTAssertEqual(fakes.wake.starts, 2)
-    service.disable(); XCTAssertEqual(fakes.wake.stops, 2)
+    fakes.synthesizer.complete(); await Task.yield(); XCTAssertEqual(fakes.wake.starts, 1)
+    XCTAssertEqual(fakes.transcriber.starts, 2); XCTAssertTrue(service.isVoiceSessionActive)
+    service.disable(); XCTAssertEqual(fakes.wake.stops, 1)
   }
 
   func testDisableDuringListeningCancelsWithoutRearm() async {
@@ -86,4 +113,4 @@ final class HandsFreeHostServiceTests: XCTestCase {
 @MainActor private final class TestConversation: ConversationResponding { var requests: [(String, Bool)] = []; var callback: ((Result<String, Error>) -> Void)?; var events: ((String) -> Void)?; func respond(instruction: String, useReasoning: Bool, completion: @escaping (Result<String, Error>) -> Void) { requests.append((instruction, useReasoning)); events?("conversation"); callback = completion }; func cancel() { callback = nil }; func complete(_ value: String) { callback?(.success(value)); callback = nil } }
 @MainActor private final class TestSynthesizer: SpeechSynthesizer { var speaks = 0; var stops = 0; var completion: (() -> Void)?; var state: SpeechSynthesisState = .idle; var events: ((String) -> Void)?; func speak(_ text: String, locale: Locale, onComplete: @escaping () -> Void, onError: @escaping (Error) -> Void) { speaks += 1; events?("tts"); state = .speaking; completion = onComplete }; func stop() { stops += 1; completion = nil; state = .stopped }; func complete() { completion?(); completion = nil } }
 @MainActor private final class TestPresentation: HandsFreePresentation { var shows = 0; var events: ((String) -> Void)?; func showConversation() { shows += 1; events?("presentation") }; func updateHandsFree(state: NativeHandsFreeState, transcript: String?, response: String?) {} }
-private struct TestTransport: ConversationTransport { func respond(instruction: String, useReasoning: Bool) async throws -> String { "unused" } }
+private struct TestTransport: ConversationTransport { func respond(instruction: String, useReasoning: Bool, conversationID: UUID) async throws -> ConversationReply { ConversationReply(text: "unused", reviewID: nil) } }

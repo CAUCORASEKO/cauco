@@ -82,7 +82,11 @@ public final class SoundAnalysisWakeWordDetectorGateway: WakeWordDetectorGateway
       self.lock.lock(); self.metrics.audioCallbacks += 1; let wasPending = self.pendingAudio != nil; self.pendingAudio = (copy, converter, target, g); if wasPending { self.metrics.droppedWork += 1 }; self.metrics.pendingWork = 1; self.metrics.maximumBacklog = max(self.metrics.maximumBacklog, 1); let schedule = !self.workerScheduled; self.workerScheduled = true; self.lock.unlock()
       if schedule { self.queue.async { self.drainLatestAudio() } }
     }
-    do { try localEngine.start(); lock.lock(); metrics.engineStarts += 1; lock.unlock() } catch { input.removeTap(onBus: 0); stop(reason: "error"); throw BrokerError.internalFailure }
+    do { try localEngine.start(); lock.lock(); metrics.engineStarts += 1; lock.unlock() } catch {
+      let nsError = error as NSError
+      Self.logger.debug("wake_runtime_engine_start_failed error_domain=\(nsError.domain, privacy: .public) error_code=\(nsError.code, privacy: .public) description=\(nsError.localizedDescription, privacy: .public)")
+      input.removeTap(onBus: 0); stop(reason: "error"); throw BrokerError.internalFailure
+    }
   }
   public func stop() { stop(reason: "explicit_stop") }
   private func stop(reason: String) {
